@@ -581,7 +581,7 @@ O menu deve mostrar apenas recursos liberados **por módulo e permissão**. Toda
 | --- | --- | --- |
 | Backend | PHP 8.3+ / Laravel 13+ | API, autorização, serviços de domínio, eventos e integração |
 | Frontend | React 18+ / TypeScript strict / Vite ou Next.js | Painéis, formulários, relatórios e portal responsivo |
-| Coletor | Rust+React 18 | Serviço local, SNMP, descoberta, buffer, instalação e diagnóstico |
+| Coletor | Tauri Rust + React 18 | Serviço local, SNMP, descoberta, buffer, instalação e diagnóstico |
 | Banco | PostgreSQL | Dados transacionais, histórico, integridade e fechamento |
 | Filas/cache | Redis + workers | Ingestão, alertas, cálculos, e-mail, exportações |
 | Armazenamento | S3 compatível | Documentos, anexos e relatórios |
