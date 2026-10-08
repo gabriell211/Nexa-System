@@ -5,6 +5,14 @@
 
 **Nexa System** é uma plataforma para monitorar e administrar impressoras, dispositivos de TI, clientes, suprimentos, técnicos, chamados, contratos, produção, alertas, logística e faturamento em um único sistema.
 
+## Controle de cobertura
+
+- **Requisitos documentados**: 324 itens numerados, todos pendentes.
+- **Testes de aceite descritos**: 62 cenários de ponta a ponta.
+- **Fonte**: documentação pública oficial consultada em 08/10/2026.
+- **Implementação verificada**: nenhuma funcionalidade concluída. Repositório contém documentação.
+- **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
+
 ## Objetivo e referência funcional
 
 O produto é inspirado no **escopo funcional publicamente documentado** do PrintWayy Dragon, com marca, interface, código, ativos e arquitetura próprios. Não se pretende copiar código-fonte, imagens, identidade visual, dados privados, credenciais nem endpoints internos de terceiros. Busca-se **paridade de processos de negócio**, com melhorias de confiabilidade e experiência de uso.
@@ -310,6 +318,146 @@ O produto é inspirado no **escopo funcional publicamente documentado** do Print
 - [ ] **NX-235** Política de suporte, documentação de instalação de agente e catálogo de modelos testados.
 
 
+
+## Auditoria adicional de paridade documentada — 08/10/2026
+
+Os itens seguintes complementam os 235 requisitos iniciais. Esta é **cobertura documental**, não execução da aplicação. As fontes públicas descrevem comportamentos do produto de referência; o Nexa tem implementação, interface, código e identidade próprios. Todas as caixas permanecem pendentes.
+
+### Interface e configurações
+
+- [ ] **NX-236** Topbar com ajuda, novidades, notificações, perfil, recuperação de acesso, política, downloads do coletor e saída. [Fonte oficial](https://help.printwayy.com/visao-geral/)
+- [ ] **NX-237** Listas com ações habilitadas pela seleção, pesquisa em todas as colunas, inativos ocultáveis, personalização e Excel. [Fonte oficial](https://help.printwayy.com/visao-geral/)
+- [ ] **NX-238** Atalhos clicáveis para entidade associada (ex.: impressora para contrato) com autorização e preservação de contexto. [Fonte oficial](https://help.printwayy.com/visao-geral/)
+- [ ] **NX-239** Tooltip de orientação em campo complexo e gráficos com controle para ocultar/mostrar cada série. [Fonte oficial](https://help.printwayy.com/visao-geral/)
+- [ ] **NX-240** Visões salvas e temporárias dos filtros avançados, com ordenação customizada de colunas e rearranjo por arraste. [Fonte oficial](https://help.printwayy.com/visao-geral/)
+- [ ] **NX-241** Mostrar a idade das informações nas telas; atualização periódica não pode ser descrita como instantânea. [Fonte oficial](https://help.printwayy.com/visao-geral/)
+- [ ] **NX-242** Menus e botões baseados no par módulo contratado × autorização efetiva de usuário, incluindo invalidação de cache. [Fonte oficial](https://help.printwayy.com/visao-geral/)
+
+### Identidade, empresa e clientes
+
+- [ ] **NX-243** Configuração do logotipo com prévia, dimensões/tipos de imagem validados e aplicação opcional aos relatórios. [Fonte oficial](https://help.printwayy.com/configuracoes-empresa/)
+- [ ] **NX-244** Cabeçalho dos relatórios com dados fiscais/configuráveis do provedor e possibilidade de omiti-los. [Fonte oficial](https://help.printwayy.com/configuracoes-empresa/)
+- [ ] **NX-245** Unidades do provedor associáveis aos contratos com CNPJs diferentes e histórico da unidade emissora. [Fonte oficial](https://help.printwayy.com/configuracoes-empresa/)
+- [ ] **NX-246** Departamentos internos do provedor para impressoras devolvidas ao estoque, separados dos departamentos do cliente. [Fonte oficial](https://help.printwayy.com/configuracoes-empresa/)
+- [ ] **NX-247** Horários comerciais do provedor utilizados em alertas e SLA, incluindo feriados e fuso. [Fonte oficial](https://help.printwayy.com/configuracoes-empresa/)
+- [ ] **NX-248** Manter impressora desativada no contrato até desvinculação manual conforme parâmetro, sem faturar silenciosamente. [Fonte oficial](https://help.printwayy.com/configuracoes-empresa/)
+- [ ] **NX-249** Controle global para permitir alteração de número de documento ainda aberto apenas a usuários financeiros autorizados. [Fonte oficial](https://help.printwayy.com/configuracoes-empresa/)
+
+### Collector e comunicação
+
+- [ ] **NX-250** Aplicação local administrativa com Impressoras, Ferramentas, Estado dos Serviços e Configurações. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-251** Teste de IP e credenciais SNMP/HTTP mostrando identidade/contadores obtidos antes de ativar monitoramento. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-252** Descoberta manual de sub-rede local/remota por broadcast ou intervalo com seleção múltipla e resumo de falhas. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-253** Busca automática por intervalos autorizados com frequência de descoberta configurável entre 6 e 168 horas. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-254** Cadastro remoto de impressora por IP vinculado ao ponto de instalação com aguardando descoberta e validação. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-255** Estados e telemetria separados do coletor, upload de dados, atualização e supervisor. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-256** Coleta offline com pacotes cifrados e compactados na origem, integridade e eliminação após confirmação no servidor. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-257** Monitoramento de conexão com detalhes por ponto, número de impressoras, serviços, erros e sugestões de diagnóstico. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-258** Captura USB ponto a ponto: host obrigatoriamente presente, correção de identificação/porta/driver e teste real por modelo. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-259** Capacidades separadas de rede e USB; não inferir leituras coloridas/níveis quando só houver contador geral. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-260** Cadência dos diferentes serviços configurável: documentação pública diverge entre 30 e 60 minutos; exibir última amostra real. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-261** Diagnósticos para firewall, DNS, proxy, credenciais, IP alterado, troca de placa, antivírus e serviço parado. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-262** Transportes HTTPS e proxy com autenticação; alteração posterior de configuração sem reinstalar. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-263** Transporte alternativo seguro por SMTP/POP3 com teste de comunicação e validação de origem quando habilitado. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-264** Revogação de ponto instalado permanentemente offline com reconciliação dos dispositivos do ponto. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-265** Não capturar spool, conteúdo ou imagem de documentos; somente metadados necessários para monitoramento. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+- [ ] **NX-266** Eventos e alarmes próprios para falha do serviço de atualização, distintos de agente offline. [Fonte oficial](https://help.printwayy.com/monitorando-impressoras/)
+
+### Contadores, equipamentos e compatibilidade
+
+- [ ] **NX-267** Edição manual somente do último contador e durante janela configurável equivalente à referência de 30 dias. [Fonte oficial](https://help.printwayy.com/adicionando-contadores/)
+- [ ] **NX-268** Vedação de edição de contadores associados a fechamento congelado, exceto processo formal de descongelamento. [Fonte oficial](https://help.printwayy.com/adicionando-contadores/)
+- [ ] **NX-269** Preservar segmentos de medição antes/depois de reset de contador ou formatter sem duplicar produção. [Fonte oficial](https://help.printwayy.com/adicionando-contadores/)
+- [ ] **NX-270** Modelo de contador com Geral, Geral P&B, Geral Cor Total, Cor Única e 2 Cores, com fórmula por capacidade de modelo. [Fonte oficial](https://help.printwayy.com/adicionando-contadores/)
+- [ ] **NX-271** Modelo não homologado deve permitir cadastro e contador manual mas declarar ausência de telemetria não testada. [Fonte oficial](https://help.printwayy.com/adicionando-contadores/)
+- [ ] **NX-272** Série obtida por USB precisa de validação humana quando driver/SO reportar informação possivelmente persistida. [Fonte oficial](https://help.printwayy.com/adicionando-contadores/)
+- [ ] **NX-273** Painel da impressora deve mostrar último horário de leitura, condição, contadores e suprimentos com precisão por modelo. [Fonte oficial](https://help.printwayy.com/adicionando-contadores/)
+
+### Suprimentos, médias e estoque
+
+- [ ] **NX-274** Não calcular data de próxima troca nem reposição preditiva sem duas trocas válidas confirmadas por equipamento/suprimento. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-275** Sugestão de troca documenta motivo exato (nível, capacidade, número de série ou informe por usuário cliente/colaborador). [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-276** Troca manual deve reconciliar sugestão pendente da mesma ocorrência e evitar dupla baixa de estoque. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-277** Automação de troca limitada ao estoque da localização, compatibilidade e SKU previamente usado sem ambiguidade. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-278** Impedir auto-confirmação se houver pendências de troca mais antigas em aberto para a impressora. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-279** Trocas confirmadas podem ser excluídas com auditoria ou desconsideradas das médias, permitindo reabilitar média sem perda histórica. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-280** Trocas prematuras visualizáveis em recortes 30/60/90 dias com data e nível de entrada/saída. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-281** Rendimento calculado para SKU e impressora usando páginas entre trocas e rendimento nominal. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-282** Cobertura calculada como estimativa inferida de hipótese nominal (ex.: 5% padrão), nunca telemetria medida. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-283** Validação manual/algorítmica de trocas espúrias; IA opcional futura deve ser explicável, aferível e sem dependência obrigatória. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-284** Permitir cadastrar tipos, marcas, fornecedores e compatibilidades; bloquear exclusão de cadastro com histórico dependente. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-285** SKU externo, cor, rendimento por compatibilidade, preço de venda e fornecedor associados a estoque e atendimentos. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-286** Entrada múltipla para estoque do provedor ou cliente, com nota fiscal e origem documental. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-287** Definir explicitamente compatibilidade ao criar SKU; vazio não pode significar todos os modelos inadvertidamente. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+- [ ] **NX-288** Permitir avaliação de troca prematura por nível informado, estimativa ou eficiência e limiar por tipo. [Fonte oficial](https://help.printwayy.com/trocas-suprimento/)
+
+### Alertas e preventivas
+
+- [ ] **NX-289** Falha de comunicação só gera alerta após carência configurada, com recuperação por três leituras estáveis como referência. [Fonte oficial](https://help.printwayy.com/alertas/)
+- [ ] **NX-290** Erro do equipamento pode ser ignorado e reaparecer; encerramento automático após janela configurada (referência: 4h). [Fonte oficial](https://help.printwayy.com/alertas/)
+- [ ] **NX-291** Ao encerrar chamado vinculado, preventiva encerrada e alerta de hardware ignorado/resolvido conforme tipo. [Fonte oficial](https://help.printwayy.com/alertas/)
+- [ ] **NX-292** Regras com múltiplos gatilhos emitem eventos rastreáveis individualmente para dias, páginas e níveis. [Fonte oficial](https://help.printwayy.com/alertas/)
+- [ ] **NX-293** Alertas preventivos com reinício em data real da manutenção, impedindo mudança retroativa injustificada de política. [Fonte oficial](https://help.printwayy.com/alertas/)
+- [ ] **NX-294** Regras de preventiva aplicam-se também a novas impressoras incluídas posteriormente no conjunto de filtros. [Fonte oficial](https://help.printwayy.com/alertas/)
+- [ ] **NX-295** Catálogos de erros de rede/USB com criticidade configurável e desabilitação explícita de ocorrência inútil. [Fonte oficial](https://help.printwayy.com/alertas/)
+
+### Chamados e regras de atendimento
+
+- [ ] **NX-296** Abertura pelo equipamento ou lista geral; cliente pode selecionar impressora e/ou dispositivo e colaborador abrir tarefa interna. [Fonte oficial](https://help.printwayy.com/atendendo-chamados/)
+- [ ] **NX-297** Fila sem responsável e quadro ativo com três estados: atendimento pendente, em atendimento e atendimento finalizado. [Fonte oficial](https://help.printwayy.com/atendendo-chamados/)
+- [ ] **NX-298** Item usado em chamado exige origem (provedor/técnico), destino (cliente/impressora) e opção de cobrança. [Fonte oficial](https://help.printwayy.com/atendendo-chamados/)
+- [ ] **NX-299** Encerramento exige confirmação dos materiais usados, eventuais pagamentos, descontos e custos adicionais. [Fonte oficial](https://help.printwayy.com/atendendo-chamados/)
+- [ ] **NX-300** Impressão da ordem de serviço com quantidade configurável de linhas em branco para escrita em campo. [Fonte oficial](https://help.printwayy.com/atendendo-chamados/)
+- [ ] **NX-301** Tipos de chamado e serviços associados não podem ser excluídos destrutivamente enquanto existir histórico. [Fonte oficial](https://help.printwayy.com/atendendo-chamados/)
+
+### Contratos e fechamentos
+
+- [ ] **NX-302** Contrato-padrão único por cliente sob concorrência, com vínculo automático apenas onde autorizado. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-303** Local fiscal do fechamento limitada às localizações habilitadas e CNPJs aplicáveis ao contrato. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-304** Impressoras do cliente com propriedade distinta não podem gerar pendência automática indevida. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-305** Fechamento automático depende de ausência de pendências e de congelamento de todos os ciclos anteriores. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-306** Permitir congelamento manual mesmo com pendência apenas mediante permissão especial e justificativa. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-307** Descongelar somente o fechamento congelado mais recente por cliente, dentro de janela equivalente à referência 30 dias. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-308** Fechamento congelado preserva snapshot de custos, contadores e regras mesmo após reajuste de contrato. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-309** Documentos personalizados: título, colunas, texto adicional, dados fiscais e logotipo. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-310** Envio automático do PDF/relatório apenas no primeiro congelamento, com deduplicação em reprocessamentos. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-311** Cobrança parcial ou integral selecionável e auditada para dispositivos e impressoras em passagem parcial. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-312** Reajustes com mês/ano, prévia, histórico, percentual e impacto explícito nos fechamentos ainda abertos. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-313** Documento de cobrança numerado com permissão para edição somente antes de congelamento. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+- [ ] **NX-314** Receita provisória de ciclos em andamento separada de faturamento congelado. [Fonte oficial](https://help.printwayy.com/fechamentos-mensais/)
+
+### Relatórios, integrações e operação
+
+- [ ] **NX-315** Relatórios agendados para digitalizações e impressões/cópias usando janela de 30 dias e gráficos opcionais. [Fonte oficial](https://help.printwayy.com/integracao/)
+- [ ] **NX-316** Resumo do ciclo financeiro por e-mail quando um novo fechamento começa, com destinatários por cliente. [Fonte oficial](https://help.printwayy.com/integracao/)
+- [ ] **NX-317** Notificar níveis lidos ou estimados, trocas futuras, troca pendente/prematura, estoque baixo no cliente e no provedor. [Fonte oficial](https://help.printwayy.com/integracao/)
+- [ ] **NX-318** Token de integração com permissão de administrador, revogação e confirmação, escopos e auditoria. [Fonte oficial](https://help.printwayy.com/integracao/)
+- [ ] **NX-319** API pública versionada com read-only em domínios e entrada autorizada de clientes/estoques. [Fonte oficial](https://help.printwayy.com/integracao/)
+- [ ] **NX-320** Paginação e ordenação estável; documentar diferenças entre API Nexa e referência que usa até 100 itens e Skip. [Fonte oficial](https://help.printwayy.com/integracao/)
+- [ ] **NX-321** Relatório de leituras explicita data de coleta e nunca apresenta consumo zero para dados desatualizados. [Fonte oficial](https://help.printwayy.com/integracao/)
+- [ ] **NX-322** Caso Nexa tenha plano SaaS, tarifação por impressora/módulo e piso, sem cobrança duplicada quando muda de cliente. [Fonte oficial](https://help.printwayy.com/integracao/)
+- [ ] **NX-323** Central de assinatura opcional com status, faturas, boleto/Pix via parceiro autorizado, lembretes e reativação. [Fonte oficial](https://help.printwayy.com/integracao/)
+- [ ] **NX-324** Catálogo de incidentes de campo e checklist de homologação de modelos/firmwares e protocolos. [Fonte oficial](https://help.printwayy.com/integracao/)
+
+
+### Pontos com divergência ou sem comprovação
+
+| Tema | Conclusão da revisão |
+| --- | --- |
+| Frequência de coleta | A FAQ menciona 30 min e outro tutorial, 60 min; configurar e medir em vez de prometer intervalo universal |
+| Atualização do painel | Página de visão geral menciona atualização periódica; nunca alegar streaming em tempo real só pelo layout |
+| Coletores/USB | A publicação comercial apresenta capacidades distintas para USB e rede; requer matriz real por fabricante/modelo |
+| IA na validação | A ajuda declara IA na validação de trocas, mas não divulga algoritmo/dataset; recurso Nexa só pode ser validado por resultados mensuráveis |
+| SLA/alertas | Janelas e critérios podem mudar por configuração e por versão; simular e testar todos os estados |
+| Interface autenticada | Não auditada com credenciais autorizadas; modais, perfis, detalhes e combinações de licença continuam pendentes |
+| Preço/planos do concorrente | Não são regra obrigatória para o Nexa; separar contrato com clientes e eventual cobrança SaaS |
+| Sistema operacional | Menções públicas a Windows obsoleto não devem ser replicadas como suporte moderno ou requisito de segurança |
+| APIs do concorrente | API documentada é uma referência funcional, não acesso autorizado a endpoints privados ou cópia de contratos internos |
+
+### Critério de 100% do escopo
+
+Cobertura real só pode ser afirmada com **inventário versionado e congelado**, acesso autorizado aos fluxos que se deseja comparar, prova de funcionamento de cada requisito, execução de testes e homologação em equipamentos reais. O índice **NX** cobre o que foi encontrado na documentação pública e também propostas próprias, não garante uma lista exaustiva de recursos não publicados.
+
 ## Regras de negócio críticas (não podem virar simplificações)
 
 ### Agentes e impressoras
@@ -517,6 +665,42 @@ Todos os registros de negócio devem ser associados ao tenant e/ou a chaves exte
 | QA-31 | Navegação do cliente por celular | Operação real sem telas quebradas e com acessibilidade |
 | QA-32 | Implantação em ambiente vazio | Migrações, onboarding e primeiros dados operam sem mocks |
 
+
+### Casos adicionais descobertos na auditoria
+
+| ID | Cenário de teste de aceite |
+| --- | --- |
+| QA-33 | Descoberta agendada e busca manual respeitam faixas autorizadas e retornam relatório por equipamento |
+| QA-34 | Teste de SNMP/HTTP apresenta somente os contadores efetivamente coletados |
+| QA-35 | USB alterado de porta ou com série inválida não causa vínculo entre clientes |
+| QA-36 | Falha de DNS/firewall/proxy/atualizador sinaliza diagnóstico distinto |
+| QA-37 | Envio após 24h sem internet preserva ordem, integridade e não duplica leituras |
+| QA-38 | Correção de último contador após 30 dias é bloqueada segundo configuração |
+| QA-39 | Reset de contador divide o histórico sem valores negativos nem dupla cobrança |
+| QA-40 | Combinação de contadores Geral Cor, Cor Única e 2 Cores segue fórmula homologada |
+| QA-41 | Previsão com menos de duas trocas confirmadas retorna amostra insuficiente |
+| QA-42 | Troca manual sobre pendente resulta em evento único |
+| QA-43 | Confirmação automática com SKU incompatível, ambíguo ou sem estoque é rejeitada |
+| QA-44 | Desconsiderar troca falsa recalcula média e mantém trilha de auditoria |
+| QA-45 | Estoque no técnico e no cliente é afetado apenas pela movimentação/transação correta |
+| QA-46 | Erro da impressora recupera, é ignorado ou reaparece conforme parametrização |
+| QA-47 | Alerta sem comunicação encerra apenas depois de estabilidade conforme política |
+| QA-48 | Vários gatilhos de preventiva são correlacionados sem perda de origem |
+| QA-49 | Chamado com material para cliente versus instalação no equipamento mantém saldo e cobrança |
+| QA-50 | Contrato tenta definir dois padrões para mesmo cliente em concorrência: rejeita um |
+| QA-51 | Congelamento automático não ultrapassa pendências ou ciclos antigos não congelados |
+| QA-52 | Congelamento manual ignorando pendência exige permissão, motivação e audit trail |
+| QA-53 | Descongelamento fora da janela ou diferente do mais recente é rejeitado |
+| QA-54 | Reajuste do contrato não modifica snapshot congelado e mostra períodos afetados |
+| QA-55 | Relatório enviado no primeiro congelamento não é reenviado involuntariamente no recongelamento |
+| QA-56 | Movimentação parcial no ciclo exige decisão integral/proporcional explícita |
+| QA-57 | Relatórios de produção indicam última coleta e desatualização |
+| QA-58 | Portal cliente nunca revela relatório/estoque de outro cliente |
+| QA-59 | API paginada mantém ordem/limites e rejeita token revogado |
+| QA-60 | Plano SaaS opcional cobra impressora uma só vez mesmo após troca de cliente |
+| QA-61 | Agenda de relatório respeita destinatário, janela, formato e autorização |
+| QA-62 | Teste de privacidade garante nenhuma captura do conteúdo ou imagem de documentos |
+
 **Conclusão de um requisito:** código revisado + migration/contrato de dados + autorização + teste feliz + testes de falha + documentação + evidência de validação. Build ou interface visual isolados **não** comprovam entrega.
 
 ## Roadmap sugerido (dependências)
@@ -583,10 +767,10 @@ Documentação oficial consultada em **08/10/2026**:
 - **Interface autenticada:** menu exato, todas as telas e modais, filtros, componentes, relatórios e responsividade por nível de permissão.
 - **Matriz real de permissões e regras de licença:** combinações por provedor, cliente, usuário e equipamento.
 - **Formatos de exportação e anexos:** opções e layouts disponíveis em cada tela e caso de negócio.
-- **Compatibilidade de hardware:** catálogo concreto, contadores/OIDs, firmware, qualidade do suporte USB e limitações reais.
+- **Compatibilidade de hardware:** catálogo concreto, contadores/OIDs, firmware, qualidade do suporte USB e limitações reais, incluindo restrições de rede/USB.
 - **API e autenticação:** comportamento detalhado dos endpoints documentados, paginação, erros e limites; só com acesso autorizado.
 - **Regras e casos excepcionais não documentados:** cálculos de fechamento, cancelamentos, relatórios, atualizações e suporte.
-- **Desempenho e operação em larga escala:** testes reais de rede, volume de dados e falhas.
+- **Desempenho e operação em larga escala:** testes reais de rede, volume de dados e falhas, com SLO, backup validado e tempos RTO/RPO definidos.
 - **Conformidade legal e produto:** definir licença de código própria, política de privacidade, termos e governança de dados.
 
 Qualquer descoberta posterior deve originar novo requisito **NX-...**, teste **QA-...**, referência pública ou evidência autorizada, para que não se percam detalhes durante a implementação.
