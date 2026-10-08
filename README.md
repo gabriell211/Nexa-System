@@ -5,6 +5,10 @@
 
 **Nexa System** é uma plataforma para monitorar e administrar impressoras, dispositivos de TI, clientes, suprimentos, técnicos, chamados, contratos, produção, alertas, logística e faturamento em um único sistema.
 
+## Especificações técnicas complementares
+
+- **[Nexa Collector — referência funcional do PrintWayy Client e projeto de implementação](docs/NEXA-COLLECTOR.md):** telas originais, serviços publicados, instalação, busca SNMP/USB, proxy, e-mail, filas locais, atualizações, diagnóstico, segurança, arquitetura Rust e validação ponta a ponta. **Documento de projeto — não implementado.**
+
 ## Controle de cobertura
 
 - **Requisitos documentados**: 324 itens numerados, todos pendentes.
