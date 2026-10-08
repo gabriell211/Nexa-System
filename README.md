@@ -579,7 +579,7 @@ O menu deve mostrar apenas recursos liberados **por módulo e permissão**. Toda
 
 | Camada | Escolha proposta | Responsabilidade |
 | --- | --- | --- |
-| Backend | PHP 8.3+ / Laravel 11+ | API, autorização, serviços de domínio, eventos e integração |
+| Backend | PHP 8.3+ / Laravel 13+ | API, autorização, serviços de domínio, eventos e integração |
 | Frontend | React 18+ / TypeScript strict / Vite ou Next.js | Painéis, formulários, relatórios e portal responsivo |
 | Coletor | Rust | Serviço local, SNMP, descoberta, buffer, instalação e diagnóstico |
 | Banco | PostgreSQL | Dados transacionais, histórico, integridade e fechamento |
