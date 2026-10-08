@@ -1,0 +1,18 @@
+[package]
+name = "nexa-collector-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+ipnet = "2"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+snmp2 = "0.5.2"
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"

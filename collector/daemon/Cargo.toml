@@ -1,0 +1,7 @@
+[package]
+name = "nexa-collector-daemon"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nexa-collector-core = { path = "../core" }

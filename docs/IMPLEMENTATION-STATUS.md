@@ -27,3 +27,17 @@ O monorepo agora possui código inicial de API Laravel 13, autenticação por to
 6. Validar cada item NX e QA com evidências e hardware real.
 
 O README principal é a fonte de escopo. Este arquivo documenta o que existe em código, não o que está planejado.
+
+## Collector Rust / Tauri / React — implementação parcial
+
+- Workspace Rust com `nexa-collector-core` e daemon CLI separado.
+- SNMPv2c inicial com OID explicitamente configurado por impressora e escopo CIDR autorizado.
+- SQLite WAL outbox, UUID único, reenvio HTTPS e ACK da API.
+- Endpoint Laravel para ingestão com token individual por coletor e validação por cliente/tenant.
+- Console Tauri 2.12 + React 19 + TypeScript, exibindo estado local real em modo somente leitura.
+- Cadastro e revogação de coletor via comandos CLI Laravel.
+- Novos testes escritos para outbox e ingestão/revogação, sem execução validada.
+
+**Limitações:** sem criptografia de outbox, sem cofre do SO, sem SNMPv3, sem IPC autenticado entre UI e serviço, sem instalador nativo de serviço, sem USB, sem descoberta automática, sem TLS mutual, sem update assinado e sem teste de campo. O Collector não está pronto para instalação em clientes.
+
+Ver instruções e limitações em [collector/README.md](../collector/README.md). A stack do software concorrente original não foi verificada; Tauri + React é a escolha arquitetural do Nexa.

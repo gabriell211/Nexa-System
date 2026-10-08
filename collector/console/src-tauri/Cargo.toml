@@ -1,0 +1,16 @@
+[package]
+name = "nexa-collector-console"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "nexa_collector_console_lib"
+crate-type = ["cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = "2.7.0"
+
+[dependencies]
+nexa-collector-core = { path = "../../core" }
+serde = { version = "1", features = ["derive"] }
+tauri = "2.12.0"

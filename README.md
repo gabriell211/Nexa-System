@@ -1,6 +1,6 @@
 # Nexa System
 
-> **Status do repositório: escopo/documentação — nenhuma funcionalidade foi implementada ou validada em produção.**
+> **Status do repositório: implementação inicial em desenvolvimento — API Laravel e primeira base do Collector Rust/Tauri/React adicionadas, sem homologação nem validação de produção.**
 > Este README é a especificação inicial e matriz de requisitos de uma plataforma **independente** de gestão de outsourcing de impressão (MPS). As caixas permanecem desmarcadas até implementação + testes.
 
 **Nexa System** é uma plataforma para monitorar e administrar impressoras, dispositivos de TI, clientes, suprimentos, técnicos, chamados, contratos, produção, alertas, logística e faturamento em um único sistema.
@@ -14,7 +14,7 @@
 - **Requisitos documentados**: 324 itens numerados, todos pendentes.
 - **Testes de aceite descritos**: 62 cenários de ponta a ponta.
 - **Fonte**: documentação pública oficial consultada em 08/10/2026.
-- **Implementação verificada**: nenhuma funcionalidade concluída. Repositório contém documentação.
+- **Implementação verificada**: código inicial da API, ingestão idempotente e Collector Rust/Tauri/React. Nenhum requisito NX foi validado integralmente, e testes de execução/hardware continuam pendentes. Veja [estado da implementação](docs/IMPLEMENTATION-STATUS.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
 ## Objetivo e referência funcional

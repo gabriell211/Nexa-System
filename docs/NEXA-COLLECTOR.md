@@ -1,6 +1,6 @@
 # Nexa Collector — estudo do PrintWayy Client e especificação técnica
 
-> **Referência analisada:** PrintWayy Client, segundo a documentação pública oficial consultada em 08/10/2026. **Status Nexa:** planejamento, sem executável, agente, serviço, telemetria ou integração implementados neste repositório. Este arquivo **não contém** código proprietário nem protocolo privado de terceiros.
+> **Referência analisada:** PrintWayy Client, segundo a documentação pública oficial consultada em 08/10/2026. **Status Nexa:** primeira versão de código Rust/React/Tauri e API de ingestão adicionada, ainda sem build, testes/hardware homologados, instalador ou serviço operacional em produção. Ver [Collector](../collector/README.md). Este arquivo **não contém** código proprietário nem protocolo privado de terceiros.
 
 ## 1. O que foi confirmado na documentação
 
@@ -100,7 +100,7 @@ A documentação identifica causas como:
 
 **Observação de confiabilidade:** geração de arquivos `.plog` comprova buffer local no produto de referência, mas a documentação sozinha **não permite afirmar** sem testes reais a política exata de fsync, garantia de entrega, retenção, retry e tratamento de arquivos corrompidos. Essas garantias são **requisitos próprios do Nexa**.
 
-## 2. Arquitetura do Nexa Collector (proposta, ainda não implementada)
+## 2. Arquitetura do Nexa Collector (implementação parcial; subsistemas pendentes)
 
 ### Separação entre serviço e interface administrativa
 

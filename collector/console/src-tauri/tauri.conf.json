@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Nexa Collector",
+  "version": "0.1.0",
+  "identifier": "com.nexa.collector",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Nexa Collector",
+        "width": 1200,
+        "height": 780,
+        "minWidth": 860,
+        "minHeight": 580,
+        "backgroundColor": "#F5F7FB"
+      }
+    ],
+    "security": {
+      "capabilities": [
+        "main-window"
+      ],
+      "csp": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": false
+  }
+}

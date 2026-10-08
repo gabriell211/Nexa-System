@@ -1,0 +1,10 @@
+{
+  "identifier": "main-window",
+  "description": "Minimal permissions for read-only local console",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default"
+  ]
+}
