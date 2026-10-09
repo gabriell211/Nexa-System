@@ -13,7 +13,7 @@ O servidor Vite faz proxy de `/api` para `127.0.0.1:8080`. Em produção, config
 
 ## Entregue em código
 
-Login e logout, dashboard com contagens reais, listagem/pesquisa/paginação de clientes e impressoras, inclusão/edição/inativação auditada e histórico para administradores. O controle de acesso do menu não substitui as verificações no servidor.
+Login persistente por cookie HttpOnly e CSRF, logout, dashboard com contagens reais, listagem/pesquisa/paginação de clientes e impressoras, inclusão/edição/inativação auditada e histórico para administradores. O controle de acesso do menu não substitui as verificações no servidor.
 
 ## Limitações
 
@@ -21,7 +21,7 @@ Login e logout, dashboard com contagens reais, listagem/pesquisa/paginação de 
 - A lista de clientes no formulário de impressoras consulta até 100 clientes ativos; seleção paginada/autocomplete remoto é trabalho pendente.
 - Portal do cliente, filtros avançados, colunas personalizadas, importações e exportações não estão prontos.
 - Ainda faltam build, testes de browser e homologação com API/PostgreSQL em execução.
-- Não há recuperação de senha, MFA ou controle de sessões no portal. Não liberar produção antes de implementar a autenticação web definitiva.
+- Ainda não há MFA, recuperação de senha, revogação de sessões em outros dispositivos, testes reais de browser/HTTPS e auditoria completa de login. Não liberar produção sem finalizar esses itens.
 
 ## Portal em contêiner
 
@@ -40,3 +40,14 @@ Para uso remoto, publicar atrás de HTTPS e implantar API com um servidor de apl
 ## Estrutura de clientes
 
 Na lista de clientes, clique no nome para entrar em `/clientes/:id/unidades`. O portal carrega unidades, departamentos e centros de custo da API; criação/edição/inativação são exclusivas de papéis autorizados. Dados históricos e regras de negócio não são representados por mocks.
+
+## Login de navegador (entrega 4)
+
+- `GET /api/v1/browser/auth/csrf` inicia a sessão e obtém o token CSRF.
+- `POST /api/v1/browser/auth/login` autentica usuário/tenant e **regenera ID de sessão e CSRF**.
+- `GET /api/v1/browser/auth/me` restaura identidade após recarregar a página.
+- `POST /api/v1/browser/auth/logout` invalida a sessão no servidor.
+- A API administrativa foi exposta em `/api/v1/browser/*` sob middleware `web`, `auth:web`, `nexa.browser-tenant` e as mesmas permissões. Coleta SNMP e API de bearer mantêm seu fluxo separado.
+- O login legado por bearer em `/api/v1/auth/login` retorna 410 por padrão; ativar `NEXA_ALLOW_LEGACY_TOKEN_LOGIN=true` apenas durante uma migração controlada de clientes externos.
+- Para desenvolvimento local **HTTP** configure `SESSION_SECURE_COOKIE=false`, como no exemplo. Em produção HTTPS, defina `SESSION_SECURE_COOKIE=true`. Não coloque o frontend em origem cruzada sem revisar CSRF/CORS e cookies.
+- Sessões persistem no filesystem da API no exemplo, não são persistidas pelo frontend. Em produção utilize storage de sessões compartilhado, HTTPS validado, renovação de secrets, expiração e supervisão da aplicação.

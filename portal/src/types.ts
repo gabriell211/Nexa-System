@@ -1,7 +1,6 @@
 export interface User { id: number; name: string; email?: string }
 export interface Tenant { id: number; name: string; slug?: string }
 export interface Credentials { email: string; password: string; tenant: string }
-export interface LoginResult { token: string; user: User; tenant: Tenant }
 export interface CurrentUser { user: User; tenant: Tenant; role: string }
 export interface Page<T> {
   data: T[];

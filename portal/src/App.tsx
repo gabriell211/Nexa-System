@@ -6,11 +6,11 @@ import {
   Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon,
   Search, ShieldCheck, Trash2, Users, X,
 } from 'lucide-react';
-import { api, queryString, readableError } from './api';
+import { ApiError, api, queryString, readableError, resetCsrf } from './api';
 import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
 import type {
   AuditEntry, Credentials, CurrentUser, Customer, CustomerPayload, Dashboard,
-  LoginResult, Page, Printer, PrinterPayload,
+  Page, Printer, PrinterPayload,
 } from './types';
 
 function formatDate(date: string): string {
@@ -97,7 +97,7 @@ function Login({ onLogin }: { onLogin: (values: Credentials) => Promise<void> })
           {loading ? 'Entrando...' : 'Entrar no painel'} <ArrowRight size={17} aria-hidden="true" />
         </button>
       </form>
-      <p className="auth-caption">Acesso restrito a operadores autorizados. Tokens não são salvos no navegador.</p>
+      <p className="auth-caption">Acesso restrito a operadores autorizados. Sessão protegida por cookie HttpOnly e CSRF.</p>
     </div>
     <div className="auth-visual" aria-hidden="true">
       <div className="visual-glow" />
@@ -115,7 +115,7 @@ const adminRoles = new Set(['owner', 'admin', 'manager']);
 const internalRoles = new Set(['owner', 'admin', 'manager', 'supervisor', 'technician', 'finance', 'warehouse']);
 
 function Shell({ token, identity, onLogout }: {
-  token: string; identity: CurrentUser; onLogout: () => Promise<void>;
+  token: string | null; identity: CurrentUser; onLogout: () => Promise<void>;
 }) {
   const canWrite = adminRoles.has(identity.role);
   const canAudit = ['owner', 'admin'].includes(identity.role);
@@ -244,7 +244,7 @@ function CustomerDialog({ customer, onClose, onSave, pending }: {
   </div>;
 }
 
-function CustomersPage({ token, canWrite }: { token: string; canWrite: boolean }) {
+function CustomersPage({ token, canWrite }: { token: string | null; canWrite: boolean }) {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -372,7 +372,7 @@ function PrinterDialog({ printer, customers, onClose, onSave, pending }: {
   </section></div>;
 }
 
-function PrintersPage({ token, canWrite }: { token: string; canWrite: boolean }) {
+function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boolean }) {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -478,43 +478,58 @@ function AuditPage({ token }: { token: string }) {
   </>;
 }
 
-function PrivatePortal({ session, onLogout }: { session: LoginResult; onLogout: () => Promise<void> }) {
-  const identity = useQuery({
-    queryKey: ['current-user', session.tenant.id],
-    queryFn: () => api<CurrentUser>('/auth/me', session.token),
-    retry: false,
-  });
-
-  if (identity.isPending) return <div className="boot-state"><LoadingState/></div>;
-  if (identity.error) return <main className="blocked"><ErrorMessage error={identity.error}/>
-    <button className="button primary" onClick={() => void onLogout()}>Voltar ao login</button></main>;
-  return <Shell token={session.token} identity={identity.data} onLogout={onLogout}/>;
-}
-
 export function App() {
   const qc = useQueryClient();
-  const [session, setSession] = useState<LoginResult | null>(null);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  const identity = useQuery({
+    queryKey: ['browser-session'],
+    queryFn: async (): Promise<CurrentUser | null> => {
+      try {
+        return await api<CurrentUser>('/auth/me', null);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) return null;
+        throw error;
+      }
+    },
+    retry: false,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  });
 
   async function login(values: Credentials) {
-    const result = await api<LoginResult>('/auth/login', null, {
-      method: 'POST', body: JSON.stringify(values),
+    const result = await api<CurrentUser>('/auth/login', null, {
+      method: 'POST',
+      body: JSON.stringify(values),
     });
+    // Server regenerates session and CSRF on login. Never reuse the old token.
+    resetCsrf();
     qc.clear();
-    setSession(result);
+    qc.setQueryData(['browser-session'], result);
+    setLogoutError(null);
   }
 
   async function logout() {
     try {
-      if (session) await api('/auth/logout', session.token, { method: 'POST' });
-    } catch {
-      // Local logout must work even while the API is unavailable.
-    } finally {
+      await api<{ message: string }>('/auth/logout', null, { method: 'POST' });
+      resetCsrf();
       qc.clear();
-      setSession(null);
+      qc.setQueryData(['browser-session'], null);
+      setLogoutError(null);
+    } catch (error) {
+      // Keep UI authenticated when server logout failed; a reload must not silently reconnect.
+      setLogoutError('Não foi possível encerrar a sessão no servidor: ' + readableError(error));
     }
   }
 
-  if (!session) return <Login onLogin={login}/>;
+  if (identity.isPending) return <div className="boot-state"><LoadingState /></div>;
+  if (identity.error) return <main className="blocked">
+    <ErrorMessage error={identity.error} />
+    <button className="button primary" onClick={() => void identity.refetch()}>Tentar novamente</button>
+  </main>;
+  if (!identity.data) return <Login onLogin={login} />;
 
-  return <BrowserRouter><PrivatePortal session={session} onLogout={logout}/></BrowserRouter>;
+  return <BrowserRouter>
+    {logoutError && <p className="notice error" role="alert">{logoutError}</p>}
+    <Shell token={null} identity={identity.data} onLogout={logout} />
+  </BrowserRouter>;
 }

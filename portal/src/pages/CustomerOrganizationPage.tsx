@@ -133,7 +133,7 @@ function Status({ active }: { active: boolean }) {
   return <span className={'state-pill ' + (active ? 'online' : 'neutral')}>{active ? 'Ativo' : 'Inativo'}</span>;
 }
 
-export function CustomerOrganizationPage({ token, canWrite }: { token: string; canWrite: boolean }) {
+export function CustomerOrganizationPage({ token, canWrite }: { token: string | null; canWrite: boolean }) {
   const params = useParams();
   const customerId = Number(params.id);
   const valid = Number.isSafeInteger(customerId) && customerId > 0;
