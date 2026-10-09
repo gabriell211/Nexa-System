@@ -37,6 +37,8 @@ export interface Printer {
   status: string;
   active: boolean;
   customer?: { id: number; name: string };
+  current_assignment?: { id: number; location_id: number; department_id: number | null;
+    cost_center_id: number | null; assigned_at: string; location?: { id: number; name: string } } | null;
   created_at: string;
   updated_at: string;
 }

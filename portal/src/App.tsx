@@ -4,10 +4,11 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-rou
 import {
   Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList,
   Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon,
-  Search, ShieldCheck, Trash2, Users, X,
+  Search, ShieldCheck, Trash2, Users, X, MapPin,
 } from 'lucide-react';
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
 import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
+import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
 import type {
   AuditEntry, Credentials, CurrentUser, Customer, CustomerPayload, Dashboard,
   Page, Printer, PrinterPayload,
@@ -354,7 +355,7 @@ function PrinterDialog({ printer, customers, onClose, onSave, pending }: {
       <button className="icon-button" type="button" onClick={onClose} aria-label="Fechar"><X size={20}/></button></div>
     <form className="editor-form" onSubmit={(event) => void submit(event)}>
       <label htmlFor="printer-customer">Cliente <em>*</em></label>
-      <select id="printer-customer" required value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
+      <select id="printer-customer" required disabled={printer !== null} value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
         <option value="">Selecione um cliente</option>
         {options.map((customer) => <option key={customer.id} value={customer.id} disabled={!customer.active && customer.id !== printer?.customer_id}>{customer.name}</option>)}
       </select>
@@ -379,6 +380,7 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
   const delayed = useDeferredValue(search);
   const [activeOnly, setActiveOnly] = useState(true);
   const [editing, setEditing] = useState<'new' | Printer | null>(null);
+  const [assignmentPrinter, setAssignmentPrinter] = useState<Printer | null>(null);
   const [notice, setNotice] = useState('');
 
   const listing = useQuery({
@@ -434,19 +436,20 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
       {notice && <p role="status" className="notice success">{notice}</p>}
       {deactivate.error && <ErrorMessage error={deactivate.error}/>}
       {listing.isPending ? <LoadingState/> : listing.error ? <ErrorMessage error={listing.error}/> : listing.data.data.length === 0 ? <EmptyState>Nenhuma impressora encontrada para estes filtros.</EmptyState> : <>
-        <div className="table-wrap"><table><thead><tr><th>Impressora</th><th>Cliente</th><th>IP</th><th>Estado de coleta</th><th>Cadastro</th>{canWrite && <th className="actions-head">Ações</th>}</tr></thead>
+        <div className="table-wrap"><table><thead><tr><th>Impressora</th><th>Cliente</th><th>IP</th><th>Estado de coleta</th><th>Cadastro</th><th className="actions-head">Ações</th></tr></thead>
           <tbody>{listing.data.data.map((printer) => <tr key={printer.id}>
             <td><strong>{printer.manufacturer} {printer.model}</strong><small>{printer.serial_number || 'Série não informada'}</small></td>
             <td>{printer.customer?.name || '—'}</td><td className="mono">{printer.ip_address || '—'}</td>
             <td><span className="state-pill neutral">{printer.status === 'unknown' ? 'Não determinado' : printer.status}</span></td>
             <td><span className={'state-pill ' + (printer.active ? 'online' : 'neutral')}>{printer.active ? 'Ativo' : 'Inativo'}</span></td>
-            {canWrite && <td><div className="table-actions"><button className="icon-button" title="Editar impressora" aria-label={'Editar impressora ' + printer.id} onClick={() => setEditing(printer)}><Pencil size={16}/></button>
+            <td><div className="table-actions"><button className="icon-button" title="Localização e histórico" aria-label={'Localização da impressora ' + printer.id} onClick={() => setAssignmentPrinter(printer)}><MapPin size={16}/></button>{canWrite && <button className="icon-button" title="Editar impressora" aria-label={'Editar impressora ' + printer.id} onClick={() => setEditing(printer)}><Pencil size={16}/></button>
               {printer.active && <button className="icon-button danger-icon" title="Inativar impressora" aria-label={'Inativar impressora ' + printer.id}
                 disabled={deactivate.isPending} onClick={() => remove(printer)}><Trash2 size={16}/></button>}</div></td>}
           </tr>)}</tbody></table></div>
         <Pagination page={pagination.page} pages={pagination.pages} total={pagination.total} onChange={setPage}/>
       </>}
     </section>
+    {assignmentPrinter && <PrinterAssignmentPanel key={assignmentPrinter.id} printer={assignmentPrinter} token={token} canWrite={canWrite} onClose={() => setAssignmentPrinter(null)} />}
     {editing && (customers.isPending ? <div className="modal-overlay"><div className="modal"><LoadingState/></div></div> :
       customers.error ? <div className="modal-overlay"><div className="modal"><ErrorMessage error={customers.error}/><button className="button ghost" onClick={() => setEditing(null)}>Fechar</button></div></div> :
       <PrinterDialog key={editing === 'new' ? 'new' : editing.id}

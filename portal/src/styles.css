@@ -184,3 +184,15 @@ td.mono { font-family: ui-monospace, monospace; }
   .organization-tools .button { width: 100%; }
   .organization-page .organization-subsection-header .inline { flex-wrap: wrap; margin: 0 20px 20px; }
 }
+
+/* Printer relocation history */
+.printer-assignment-modal { width: min(830px, 100%); }
+.printer-assignment-modal .modal-subtitle { color: #8292a5; font-size: 12px; margin: 8px 0 0; }
+.current-location { display: flex; gap: 13px; background: #edf5ff; color: #285ba9; padding: 17px; border-radius: 11px; margin-bottom: 20px; }
+.current-location strong { font-size: 12px; }
+.current-location p { font-size: 12px; color: #5c759a; margin: 4px 0 0; }
+.printer-assignment-modal .editor-form { padding: 18px 0; }
+.assignment-history { border-top: 1px solid #e4ebf5; margin-top: 13px; padding-top: 13px; }
+.assignment-history h3 { font-size: 14px; }
+.assignment-history p { color: #8292a5; font-size: 12px; }
+.assignment-history table { min-width: 550px; }
