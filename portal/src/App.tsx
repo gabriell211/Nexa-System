@@ -442,9 +442,17 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
             <td>{printer.customer?.name || '—'}</td><td className="mono">{printer.ip_address || '—'}</td>
             <td><span className="state-pill neutral">{printer.status === 'unknown' ? 'Não determinado' : printer.status}</span></td>
             <td><span className={'state-pill ' + (printer.active ? 'online' : 'neutral')}>{printer.active ? 'Ativo' : 'Inativo'}</span></td>
-            <td><div className="table-actions"><button className="icon-button" title="Localização e histórico" aria-label={'Localização da impressora ' + printer.id} onClick={() => setAssignmentPrinter(printer)}><MapPin size={16}/></button>{canWrite && <button className="icon-button" title="Editar impressora" aria-label={'Editar impressora ' + printer.id} onClick={() => setEditing(printer)}><Pencil size={16}/></button>
-              {printer.active && <button className="icon-button danger-icon" title="Inativar impressora" aria-label={'Inativar impressora ' + printer.id}
-                disabled={deactivate.isPending} onClick={() => remove(printer)}><Trash2 size={16}/></button>}</div></td>}
+            <td><div className="table-actions">
+              <button className="icon-button" title="Localização e histórico" aria-label={'Localização da impressora ' + printer.id}
+                onClick={() => setAssignmentPrinter(printer)}><MapPin size={16}/></button>
+              {canWrite && <>
+                <button className="icon-button" title="Editar impressora" aria-label={'Editar impressora ' + printer.id}
+                  onClick={() => setEditing(printer)}><Pencil size={16}/></button>
+                {printer.active && <button className="icon-button danger-icon" title="Inativar impressora"
+                  aria-label={'Inativar impressora ' + printer.id} disabled={deactivate.isPending}
+                  onClick={() => remove(printer)}><Trash2 size={16}/></button>}
+              </>}
+            </div></td>
           </tr>)}</tbody></table></div>
         <Pagination page={pagination.page} pages={pagination.pages} total={pagination.total} onChange={setPage}/>
       </>}
