@@ -66,3 +66,31 @@ Implementado em código na branch de trabalho:
 - A lista do seletor de clientes no formulário de impressoras ainda é limitada aos primeiros 100 cadastros ativos.
 
 **Todos os requisitos NX do README continuam com validação final pendente**, mesmo quando partes do fluxo já têm código.
+
+## Entrega 3: organização de clientes — 09/10/2026
+
+### Implementado em código
+
+- `NX-003` (parcial): unidades/filiais de cliente com nome, código, documento fiscal opcional, endereço, ativação/inativação e consulta por cliente.
+- `NX-004` (parcial): departamentos com responsável/contato vinculados à unidade e centros de custo com código único por cliente.
+- `NX-006` (parcial): inativação lógica de unidades, departamentos e centros de custo; histórico preservado.
+- `NX-012` (parcial): auditoria de criação, atualização e inativação para as novas entidades.
+- `NX-016/017` (parcial): middleware de autorização por perfil e isolamento por tenant + cliente + unidade nas consultas e mudanças.
+- Chaves estrangeiras compostas impedem vinculação cruzada na base de dados.
+- Cadastro em cliente inativo proibido; não é possível inativar unidade com departamentos ainda ativos.
+- Interface administrativa em `/clientes/:id/unidades` com unidades, departamentos e centros de custo persistidos.
+- Cenários de testes de segregação, validação, CRUD, regras de inativação e integridade relacional.
+- CI agora também solicita testes com PostgreSQL 17, além de SQLite.
+
+### Ainda pendente
+
+- `NX-003`: histórico temporal de localização e transferência, regras fiscais próprias por filial, geocodificação, normalização fiscal/CEP e integração com equipamento/contrato.
+- `NX-004`: setores hierárquicos, relações explícitas entre departamentos e centros de custo, permissões por local, responsáveis vinculados a usuários e histórico temporal.
+- `NX-005`: vínculos temporais impressora/contrato/responsável/local e trilhas de realocação.
+- `NX-009/010`: expediente e módulos por localização.
+- RBAC granular por ação/recurso, escopo de carteira, portal do cliente e aprovação de alteração fiscal.
+- Proteção de concorrência específica para alterações de status de unidades em alta demanda.
+- Testes de navegação em navegador real, acessibilidade automatizada, compatibilidade de hardware e migrações com dados já populados em PostgreSQL.
+- Tokens web ainda transitórios; autenticação web por cookies HttpOnly, MFA, revogação de sessões e CSRF permanecem exigidos para produção.
+
+Todos os requisitos 324 NX e 62 QA do README continuam sem marcação de aceite integral.
