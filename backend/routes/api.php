@@ -4,7 +4,10 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\V1\AuditEntryController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CollectorIngestController;
+use App\Http\Controllers\Api\V1\CostCenterController;
 use App\Http\Controllers\Api\V1\CustomerController;
+use App\Http\Controllers\Api\V1\CustomerDepartmentController;
+use App\Http\Controllers\Api\V1\CustomerLocationController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\PrinterController;
 use Illuminate\Support\Facades\Route;
@@ -21,11 +24,19 @@ Route::prefix('v1')->group(function (): void {
             Route::get('/dashboard', DashboardController::class);
             Route::apiResource('customers', CustomerController::class)->only(['index', 'show']);
             Route::apiResource('printers', PrinterController::class)->only(['index', 'show']);
+            Route::apiResource('customers.locations', CustomerLocationController::class)->only(['index', 'show']);
+            Route::apiResource('customers.locations.departments', CustomerDepartmentController::class)->only(['index', 'show']);
+            Route::apiResource('customers.cost-centers', CostCenterController::class)
+                ->parameters(['cost-centers' => 'costCenter'])->only(['index', 'show']);
         });
 
         Route::middleware('nexa.roles:owner,admin,manager')->group(function (): void {
             Route::apiResource('customers', CustomerController::class)->only(['store', 'update', 'destroy']);
             Route::apiResource('printers', PrinterController::class)->only(['store', 'update', 'destroy']);
+            Route::apiResource('customers.locations', CustomerLocationController::class)->only(['store', 'update', 'destroy']);
+            Route::apiResource('customers.locations.departments', CustomerDepartmentController::class)->only(['store', 'update', 'destroy']);
+            Route::apiResource('customers.cost-centers', CostCenterController::class)
+                ->parameters(['cost-centers' => 'costCenter'])->only(['store', 'update', 'destroy']);
         });
 
         Route::get('/audit-entries', AuditEntryController::class)
