@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\PrinterRequest;
+use Illuminate\Database\Eloquent\Builder;
 use App\Http\Resources\PrinterResource;
 use App\Services\PrinterService;
 use Illuminate\Http\JsonResponse;
@@ -18,17 +19,32 @@ final class PrinterController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $tenant = $request->attributes->get('nexa_tenant');
+        $filters = $request->validate([
+            'q' => ['sometimes', 'string', 'max:100'],
+            'page' => ['sometimes', 'integer', 'min:1'],
+            'per_page' => ['sometimes', 'integer', 'between:1,100'],
+            'active_only' => ['sometimes', 'boolean'],
+        ]);
+        $term = mb_strtolower(trim($filters['q'] ?? ''));
 
         return PrinterResource::collection(
             $tenant->printers()
                 ->with('customer:id,name')
-                ->when($request->boolean('active_only'), fn ($query) => $query->where('active', true))
+                ->when($request->boolean('active_only'), fn (Builder $query) => $query->where('active', true))
+                ->when($term !== '', function (Builder $query) use ($term): void {
+                    $query->where(function (Builder $match) use ($term): void {
+                        $like = '%'.$term.'%';
+                        $match->whereRaw('LOWER(manufacturer) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(model) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(serial_number) LIKE ?', [$like]);
+                    });
+                })
                 ->orderByDesc('id')
-                ->paginate(25)
+                ->paginate($filters['per_page'] ?? 25)
         );
     }
 
-    public function store(PrinterRequest $request): PrinterResource
+    public function store(PrinterRequest $request): JsonResponse
     {
         $printer = $this->printers->create(
             $request->attributes->get('nexa_tenant'),
@@ -36,7 +52,7 @@ final class PrinterController extends Controller
             $request->validated()
         );
 
-        return new PrinterResource($printer->load('customer:id,name'));
+        return (new PrinterResource($printer->load('customer:id,name')))->response()->setStatusCode(201);
     }
 
     public function show(Request $request, int $printer): PrinterResource
