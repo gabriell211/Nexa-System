@@ -162,4 +162,45 @@ final class CustomerOrganizationTest extends TestCase
             'name'=>'Invalid', 'active'=>true, 'created_at'=>now(), 'updated_at'=>now(),
         ]);
     }
+
+    public function test_dashboard_organization_counts_are_scoped_to_tenant(): void
+    {
+        $tenantA = Tenant::query()->create(['name'=>'A', 'slug'=>'a']);
+        $tenantB = Tenant::query()->create(['name'=>'B', 'slug'=>'b']);
+        $a = $tenantA->customers()->create(['name'=>'A customer']);
+        $b = $tenantB->customers()->create(['name'=>'B customer']);
+        $aLocation = $a->locations()->create(['tenant_id'=>$tenantA->id,'name'=>'A location']);
+        $bLocation = $b->locations()->create(['tenant_id'=>$tenantB->id,'name'=>'B location']);
+        $aLocation->departments()->create([
+            'tenant_id'=>$tenantA->id, 'customer_id'=>$a->id, 'name'=>'Department A',
+        ]);
+        $bLocation->departments()->create([
+            'tenant_id'=>$tenantB->id, 'customer_id'=>$b->id, 'name'=>'Department B',
+        ]);
+        $a->costCenters()->create(['tenant_id'=>$tenantA->id,'code'=>'A','name'=>'Center A']);
+        $b->costCenters()->create(['tenant_id'=>$tenantB->id,'code'=>'B','name'=>'Center B']);
+
+        $this->withToken($this->token($tenantA))->getJson('/api/v1/dashboard')
+            ->assertOk()
+            ->assertJsonPath('locations', 1)
+            ->assertJsonPath('departments', 1)
+            ->assertJsonPath('cost_centers', 1);
+    }
+
+    public function test_department_route_rejects_a_different_location_of_the_same_customer(): void
+    {
+        $tenant = Tenant::query()->create(['name'=>'Provider','slug'=>'provider']);
+        $customer = $tenant->customers()->create(['name'=>'Factory']);
+        $first = $customer->locations()->create(['tenant_id'=>$tenant->id,'name'=>'First']);
+        $second = $customer->locations()->create(['tenant_id'=>$tenant->id,'name'=>'Second']);
+        $department = $first->departments()->create([
+            'tenant_id'=>$tenant->id, 'customer_id'=>$customer->id, 'name'=>'First only',
+        ]);
+        $token = $this->token($tenant);
+        $this->withToken($token)->getJson("/api/v1/customers/{$customer->id}/locations/{$second->id}/departments/{$department->id}")
+            ->assertNotFound();
+        $this->withToken($token)->patchJson("/api/v1/customers/{$customer->id}/locations/{$second->id}/departments/{$department->id}", ['name'=>'Hijack'])
+            ->assertNotFound();
+        $this->assertDatabaseHas('customer_departments', ['id'=>$department->id,'name'=>'First only']);
+    }
 }
