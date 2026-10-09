@@ -65,6 +65,31 @@ final class CollectorIngestController extends Controller
 
         DB::transaction(function () use ($agent, $rows, $now): void {
             DB::table('printer_readings')->insertOrIgnore($rows);
+
+            // A repeated UUID is an ACK only when it represents the exact same reading.
+            // Check after the insert to account for concurrent retries on PostgreSQL.
+            $stored = DB::table('printer_readings')
+                ->where('tenant_id', $agent->tenant_id)
+                ->whereIn('sample_id', array_column($rows, 'sample_id'))
+                ->get()
+                ->keyBy('sample_id');
+
+            foreach ($rows as $row) {
+                $existing = $stored->get($row['sample_id']);
+                $matches = $existing
+                    && (int) $existing->printer_id === (int) $row['printer_id']
+                    && ($existing->meter_total === null ? $row['meter_total'] === null : (string) $existing->meter_total === (string) $row['meter_total'])
+                    && ($existing->meter_mono === null ? $row['meter_mono'] === null : (string) $existing->meter_mono === (string) $row['meter_mono'])
+                    && ($existing->meter_color === null ? $row['meter_color'] === null : (string) $existing->meter_color === (string) $row['meter_color'])
+                    && CarbonImmutable::parse($existing->collected_at, 'UTC')->equalTo($row['collected_at']);
+
+                if (!$matches) {
+                    throw ValidationException::withMessages([
+                        'samples' => 'Sample identifier conflicts with a previously accepted reading.',
+                    ]);
+                }
+            }
+
             $agent->update(['last_seen_at' => $now]);
         });
 
