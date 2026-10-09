@@ -193,6 +193,9 @@ function DashboardPage({ token }: { token: string }) {
         <div className="metric-card"><div className="metric-icon blue"><Users size={23}/></div><span>Clientes cadastrados</span><strong>{stats.data.customers}</strong><small>Cadastros persistidos</small></div>
         <div className="metric-card"><div className="metric-icon violet"><PrinterIcon size={23}/></div><span>Impressoras cadastradas</span><strong>{stats.data.printers}</strong><small>Inventário da empresa</small></div>
         <div className="metric-card"><div className="metric-icon green"><Activity size={23}/></div><span>Com leituras registradas</span><strong>{stats.data.printers_with_readings}</strong><small>Amostras presentes no banco</small></div>
+        <div className="metric-card"><div className="metric-icon blue"><Building2 size={23}/></div><span>Unidades cadastradas</span><strong>{stats.data.locations}</strong><small>Estrutura organizacional</small></div>
+        <div className="metric-card"><div className="metric-icon violet"><Users size={23}/></div><span>Departamentos</span><strong>{stats.data.departments}</strong><small>Cadastros por unidade</small></div>
+        <div className="metric-card"><div className="metric-icon green"><Database size={23}/></div><span>Centros de custo</span><strong>{stats.data.cost_centers}</strong><small>Cadastros por cliente</small></div>
       </div>
       <div className="info-panel"><ShieldCheck size={22} aria-hidden="true"/><div><strong>Integridade dos dados</strong><p>{stats.data.note}</p><p>Nenhum indicador sem coleta comprovada será exibido como telemetria em tempo real.</p></div></div>
     </>}

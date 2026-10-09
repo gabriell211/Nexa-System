@@ -14,6 +14,9 @@ export interface Dashboard {
   customers: number;
   printers: number;
   printers_with_readings: number;
+  locations: number;
+  departments: number;
+  cost_centers: number;
   note: string;
 }
 export interface Customer {
