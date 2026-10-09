@@ -20,15 +20,23 @@ final class PrinterAssignmentService
     public function assign(Tenant $tenant, User $actor, int $printerId, array $input): PrinterAssignment
     {
         return DB::transaction(function () use ($tenant, $actor, $printerId, $input): PrinterAssignment {
-            $printer = $tenant->printers()->lockForUpdate()->findOrFail($printerId);
-            if (!$printer->active || !$printer->customer()->where('active', true)->exists()) {
-                throw ValidationException::withMessages(['printer' => 'Impressora ou cliente inativo.']);
+            // Lock in the same order as organizational changes: customer, location,
+            // then printer. This closes the race between a relocation and location
+            // deactivation, and serializes concurrent relocations of one device.
+            $candidate = $tenant->printers()->findOrFail($printerId);
+            $customer = $tenant->customers()->lockForUpdate()->findOrFail($candidate->customer_id);
+            if (!$customer->active) {
+                throw ValidationException::withMessages(['printer' => 'Cliente inativo.']);
             }
-            $scope = ['tenant_id' => $tenant->id, 'customer_id' => $printer->customer_id];
+            $scope = ['tenant_id' => $tenant->id, 'customer_id' => $customer->id];
             $location = CustomerLocation::query()->where($scope)
-                ->whereKey($input['location_id'])->where('active', true)->first();
-            if ($location === null) {
+                ->whereKey($input['location_id'])->lockForUpdate()->first();
+            if ($location === null || !$location->active) {
                 throw ValidationException::withMessages(['location_id' => 'Unidade inválida para este cliente.']);
+            }
+            $printer = $tenant->printers()->lockForUpdate()->findOrFail($printerId);
+            if (!$printer->active || $printer->customer_id !== $customer->id) {
+                throw ValidationException::withMessages(['printer' => 'Impressora ou cliente inválido.']);
             }
 
             $departmentId = $input['department_id'] ?? null;
