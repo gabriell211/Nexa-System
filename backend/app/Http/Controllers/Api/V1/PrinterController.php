@@ -29,7 +29,7 @@ final class PrinterController extends Controller
 
         return PrinterResource::collection(
             $tenant->printers()
-                ->with('customer:id,name')
+                ->with(['customer:id,name','currentAssignment.location:id,name'])
                 ->when($request->boolean('active_only'), fn (Builder $query) => $query->where('active', true))
                 ->when($term !== '', function (Builder $query) use ($term): void {
                     $query->where(function (Builder $match) use ($term): void {
@@ -52,13 +52,13 @@ final class PrinterController extends Controller
             $request->validated()
         );
 
-        return (new PrinterResource($printer->load('customer:id,name')))->response()->setStatusCode(201);
+        return (new PrinterResource($printer->load(['customer:id,name','currentAssignment.location:id,name'])))->response()->setStatusCode(201);
     }
 
     public function show(Request $request, int $printer): PrinterResource
     {
         $item = $request->attributes->get('nexa_tenant')->printers()
-            ->with(['customer:id,name', 'readings' => fn ($query) => $query->orderByDesc('collected_at')->limit(20)])
+            ->with(['customer:id,name', 'currentAssignment.location:id,name', 'readings' => fn ($query) => $query->orderByDesc('collected_at')->limit(20)])
             ->findOrFail($printer);
 
         return new PrinterResource($item);

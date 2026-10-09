@@ -74,6 +74,12 @@ final class CustomerOrganizationService
                     'active' => 'Inative os departamentos desta unidade antes de inativá-la.',
                 ]);
             }
+            if (($data['active'] ?? $location->active) === false &&
+                DB::table('printer_assignments')->where('location_id', $location->id)->whereNull('released_at')->exists()) {
+                throw ValidationException::withMessages([
+                    'active' => 'Transfira ou libere as impressoras desta unidade antes de inativá-la.',
+                ]);
+            }
             $before = $location->only(self::LOCATION_FIELDS);
             $location->update($data);
             $this->auditChange($tenant, $actor, 'customer_location', $location, self::LOCATION_FIELDS, $before);
@@ -115,6 +121,12 @@ final class CustomerOrganizationService
                 $this->assertActiveCustomer($customer);
                 $this->assertActiveLocation($location);
             }
+            if (($data['active'] ?? $department->active) === false &&
+                DB::table('printer_assignments')->where('department_id', $department->id)->whereNull('released_at')->exists()) {
+                throw ValidationException::withMessages([
+                    'active' => 'Transfira as impressoras vinculadas antes de inativar o departamento.',
+                ]);
+            }
             $before = $department->only(self::DEPARTMENT_FIELDS);
             $department->update($data);
             $this->auditChange($tenant, $actor, 'customer_department', $department, self::DEPARTMENT_FIELDS, $before);
@@ -147,6 +159,12 @@ final class CustomerOrganizationService
             $center = $customer->costCenters()->lockForUpdate()->findOrFail($centerId);
             if ($data['active'] ?? $center->active) {
                 $this->assertActiveCustomer($customer);
+            }
+            if (($data['active'] ?? $center->active) === false &&
+                DB::table('printer_assignments')->where('cost_center_id', $center->id)->whereNull('released_at')->exists()) {
+                throw ValidationException::withMessages([
+                    'active' => 'Transfira as impressoras vinculadas antes de inativar o centro de custo.',
+                ]);
             }
             $before = $center->only(self::CENTER_FIELDS);
             $center->update($data);

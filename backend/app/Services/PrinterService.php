@@ -7,6 +7,7 @@ use App\Models\Printer;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class PrinterService
 {
@@ -28,6 +29,13 @@ final class PrinterService
     {
         return DB::transaction(function () use ($tenant, $actor, $id, $data): Printer {
             $printer = $tenant->printers()->lockForUpdate()->findOrFail($id);
+            if (array_key_exists('customer_id', $data) &&
+                (int) $data['customer_id'] !== (int) $printer->customer_id) {
+                throw ValidationException::withMessages([
+                    'customer_id' => 'Transferência entre clientes exige processo específico e auditado.',
+                ]);
+            }
+
             $before = $printer->only(self::FIELDS);
             $printer->update($data);
             $printer->refresh();
@@ -46,6 +54,11 @@ final class PrinterService
             $printer = $tenant->printers()->lockForUpdate()->findOrFail($id);
             if (!$printer->active) {
                 return;
+            }
+            if ($printer->assignments()->whereNull('released_at')->exists()) {
+                throw ValidationException::withMessages([
+                    'printer' => 'Libere a localização da impressora antes de inativá-la.',
+                ]);
             }
 
             $before = $printer->only(self::FIELDS);

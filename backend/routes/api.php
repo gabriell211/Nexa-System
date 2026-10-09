@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\CustomerDepartmentController;
 use App\Http\Controllers\Api\V1\CustomerLocationController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\PrinterController;
+use App\Http\Controllers\Api\V1\PrinterAssignmentController;
 use Illuminate\Support\Facades\Route;
 
 // Identical resources, separate authentication transports. Web requests receive
@@ -20,6 +21,7 @@ $registerBackoffice = static function (): void {
         Route::get('/dashboard', DashboardController::class);
         Route::apiResource('customers', CustomerController::class)->only(['index', 'show']);
         Route::apiResource('printers', PrinterController::class)->only(['index', 'show']);
+        Route::get('/printers/{printer}/assignments', [PrinterAssignmentController::class, 'index']);
         Route::apiResource('customers.locations', CustomerLocationController::class)->only(['index', 'show']);
         Route::apiResource('customers.locations.departments', CustomerDepartmentController::class)->only(['index', 'show']);
         Route::apiResource('customers.cost-centers', CostCenterController::class)
@@ -29,6 +31,8 @@ $registerBackoffice = static function (): void {
     Route::middleware('nexa.roles:owner,admin,manager')->group(function (): void {
         Route::apiResource('customers', CustomerController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('printers', PrinterController::class)->only(['store', 'update', 'destroy']);
+        Route::post('/printers/{printer}/assignments', [PrinterAssignmentController::class, 'store']);
+        Route::post('/printers/{printer}/unassign', [PrinterAssignmentController::class, 'release']);
         Route::apiResource('customers.locations', CustomerLocationController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('customers.locations.departments', CustomerDepartmentController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('customers.cost-centers', CostCenterController::class)

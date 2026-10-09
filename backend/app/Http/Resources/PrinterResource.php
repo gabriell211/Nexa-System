@@ -19,6 +19,11 @@ final class PrinterResource extends JsonResource
             'ip_address' => $this->ip_address,
             'status' => $this->status,
             'active' => $this->active,
+            'current_assignment' => $this->whenLoaded('currentAssignment',
+                fn () => $this->currentAssignment
+                    ? (new PrinterAssignmentResource($this->currentAssignment))->toArray($request)
+                    : null
+            ),
             'customer' => $this->whenLoaded('customer', fn (): array => [
                 'id' => $this->customer->id,
                 'name' => $this->customer->name,

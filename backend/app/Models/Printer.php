@@ -6,6 +6,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 final class Printer extends Model
 {
@@ -14,4 +15,9 @@ final class Printer extends Model
     public function customer(): BelongsTo { return $this->belongsTo(Customer::class); }
     public function tenant(): BelongsTo { return $this->belongsTo(Tenant::class); }
     public function readings(): HasMany { return $this->hasMany(PrinterReading::class); }
+    public function assignments(): HasMany { return $this->hasMany(PrinterAssignment::class); }
+    public function currentAssignment(): HasOne
+    {
+        return $this->hasOne(PrinterAssignment::class)->whereNull('released_at');
+    }
 }
