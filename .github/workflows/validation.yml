@@ -1,0 +1,68 @@
+name: Nexa validation
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexa-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  laravel:
+    name: Laravel API tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_sqlite, pdo_pgsql, bcmath
+          coverage: none
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare application key
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Run feature tests
+        run: php artisan test
+
+  portal:
+    name: React portal build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck and bundle
+        run: npm run build
+
+  collector:
+    name: Rust collector core tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test collector core and daemon
+        run: cargo test --workspace --exclude nexa-collector-console --exclude nexa-collector-app
