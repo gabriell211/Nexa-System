@@ -51,3 +51,13 @@ Na lista de clientes, clique no nome para entrar em `/clientes/:id/unidades`. O 
 - O login legado por bearer em `/api/v1/auth/login` retorna 410 por padrão; ativar `NEXA_ALLOW_LEGACY_TOKEN_LOGIN=true` apenas durante uma migração controlada de clientes externos.
 - Para desenvolvimento local **HTTP** configure `SESSION_SECURE_COOKIE=false`, como no exemplo. Em produção HTTPS, defina `SESSION_SECURE_COOKIE=true`. Não coloque o frontend em origem cruzada sem revisar CSRF/CORS e cookies.
 - Sessões persistem no filesystem da API no exemplo, não são persistidas pelo frontend. Em produção utilize storage de sessões compartilhado, HTTPS validado, renovação de secrets, expiração e supervisão da aplicação.
+
+## Histórico e alocação de impressoras
+
+No parque, a ação de localização abre um painel com a unidade, departamento e centro de custo vinculados, histórico de instalações/retiradas e motivo da movimentação. Regras de vinculação e integridade são validadas pelo Laravel e também pelo PostgreSQL.
+
+- Instalação e mudança de local não apagam histórico. Apenas uma alocação aberta é permitida por impressora.
+- Transferência entre clientes não é feita editando `customer_id`, exige um processo próprio de migração de ativos/contratos, ainda pendente.
+- Antes de inativar unidade, departamento ou centro de custo com impressoras, mova ou libere os equipamentos vinculados.
+- As alocações são sempre registradas com data de ação atual; sem inventar datas históricas.
+- O painel atualmente limita seletores aos 100 primeiros locais/centros ativos, e o histórico às 25 movimentações mais recentes. Busca paginada e seleção remota permanecem pendentes.

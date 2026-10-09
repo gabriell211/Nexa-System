@@ -111,3 +111,19 @@ Implementado no código:
 **Ainda não homologado**: MFA, recuperação de senha, controle de sessões por dispositivo, login com SSO, testes reais de browser em HTTPS, CSRF end-to-end com navegador, rotação de chave e observabilidade de autenticação. A API herdada de bearer permanece disponível somente para tokens emitidos anteriormente ou via migração controlada.
 
 A sessão de desenvolvimento usa armazenamento `file`; produção exige storage compartilhado e HTTPS. Nada muda na outbox local Rust nem em seu token independente.
+
+## Entrega 5: alocação temporal de impressoras (09/10/2026)
+
+Implementado em código e com testes de integração:
+- Modelo `printer_assignments` com cliente, unidade, departamento, centro de custo, data de instalação, data de retirada, autor e motivo.
+- Chaves estrangeiras compostas impedem vinculação incorreta entre tenant, cliente, impressora e unidades.
+- Índice parcial único (SQLite/PostgreSQL) impede duas alocações ativas para uma impressora, inclusive em corrida entre requisições.
+- Operação transacional de instalação/remanejamento fecha a alocação anterior e abre a nova; retirada encerra período sem destruir histórico.
+- API de consulta paginada `GET /api/v1/browser/printers/{id}/assignments`; criação `POST /assignments`; retirada `POST /unassign` com motivo.
+- Serviços impedem troca direta do cliente de uma impressora, desativação de impressora instalada e inativação de unidade/departamento/centro de custo ocupados.
+- Listagens de impressoras retornam a alocação atual por eager loading e a interface apresenta mudança de local e histórico real.
+- Testes de segregação por cliente, integridade, status, posição única, auditoria e permissões.
+
+**Pendente para NX-005/NX-053**: posse vs propriedade, transferência entre clientes, histórico de responsáveis, vínculos com contratos, alocação retroativa com validação de períodos, duplicidade de série/identificação física e reconciliation de produção por período de instalação.
+
+A implementação atual registra eventos a partir da data da ação (não aceita retroatividade). A alocação existente de impressoras anteriores não é criada artificialmente por backfill; somente mudanças explicitamente registradas passam a ter histórico.
