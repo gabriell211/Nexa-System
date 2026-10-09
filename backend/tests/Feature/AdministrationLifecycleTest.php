@@ -76,6 +76,9 @@ final class AdministrationLifecycleTest extends TestCase
         $secondToken = $this->authorizedUser($second, 'owner');
 
         $this->withToken($firstToken)->postJson('/api/v1/customers', ['name' => 'Private'])->assertSuccessful();
+        // PHPUnit reuses the Laravel application; reset the auth guard to emulate
+        // a separate request with the other tenant's bearer token.
+        \Illuminate\Support\Facades\Auth::forgetGuards();
         $this->withToken($secondToken)->getJson('/api/v1/audit-entries')
             ->assertOk()->assertJsonCount(0, 'data');
     }

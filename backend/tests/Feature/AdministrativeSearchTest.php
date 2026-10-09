@@ -16,7 +16,7 @@ final class AdministrativeSearchTest extends TestCase
     {
         $user = User::create([
             'name' => 'Operator',
-            'email' => 'operator+'.(string) $tenant->id.'@example.test',
+            'email' => (string) \Illuminate\Support\Str::uuid().'@example.test',
             'password' => 'secure-test-password',
         ]);
         $tenant->users()->attach($user->id, ['role' => 'admin']);
