@@ -164,3 +164,23 @@ td.mono { font-family: ui-monospace, monospace; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
 }
+
+/* Estrutura organizacional do cliente */
+.entity-link { color: #326dda; text-decoration: none; }
+.entity-link:hover { color: #194fba; text-decoration: underline; }
+.organization-page .back-link { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 22px; font-size: 12px; color: #426dba; font-weight: 700; }
+.organization-tabs { display: flex; border-bottom: 1px solid #e3eaf5; gap: 8px; margin-bottom: 15px; overflow-x: auto; }
+.organization-tab { border: none; background: transparent; color: #6e8096; display: inline-flex; align-items: center; gap: 9px; white-space: nowrap; padding: 15px 20px; font-size: 13px; font-weight: 700; border-bottom: 3px solid transparent; }
+.organization-tab.selected { color: #3375e7; border-bottom-color: #3375e7; }
+.organization-tools { background: white; border: 1px solid #e5ecf5; border-radius: 12px; margin-bottom: 20px; }
+.organization-page .data-card { margin-top: 16px; }
+.organization-section-title { font-size: 15px; margin: 0; padding: 21px 22px; display: flex; align-items: center; gap: 9px; color: #32465d; }
+.organization-subsection-header { display: flex; gap: 15px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.organization-page td .table-actions { justify-content: flex-end; flex-wrap: wrap; }
+.organization-page .field-block { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.organization-page .field-block input { min-width: 0; }
+@media(max-width: 750px) {
+  .organization-tools { flex-direction: column; align-items: stretch; }
+  .organization-tools .button { width: 100%; }
+  .organization-page .organization-subsection-header .inline { flex-wrap: wrap; margin: 0 20px 20px; }
+}
