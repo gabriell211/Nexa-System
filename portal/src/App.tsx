@@ -351,7 +351,7 @@ function PrinterDialog({ printer, customers, onClose, onSave, pending }: {
       <label htmlFor="printer-customer">Cliente <em>*</em></label>
       <select id="printer-customer" required value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
         <option value="">Selecione um cliente</option>
-        {options.map((customer) => <option key={customer.id} value={customer.id} disabled={!customer.active}>{customer.name}</option>)}
+        {options.map((customer) => <option key={customer.id} value={customer.id} disabled={!customer.active && customer.id !== printer?.customer_id}>{customer.name}</option>)}
       </select>
       <div className="form-columns"><div><label htmlFor="printer-brand">Fabricante <em>*</em></label>
         <input id="printer-brand" required maxLength={100} value={manufacturer} onChange={(event) => setManufacturer(event.target.value)}/></div>
@@ -388,10 +388,16 @@ function PrintersPage({ token, canWrite }: { token: string; canWrite: boolean })
   });
 
   const save = useMutation({
-    mutationFn: (values: PrinterPayload) => api(
-      '/printers' + (editing && editing !== 'new' ? '/' + editing.id : ''), token,
-      { method: editing === 'new' ? 'POST' : 'PATCH', body: JSON.stringify(values) },
-    ),
+    mutationFn: (values: PrinterPayload) => {
+      const payload = editing && editing !== 'new' && values.customer_id === editing.customer_id
+        ? { manufacturer: values.manufacturer, model: values.model,
+            serial_number: values.serial_number, ip_address: values.ip_address }
+        : values;
+      return api(
+        '/printers' + (editing && editing !== 'new' ? '/' + editing.id : ''), token,
+        { method: editing === 'new' ? 'POST' : 'PATCH', body: JSON.stringify(payload) },
+      );
+    },
     onSuccess: async () => {
       setEditing(null); setNotice('Impressora salva com sucesso.');
       await qc.invalidateQueries({ queryKey: ['printers'] });
@@ -495,6 +501,8 @@ export function App() {
   async function logout() {
     try {
       if (session) await api('/auth/logout', session.token, { method: 'POST' });
+    } catch {
+      // Local logout must work even while the API is unavailable.
     } finally {
       qc.clear();
       setSession(null);
