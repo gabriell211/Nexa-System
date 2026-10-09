@@ -1,12 +1,13 @@
 import { useDeferredValue, useState, type FormEvent, type ReactNode } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BrowserRouter, NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList,
   Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon,
   Search, ShieldCheck, Trash2, Users, X,
 } from 'lucide-react';
 import { api, queryString, readableError } from './api';
+import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
 import type {
   AuditEntry, Credentials, CurrentUser, Customer, CustomerPayload, Dashboard,
   LoginResult, Page, Printer, PrinterPayload,
@@ -160,6 +161,7 @@ function Shell({ token, identity, onLogout }: {
         <Routes>
           <Route path="/dashboard" element={<DashboardPage token={token} />} />
           <Route path="/clientes" element={<CustomersPage token={token} canWrite={canWrite} />} />
+          <Route path="/clientes/:id/unidades" element={<CustomerOrganizationPage token={token} canWrite={canWrite} />} />
           <Route path="/parque" element={<PrintersPage token={token} canWrite={canWrite} />} />
           {canAudit && <Route path="/auditoria" element={<AuditPage token={token} />} />}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -295,7 +297,7 @@ function CustomersPage({ token, canWrite }: { token: string; canWrite: boolean }
       {listing.isPending ? <LoadingState/> : listing.error ? <ErrorMessage error={listing.error}/> : listing.data.data.length === 0 ? <EmptyState>Nenhum cliente encontrado para os filtros atuais.</EmptyState> : <>
         <div className="table-wrap"><table><thead><tr><th>Cliente</th><th>Documento</th><th>E-mail</th><th>Situação</th>{canWrite && <th className="actions-head">Ações</th>}</tr></thead>
           <tbody>{listing.data.data.map((customer) => <tr key={customer.id}>
-            <td><strong>{customer.name}</strong><small>#{customer.id}</small></td><td>{customer.document || '—'}</td>
+            <td><strong><Link className="entity-link" to={'/clientes/' + customer.id + '/unidades'} title="Ver unidades, departamentos e centros de custo">{customer.name}</Link></strong><small>#{customer.id} • Ver unidades e centros de custo</small></td><td>{customer.document || '—'}</td>
             <td>{customer.email || '—'}</td><td><span className={'state-pill ' + (customer.active ? 'online' : 'neutral')}>{customer.active ? 'Ativo' : 'Inativo'}</span></td>
             {canWrite && <td><div className="table-actions"><button className="icon-button" title="Editar cliente" aria-label={'Editar ' + customer.name} onClick={() => setEditing(customer)}><Pencil size={16}/></button>
               {customer.active && <button className="icon-button danger-icon" title="Inativar cliente" aria-label={'Inativar ' + customer.name}
