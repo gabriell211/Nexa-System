@@ -94,3 +94,20 @@ Implementado em código na branch de trabalho:
 - Tokens web ainda transitórios; autenticação web por cookies HttpOnly, MFA, revogação de sessões e CSRF permanecem exigidos para produção.
 
 Todos os requisitos 324 NX e 62 QA do README continuam sem marcação de aceite integral.
+
+## Entrega 4: autenticação web persistente (09/10/2026)
+
+Implementado no código:
+- Session guard web do Laravel separado do bearer-token/Collector.
+- Cookie de sessão HttpOnly com SameSite=Lax; Secure controlado por configuração do ambiente.
+- GET CSRF sem cache, POST login com verificação de usuário, tenant e associação ativa.
+- Rotação de sessão e token CSRF ao entrar; invalidação integral ao sair.
+- Identidade consultada no backend ao recarregar a página, sem bearer token em JS/localStorage.
+- Mesma superfície administrativa com `/api/v1/browser/*`; middleware web + auth:web + tenant em sessão + perfis de operador.
+- Login antigo que cria bearer-token desabilitado por padrão (retorna 410), com chave de migração temporária.
+- Regras para bloqueio de membership removido, tenant e usuário inativos no middleware de navegação.
+- Testes Feature para sessão, CSRF, login, logout, privilégios e isolamento.
+
+**Ainda não homologado**: MFA, recuperação de senha, controle de sessões por dispositivo, login com SSO, testes reais de browser em HTTPS, CSRF end-to-end com navegador, rotação de chave e observabilidade de autenticação. A API herdada de bearer permanece disponível somente para tokens emitidos anteriormente ou via migração controlada.
+
+A sessão de desenvolvimento usa armazenamento `file`; produção exige storage compartilhado e HTTPS. Nada muda na outbox local Rust nem em seu token independente.
