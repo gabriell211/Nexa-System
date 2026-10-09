@@ -98,6 +98,16 @@ jobs:
       - name: Typecheck and bundle
         run: npm run build
 
+  portal-image:
+    name: Portal container build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production portal image
+        run: docker build -t nexa-portal:test ./portal
+      - name: Validate nginx configuration
+        run: docker run --rm --add-host api:127.0.0.1 nexa-portal:test nginx -t
+
   collector:
     name: Rust collector core tests
     runs-on: ubuntu-latest
