@@ -180,7 +180,7 @@ function PageTitle({ kicker, title, subtitle, action }: {
   </div>;
 }
 
-function DashboardPage({ token }: { token: string }) {
+function DashboardPage({ token }: { token: string | null }) {
   const stats = useQuery({
     queryKey: ['dashboard'],
     queryFn: () => api<Dashboard>('/dashboard', token),
@@ -456,7 +456,7 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
   </>;
 }
 
-function AuditPage({ token }: { token: string }) {
+function AuditPage({ token }: { token: string | null }) {
   const [page, setPage] = useState(1);
   const listing = useQuery({
     queryKey: ['audit', page],
