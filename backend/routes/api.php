@@ -44,7 +44,7 @@ Route::prefix('v1')->group(function () use ($registerBackoffice): void {
     // Transitional non-browser API. Issuing new bearer credentials is disabled
     // by default; existing explicitly issued tokens remain scoped to a tenant.
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
-    Route::name('machine.')->middleware(['auth:sanctum', 'nexa.tenant'])->group(
+    Route::name('machine.')->middleware(['nexa.bearer', 'auth:sanctum', 'nexa.tenant'])->group(
         static function () use ($registerBackoffice): void {
             Route::get('/auth/me', [AuthController::class, 'me']);
             Route::post('/auth/logout', [AuthController::class, 'logout']);

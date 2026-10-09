@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use App\Http\Middleware\RequireTenantRole;
+use App\Http\Middleware\RequireMachineBearer;
 use App\Http\Middleware\ResolveBrowserTenant;
 use App\Http\Middleware\ResolveTenant;
 use Illuminate\Foundation\Application;
@@ -18,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'nexa.tenant' => ResolveTenant::class,
             'nexa.browser-tenant' => ResolveBrowserTenant::class,
+            'nexa.bearer' => RequireMachineBearer::class,
             'nexa.roles' => RequireTenantRole::class,
         ]);
     })
