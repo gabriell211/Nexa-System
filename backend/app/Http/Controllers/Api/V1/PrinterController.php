@@ -3,37 +3,67 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Requests\PrinterRequest;
+use App\Http\Resources\PrinterResource;
+use App\Services\PrinterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Routing\Controller;
-use Illuminate\Validation\Rule;
 
 final class PrinterController extends Controller
 {
-    public function index(Request $request): JsonResponse
+    public function __construct(private readonly PrinterService $printers) {}
+
+    public function index(Request $request): AnonymousResourceCollection
     {
         $tenant = $request->attributes->get('nexa_tenant');
-        return response()->json($tenant->printers()->with('customer:id,name')->orderByDesc('id')->paginate(25));
+
+        return PrinterResource::collection(
+            $tenant->printers()
+                ->with('customer:id,name')
+                ->when($request->boolean('active_only'), fn ($query) => $query->where('active', true))
+                ->orderByDesc('id')
+                ->paginate(25)
+        );
     }
-    public function store(Request $request): JsonResponse
+
+    public function store(PrinterRequest $request): PrinterResource
     {
-        abort_unless(in_array($request->attributes->get('nexa_role'), ['owner','admin','manager'], true), 403);
-        $tenant = $request->attributes->get('nexa_tenant');
-        $data = $request->validate([
-            'customer_id' => ['required','integer',Rule::exists('customers','id')->where('tenant_id',$tenant->id)],
-            'manufacturer' => ['required','string','max:100'],
-            'model' => ['required','string','max:160'],
-            'serial_number' => ['nullable','string','max:160'],
-            'ip_address' => ['nullable','ip'],
-        ]);
-        $printer = $tenant->printers()->create($data + ['status'=>'unknown']);
-        return response()->json(['data'=>$printer], 201);
+        $printer = $this->printers->create(
+            $request->attributes->get('nexa_tenant'),
+            $request->user(),
+            $request->validated()
+        );
+
+        return new PrinterResource($printer->load('customer:id,name'));
     }
-    public function show(Request $request, int $printer): JsonResponse
+
+    public function show(Request $request, int $printer): PrinterResource
     {
         $item = $request->attributes->get('nexa_tenant')->printers()
-            ->with(['customer:id,name','readings'=>fn ($query) => $query->orderByDesc('collected_at')->limit(20)])
+            ->with(['customer:id,name', 'readings' => fn ($query) => $query->orderByDesc('collected_at')->limit(20)])
             ->findOrFail($printer);
-        return response()->json(['data'=>$item]);
+
+        return new PrinterResource($item);
+    }
+
+    public function update(PrinterRequest $request, int $printer): PrinterResource
+    {
+        $item = $this->printers->update(
+            $request->attributes->get('nexa_tenant'),
+            $request->user(),
+            $printer,
+            $request->validated()
+        );
+
+        return new PrinterResource($item->load('customer:id,name'));
+    }
+
+    public function destroy(Request $request, int $printer): JsonResponse
+    {
+        $this->printers->deactivate($request->attributes->get('nexa_tenant'), $request->user(), $printer);
+
+        return response()->json(null, 204);
     }
 }
