@@ -33,7 +33,7 @@ pub enum CollectorError {
 pub struct PrinterConfig {
     pub printer_id: u64,
     pub ip: IpAddr,
-    pub marker_counter_oid: Vec<u32>,
+    pub marker_counter_oid: Vec<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

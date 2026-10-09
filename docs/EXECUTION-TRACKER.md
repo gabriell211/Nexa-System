@@ -44,3 +44,25 @@ Implementado em código, **não homologado**:
 - Não usar mocks em telas operacionais.
 - Não atribuir telemetria a impressoras não homologadas.
 - Não expor dados de outros clientes, tenants ou perfis.
+
+## Entrega 2: portal operacional e validação contínua (09/10/2026)
+
+Implementado em código na branch de trabalho:
+- Portal `portal/` com React 19, TypeScript estrito e TanStack Query.
+- Login/token apenas em memória, leitura do perfil autenticado e logout.
+- Dashboard com contagens reais; clientes e parque com paginação e pesquisa executadas no servidor.
+- Criação, edição e inativação por perfil autorizado, com confirmação e histórico persistido.
+- Auditoria consultável exclusivamente por `owner` e `admin`.
+- Proxy de desenvolvimento Vite `/api` para Laravel; sem respostas fictícias e sem token em localStorage.
+- Correção de colisão de `sample_id` com payload diferente, com rejeição HTTP 422.
+- Ajustes de versões para Laravel 13 e correção do tipo de OID na API SNMP do Rust.
+- CI de Laravel, frontend e Collector configurada no GitHub Actions.
+
+### Provas e ressalvas
+- O build do portal React concluiu com sucesso na primeira execução de CI.
+- O primeiro CI encontrou incompatibilidade Composer/Laravel 13 e compilação de OID Rust; correções foram incluídas, aguardando novas evidências de CI.
+- Não foram testadas interação de telas em navegador, migrações reais PostgreSQL, impressoras de clientes nem instaladores.
+- O token web não persiste entre recargas; produção exige sessão segura por cookie, MFA e recuperação de conta.
+- A lista do seletor de clientes no formulário de impressoras ainda é limitada aos primeiros 100 cadastros ativos.
+
+**Todos os requisitos NX do README continuam com validação final pendente**, mesmo quando partes do fluxo já têm código.
