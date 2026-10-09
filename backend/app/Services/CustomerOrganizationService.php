@@ -106,8 +106,10 @@ final class CustomerOrganizationService
         Tenant $tenant, User $actor, int $customerId, int $locationId, int $departmentId, array $data,
     ): CustomerDepartment {
         return DB::transaction(function () use ($tenant, $actor, $customerId, $locationId, $departmentId, $data): CustomerDepartment {
-            $customer = $tenant->customers()->findOrFail($customerId);
-            $location = $customer->locations()->findOrFail($locationId);
+            // Lock ancestors in the same order as creation and deactivation so
+            // an active department cannot be re-enabled during unit shutdown.
+            $customer = $tenant->customers()->lockForUpdate()->findOrFail($customerId);
+            $location = $customer->locations()->lockForUpdate()->findOrFail($locationId);
             $department = $location->departments()->lockForUpdate()->findOrFail($departmentId);
             if ($data['active'] ?? $department->active) {
                 $this->assertActiveCustomer($customer);
@@ -141,7 +143,7 @@ final class CustomerOrganizationService
         Tenant $tenant, User $actor, int $customerId, int $centerId, array $data,
     ): CostCenter {
         return DB::transaction(function () use ($tenant, $actor, $customerId, $centerId, $data): CostCenter {
-            $customer = $tenant->customers()->findOrFail($customerId);
+            $customer = $tenant->customers()->lockForUpdate()->findOrFail($customerId);
             $center = $customer->costCenters()->lockForUpdate()->findOrFail($centerId);
             if ($data['active'] ?? $center->active) {
                 $this->assertActiveCustomer($customer);
