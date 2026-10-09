@@ -87,4 +87,36 @@ final class CollectorIngestTest extends TestCase
             ]],
         ])->assertUnauthorized();
     }
+
+    public function test_collector_rejects_reused_sample_id_with_changed_value(): void
+    {
+        $tenant = Tenant::create(['name' => 'Test', 'slug' => 'test']);
+        $customer = $tenant->customers()->create(['name' => 'Unit']);
+        $printer = $tenant->printers()->create([
+            'customer_id' => $customer->id, 'manufacturer' => 'Generic', 'model' => 'SNMP',
+        ]);
+        $token = bin2hex(random_bytes(32));
+        $collectorId = (string) Str::uuid();
+        CollectorAgent::create([
+            'tenant_id' => $tenant->id, 'customer_id' => $customer->id,
+            'collector_id' => $collectorId, 'token_hash' => hash('sha256', $token),
+        ]);
+        $sample = [
+            'collector_id' => $collectorId,
+            'samples' => [[
+                'sample_id' => (string) Str::uuid(),
+                'printer_id' => $printer->id,
+                'collected_at' => now()->startOfSecond()->toIso8601String(),
+                'meter_total' => 130, 'meter_mono' => null, 'meter_color' => null,
+            ]],
+        ];
+
+        $this->withToken($token)->postJson('/api/v1/collector/ingest', $sample)->assertOk();
+        $sample['samples'][0]['meter_total'] = 999;
+        $this->withToken($token)->postJson('/api/v1/collector/ingest', $sample)->assertUnprocessable();
+
+        $this->assertDatabaseCount('printer_readings', 1);
+        $this->assertDatabaseHas('printer_readings', ['sample_id' => $sample['samples'][0]['sample_id'], 'meter_total' => 130]);
+    }
+
 }
