@@ -46,6 +46,9 @@ final class InventoryLedgerTest extends TestCase
         string $token, string $kind, int $item, ?int $source, ?int $destination,
         int $quantity, ?string $uuid = null,
     ): \Illuminate\Testing\TestResponse {
+        // TestCase shares an application across requests; real requests do not
+        // share an already-resolved auth guard when bearer identities change.
+        Auth::forgetGuards();
         return $this->withToken($token)->postJson('/api/v1/stock/movements', [
             'request_id' => $uuid ?? (string) Str::uuid(),
             'kind' => $kind, 'item_id' => $item,
@@ -123,6 +126,7 @@ final class InventoryLedgerTest extends TestCase
 
         $other = Tenant::query()->create(['name' => 'Another', 'slug' => 'another']);
         [$foreignActor, $foreignToken] = $this->user($other);
+        Auth::forgetGuards();
         $foreignStock = $this->withToken($foreignToken)->postJson('/api/v1/stock/locations', [
             'name' => 'Foreign Stock', 'kind' => 'provider',
         ])->assertCreated()->json('data.id');
@@ -164,6 +168,7 @@ final class InventoryLedgerTest extends TestCase
         [$technician, $technicianToken] = $this->user($tenant, 'technician');
         $this->move($warehouseToken, 'receipt', $item, null, $provider, 2)->assertCreated();
         $this->move($technicianToken, 'issue', $item, $provider, null, 1)->assertForbidden();
+        Auth::forgetGuards();
         $this->withToken($technicianToken)->getJson('/api/v1/stock/balances')->assertForbidden();
         $this->assertDatabaseCount('stock_movements', 1);
     }
@@ -174,6 +179,7 @@ final class InventoryLedgerTest extends TestCase
         [$warehouse, $warehouseToken] = $this->user($tenant, 'warehouse');
         DB::table('tenant_user')->where('tenant_id', $tenant->id)
             ->where('user_id', $warehouse->id)->update(['customer_scope' => 'assigned']);
+        Auth::forgetGuards();
         $this->withToken($warehouseToken)->getJson('/api/v1/stock/items')->assertForbidden();
         $this->withToken($warehouseToken)->getJson('/api/v1/stock/movements')->assertForbidden();
         $this->move($warehouseToken, 'receipt', $item, null, $provider, 5)->assertForbidden();
@@ -184,6 +190,7 @@ final class InventoryLedgerTest extends TestCase
         extract($this->basic());
         $tenantB = Tenant::query()->create(['name' => 'Other provider', 'slug' => 'other']);
         [$memberB, $tokenB] = $this->user($tenantB);
+        Auth::forgetGuards();
         $itemB = $this->withToken($tokenB)->postJson('/api/v1/stock/items', [
             'sku' => 'TONER-001', 'name' => 'Different tenant SKU', 'category' => 'toner',
         ])->assertCreated()->json('data.id');
