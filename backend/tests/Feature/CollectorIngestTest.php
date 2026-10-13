@@ -119,4 +119,57 @@ final class CollectorIngestTest extends TestCase
         $this->assertDatabaseHas('printer_readings', ['sample_id' => $sample['samples'][0]['sample_id'], 'meter_total' => 130]);
     }
 
+
+    public function test_collector_denies_ingest_when_customer_is_inactive(): void
+    {
+        $tenant = Tenant::create(['name' => 'Provider', 'slug' => 'provider']);
+        $customer = $tenant->customers()->create(['name' => 'Blocked']);
+        $printer = $tenant->printers()->create([
+            'customer_id' => $customer->id, 'manufacturer' => 'Generic', 'model' => 'Printer',
+        ]);
+        $token = bin2hex(random_bytes(32));
+        $uuid = (string) Str::uuid();
+        CollectorAgent::create([
+            'tenant_id' => $tenant->id, 'customer_id' => $customer->id,
+            'collector_id' => $uuid, 'token_hash' => hash('sha256', $token),
+        ]);
+        $customer->update(['active' => false]);
+        $this->withToken($token)->postJson('/api/v1/collector/ingest', [
+            'collector_id' => $uuid,
+            'samples' => [[
+                'sample_id' => (string) Str::uuid(),
+                'printer_id' => $printer->id,
+                'collected_at' => now()->toIso8601String(),
+                'meter_total' => 24, 'meter_mono' => null, 'meter_color' => null,
+            ]],
+        ])->assertForbidden();
+        $this->assertDatabaseCount('printer_readings', 0);
+    }
+
+    public function test_collector_rejects_readings_for_inactive_printer(): void
+    {
+        $tenant = Tenant::create(['name' => 'Provider', 'slug' => 'provider']);
+        $customer = $tenant->customers()->create(['name' => 'Active']);
+        $printer = $tenant->printers()->create([
+            'customer_id' => $customer->id, 'manufacturer' => 'Generic',
+            'model' => 'Printer', 'active' => false,
+        ]);
+        $token = bin2hex(random_bytes(32));
+        $uuid = (string) Str::uuid();
+        CollectorAgent::create([
+            'tenant_id' => $tenant->id, 'customer_id' => $customer->id,
+            'collector_id' => $uuid, 'token_hash' => hash('sha256', $token),
+        ]);
+        $this->withToken($token)->postJson('/api/v1/collector/ingest', [
+            'collector_id' => $uuid,
+            'samples' => [[
+                'sample_id' => (string) Str::uuid(),
+                'printer_id' => $printer->id,
+                'collected_at' => now()->toIso8601String(),
+                'meter_total' => 30, 'meter_mono' => null, 'meter_color' => null,
+            ]],
+        ])->assertUnprocessable();
+        $this->assertDatabaseCount('printer_readings', 0);
+    }
+
 }

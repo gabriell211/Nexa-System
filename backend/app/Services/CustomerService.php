@@ -7,6 +7,7 @@ use App\Models\Customer;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final class CustomerService
 {
@@ -46,6 +47,16 @@ final class CustomerService
             $customer = $tenant->customers()->lockForUpdate()->findOrFail($id);
             if (!$customer->active) {
                 return;
+            }
+            if ($customer->printers()->where('active', true)->exists()) {
+                throw ValidationException::withMessages([
+                    'customer' => 'Inative as impressoras ativas antes de desativar o cliente.',
+                ]);
+            }
+            if ($customer->locations()->where('active', true)->exists()) {
+                throw ValidationException::withMessages([
+                    'customer' => 'Inative as unidades ativas antes de desativar o cliente.',
+                ]);
             }
 
             $before = $customer->only(self::FIELDS);

@@ -95,4 +95,23 @@ final class AdministrationLifecycleTest extends TestCase
             'model' => 'MA5500ifx',
         ])->assertUnprocessable();
     }
+
+    public function test_customer_deactivation_requires_all_equipment_and_units_inactive(): void
+    {
+        $tenant = Tenant::create(['name' => 'Provider', 'slug' => 'provider']);
+        $token = $this->authorizedUser($tenant, 'owner');
+        $customer = $tenant->customers()->create(['name' => 'Factory']);
+        $printer = $tenant->printers()->create([
+            'customer_id' => $customer->id, 'manufacturer' => 'Generic', 'model' => 'Printer',
+        ]);
+        $location = $customer->locations()->create(['tenant_id' => $tenant->id, 'name' => 'Head office']);
+
+        $this->withToken($token)->deleteJson('/api/v1/customers/'.$customer->id)->assertUnprocessable();
+        $printer->update(['active' => false]);
+        $this->withToken($token)->deleteJson('/api/v1/customers/'.$customer->id)->assertUnprocessable();
+        $location->update(['active' => false]);
+        $this->withToken($token)->deleteJson('/api/v1/customers/'.$customer->id)->assertNoContent();
+        $this->assertDatabaseHas('customers', ['id' => $customer->id, 'active' => false]);
+    }
+
 }

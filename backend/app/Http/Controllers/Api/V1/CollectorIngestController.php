@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\CollectorIngestRequest;
 use App\Models\CollectorAgent;
+use App\Models\Customer;
+use App\Models\Tenant;
 use App\Models\Printer;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -28,11 +30,21 @@ final class CollectorIngestController extends Controller
             abort(401, 'Invalid collector credentials.');
         }
 
+        $tenantActive = Tenant::query()
+            ->whereKey($agent->tenant_id)->where('active', true)->exists();
+        $customerActive = Customer::query()
+            ->where('tenant_id', $agent->tenant_id)
+            ->whereKey($agent->customer_id)->where('active', true)->exists();
+        if (!$tenantActive || !$customerActive) {
+            abort(403, 'Collector organization or customer is inactive.');
+        }
+
         $samples = $request->validated('samples');
         $printerIds = collect($samples)->pluck('printer_id')->unique()->values();
         $allowed = Printer::query()
             ->where('tenant_id', $agent->tenant_id)
             ->where('customer_id', $agent->customer_id)
+            ->where('active', true)
             ->whereIn('id', $printerIds)
             ->pluck('id')
             ->map(fn ($id): int => (int) $id);
