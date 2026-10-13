@@ -535,7 +535,10 @@ export function App() {
     });
     // Server regenerates session and CSRF on login. Never reuse the old token.
     resetCsrf();
-    qc.clear();
+    // Removing the observed browser-session query detaches its React Query
+    // observer and can leave the login screen rendered after a 200 response.
+    // Clear only tenant-scoped operational data and update the observed query.
+    qc.removeQueries({ predicate: q => q.queryKey[0] !== 'browser-session' });
     qc.setQueryData(['browser-session'], result);
     setLogoutError(null);
   }
@@ -544,7 +547,7 @@ export function App() {
     try {
       await api<{ message: string }>('/auth/logout', null, { method: 'POST' });
       resetCsrf();
-      qc.clear();
+      qc.removeQueries({ predicate: q => q.queryKey[0] !== 'browser-session' });
       qc.setQueryData(['browser-session'], null);
       setLogoutError(null);
     } catch (error) {
