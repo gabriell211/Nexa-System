@@ -18,6 +18,14 @@ final class InventoryLedgerService
 
     public function move(Tenant $tenant, User $actor, array $input): StockMovement
     {
+        // Validator accepts integer-like strings. Normalize IDs before strict
+        // comparisons so "1" and 1 cannot evade the same-location guard.
+        $input['item_id'] = (int) $input['item_id'];
+        $input['quantity'] = (int) $input['quantity'];
+        foreach (['source_location_id', 'destination_location_id'] as $key) {
+            $input[$key] = $input[$key] === null ? null : (int) $input[$key];
+        }
+
         return DB::transaction(function () use ($tenant, $actor, $input): StockMovement {
             // PostgreSQL serializes all movements of the same SKU on this row lock.
             // This includes duplicate retries, preventing concurrent last-unit issues.
