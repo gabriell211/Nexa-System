@@ -16,6 +16,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  requirement-trace:
+    name: README requirement traceability
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify all documented requirements and acceptance cases
+        run: python3 scripts/verify_requirements.py
+
   laravel:
     name: Laravel API tests
     runs-on: ubuntu-latest
@@ -35,6 +43,8 @@ jobs:
         run: |
           cp .env.example .env
           php artisan key:generate
+      - name: PHP syntax scan
+        run: find app bootstrap database routes -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null
       - name: Run feature tests
         run: php artisan test
 
