@@ -5,7 +5,8 @@ import { api, queryString, readableError } from '../api';
 import type { Customer, Page } from '../types';
 
 type Kind = 'receipt' | 'transfer' | 'issue';
-type Section = 'balances' | 'movements' | 'items' | 'locations';
+type Section = 'balances' | 'movements' | 'lots' | 'items' | 'locations';
+interface LotPosition { id:number; lot_id:number; item_id:number; item_sku:string; item_name:string; location_name:string; quantity:number; expires_on:string|null; expired:boolean; lot_number:string; unit_cost_cents:number; receipt_detail_id:number }
 interface StockItem { id: number; sku: string; name: string; category: string; unit: string; active: boolean }
 interface StockLocation {
   id: number; name: string; kind: 'provider' | 'technician' | 'customer';
@@ -19,6 +20,7 @@ interface Movement {
   destination_before: number | null; destination_after: number | null;
   item: StockItem; source: StockLocation | null; destination: StockLocation | null;
   actor: { id: number; name: string } | null;
+  lot_allocations?: {lot_id:number;lot_number:string|null;quantity:number}[];
 }
 interface CustomerLocation { id: number; name: string; active: boolean }
 interface Staff { id: number; name: string; active: boolean }
@@ -246,14 +248,14 @@ export function InventoryPage({token}: {token: string | null}) {
   const [page, setPage] = useState(1);
   const [notice, setNotice] = useState('');
   const listings = {
-    balances: '/stock/balances', movements: '/stock/movements',
+    balances: '/stock/balances', movements: '/stock/movements', lots:'/stock/lots',
     items: '/stock/items', locations: '/stock/locations',
   };
   const listing = useQuery({
     queryKey: ['stock-list', section, page],
     queryFn: async () => {
       const url = listings[section] + queryString({page,per_page:25});
-      return api<Page<Balance | Movement | StockItem | StockLocation>>(url, token);
+      return api<Page<Balance | Movement | LotPosition | StockItem | StockLocation>>(url, token);
     },
   });
   async function refresh() {
@@ -269,9 +271,9 @@ export function InventoryPage({token}: {token: string | null}) {
       <p>Entradas, transferências e baixas por posição, com saldos independentes e histórico auditável.</p>
     </div><Warehouse size={36} color="#397cf7"/></div>
     <nav className="stock-tabs" aria-label="Gestão do estoque">
-      {(['balances','movements','items','locations'] as Section[]).map(value =>
+      {(['balances','lots','movements','items','locations'] as Section[]).map(value =>
         <button key={value} className={'organization-tab' + (section===value?' selected':'')} onClick={()=>change(value)}>
-          {({balances:'Saldos',movements:'Movimentações',items:'Itens',locations:'Locais'} as Record<Section,string>)[value]}
+          {({balances:'Saldos',lots:'Lotes',movements:'Movimentações',items:'Itens',locations:'Locais'} as Record<Section,string>)[value]}
         </button>)}
     </nav>
     {notice && <p role="status" className="notice success">{notice}</p>}
@@ -281,7 +283,8 @@ export function InventoryPage({token}: {token: string | null}) {
         listing.data.data.length===0 ? <div className="empty-state"><Package size={30}/><p>Nenhum registro nesta categoria.</p></div> :
         <div className="table-wrap"><table><thead><tr>
           {section==='balances' ? <><th>Item</th><th>Local</th><th>Físico</th><th>Reservado</th><th>Disponível</th></> :
-           section==='movements' ? <><th>Item</th><th>Operação</th><th>Origem / destino</th><th>Quantidade</th><th>Responsável</th><th>Data</th></> :
+           section==='lots' ? <><th>Item</th><th>Lote</th><th>Local</th><th>Saldo rastreado</th><th>Validade</th><th>Custo unitário</th></> :
+           section==='movements' ? <><th>Item</th><th>Operação</th><th>Origem / destino</th><th>Quantidade</th><th>Rastreio</th><th>Responsável</th><th>Data</th></> :
            section==='items' ? <><th>SKU</th><th>Item</th><th>Tipo</th><th>Estado</th></> :
              <><th>Local</th><th>Tipo</th><th>Cliente</th><th>Estado</th></>}</tr></thead>
           <tbody>{listing.data.data.map(record => {
@@ -292,11 +295,22 @@ export function InventoryPage({token}: {token: string | null}) {
                 <td>{b.reserved_quantity.toLocaleString('pt-BR')} {b.item.unit}</td>
                 <td><strong>{b.available_quantity.toLocaleString('pt-BR')} {b.item.unit}</strong></td></tr>;
             }
+            if (section==='lots') {
+              const lot=record as LotPosition;return <tr key={lot.id}>
+                <td><strong>{lot.item_sku}</strong><small>{lot.item_name}</small></td>
+                <td>{lot.lot_number}</td><td>{lot.location_name}</td>
+                <td><strong>{lot.quantity.toLocaleString('pt-BR')}</strong></td>
+                <td>{lot.expires_on ?? 'Indeterminada'} {lot.expired ? '· VENCIDO' : ''}</td>
+                <td>{new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(lot.unit_cost_cents/100)}</td>
+              </tr>;
+            }
             if (section==='movements') {
               const m=record as Movement;return <tr key={m.id}>
                 <td><strong>{m.item.sku}</strong><small>{m.item.name}</small></td>
                 <td>{labelKind[m.kind]}</td><td>{m.source?.name ?? 'Externo'} → {m.destination?.name ?? 'Consumo'}</td>
-                <td><strong>{m.quantity}</strong></td><td>{m.actor?.name ?? '—'}<small title={m.reason}>{m.reason}</small></td>
+                <td><strong>{m.quantity}</strong></td>
+                <td>{m.lot_allocations?.length ? m.lot_allocations.map(a => a.lot_number + ' ('+a.quantity+')').join(', ') : 'Sem lote conhecido'}</td>
+                <td>{m.actor?.name ?? '—'}<small title={m.reason}>{m.reason}</small></td>
                 <td>{new Date(m.created_at).toLocaleString('pt-BR')}</td></tr>;
             }
             if (section==='items') {
@@ -315,6 +329,6 @@ export function InventoryPage({token}: {token: string | null}) {
       <NewItem token={token} onCreated={refresh}/>
       <NewLocation token={token} onCreated={refresh}/>
     </div>
-    <p className="stock-footnote">Esta primeira etapa registra movimentos concluídos. Reservas, envios em trânsito, recebimento parcial e inventário físico ainda não foram implementados.</p>
+    <p className="stock-footnote">O saldo por lote rastreia somente entradas documentadas após esta migração. Estoque antigo permanece sem lote conhecido. Movimentações usam FEFO entre lotes válidos; inventário físico, ajuste supervisionado e reconciliação de legados permanecem pendentes.</p>
   </>;
 }
