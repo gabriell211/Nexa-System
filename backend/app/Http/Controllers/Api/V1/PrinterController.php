@@ -25,7 +25,7 @@ final class PrinterController extends Controller
             'q' => ['sometimes', 'nullable', 'string', 'max:100'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
-            'active_only' => ['sometimes', 'boolean'],
+            'active_only' => ['sometimes', 'in:0,1,true,false'],
         ]);
         $term = mb_strtolower(trim($filters['q'] ?? ''));
 
