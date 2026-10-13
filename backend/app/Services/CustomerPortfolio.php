@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Services;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,7 +32,7 @@ final class CustomerPortfolio
             ->where('user_id', $request->user()->id);
     }
 
-    public function customers(Builder $query, Request $request): Builder
+    public function customers(Builder|Relation $query, Request $request): Builder|Relation
     {
         if (!$this->hasFullAccess($request)) {
             $query->whereIn('customers.id', $this->assignedIds($request));
@@ -40,7 +41,7 @@ final class CustomerPortfolio
         return $query;
     }
 
-    public function printers(Builder $query, Request $request): Builder
+    public function printers(Builder|Relation $query, Request $request): Builder|Relation
     {
         if (!$this->hasFullAccess($request)) {
             $query->whereIn('printers.customer_id', $this->assignedIds($request));

@@ -15,7 +15,7 @@ final class StaffPortfolioRequest extends FormRequest
         $tenant = $this->attributes->get('nexa_tenant');
         return [
             'scope' => ['required', Rule::in(['all', 'assigned'])],
-            'customer_ids' => ['required', 'array', 'max:200'],
+            'customer_ids' => ['present', 'array', 'max:200'],
             'customer_ids.*' => [
                 'required', 'integer', 'distinct',
                 Rule::exists('customers', 'id')->where('tenant_id', $tenant->id),
