@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\V1\StockLotController;
 use App\Http\Controllers\Api\V1\StockSupplierController;
 use App\Http\Controllers\Api\V1\StockCompatibilityController;
 use App\Http\Controllers\Api\V1\StockDocumentedReceiptController;
+use App\Http\Controllers\Api\V1\ServiceTicketController;
 use Illuminate\Support\Facades\Route;
 
 // Identical resources, separate authentication transports. Web requests receive
@@ -74,6 +75,14 @@ $registerBackoffice = static function (): void {
         Route::post('/stock/shipments/{shipment}/dispatch', [StockShipmentController::class, 'dispatch']);
         Route::post('/stock/shipments/{shipment}/receive', [StockShipmentController::class, 'receive']);
         Route::post('/stock/shipments/{shipment}/close', [StockShipmentController::class, 'close']);
+    });
+
+    Route::middleware('nexa.roles:owner,admin,manager,supervisor,technician')->group(static function (): void {
+        Route::get('/tickets', [ServiceTicketController::class, 'index']);
+        Route::get('/tickets/{ticket}', [ServiceTicketController::class, 'show']);
+        Route::post('/tickets', [ServiceTicketController::class, 'store']);
+        Route::post('/tickets/{ticket}/transition', [ServiceTicketController::class, 'transition']);
+        Route::post('/tickets/{ticket}/comments', [ServiceTicketController::class, 'comment']);
     });
 
     Route::get('/audit-entries', AuditEntryController::class)->middleware('nexa.roles:owner,admin');
