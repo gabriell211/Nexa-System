@@ -147,6 +147,69 @@ jobs:
         if: failure()
         run: cat /tmp/nexa-http-smoke.log || true
 
+  browser-e2e:
+    name: Playwright Chromium E2E (desktop and mobile)
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DB_CONNECTION: sqlite
+      SESSION_DRIVER: file
+      SESSION_SECURE_COOKIE: "false"
+      CACHE_STORE: file
+      NEXA_BOOTSTRAP_EMAIL: smoke-owner@example.test
+      NEXA_BOOTSTRAP_PASSWORD: test-only-long-password-2026
+      NEXA_BOOTSTRAP_TENANT: nexa-demo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_sqlite, bcmath
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Laravel dependencies
+        working-directory: backend
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare isolated test database
+        working-directory: backend
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          touch database/browser-e2e.sqlite
+          echo "DB_DATABASE=$(pwd)/database/browser-e2e.sqlite" >> "$GITHUB_ENV"
+      - name: Migrate and seed the real owner
+        working-directory: backend
+        run: |
+          php artisan migrate --force
+          php artisan nexa:bootstrap
+      - name: Install React and Playwright dependencies
+        working-directory: portal
+        run: npm install --no-audit --no-fund
+      - name: Install real Chromium browser
+        working-directory: portal
+        run: npx playwright install --with-deps chromium
+      - name: Start backend and frontend servers
+        run: |
+          (cd backend && php artisan serve --host=127.0.0.1 --port=8080 > /tmp/nexa-e2e-api.log 2>&1 &)
+          (cd portal && npm run dev > /tmp/nexa-e2e-vite.log 2>&1 &)
+      - name: Run real desktop and mobile browser E2E
+        working-directory: portal
+        run: npm run test:e2e
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-debug
+          path: |
+            portal/playwright-report/
+            portal/test-results/
+            /tmp/nexa-e2e-api.log
+            /tmp/nexa-e2e-vite.log
+          retention-days: 7
+
   portal:
     name: React portal build
     runs-on: ubuntu-latest
