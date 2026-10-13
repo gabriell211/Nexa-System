@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\V1\StockBalanceController;
 use App\Http\Controllers\Api\V1\StockMovementController;
 use App\Http\Controllers\Api\V1\StockOperatorController;
 use App\Http\Controllers\Api\V1\StockShipmentController;
+use App\Http\Controllers\Api\V1\StockLotController;
 use App\Http\Controllers\Api\V1\StockSupplierController;
 use App\Http\Controllers\Api\V1\StockCompatibilityController;
 use App\Http\Controllers\Api\V1\StockDocumentedReceiptController;
@@ -58,6 +59,7 @@ $registerBackoffice = static function (): void {
         Route::get('/stock/operators', StockOperatorController::class);
         Route::get('/stock/locations', [StockLocationController::class, 'index']);
         Route::get('/stock/balances', StockBalanceController::class);
+        Route::get('/stock/lots', StockLotController::class);
         Route::get('/stock/movements', [StockMovementController::class, 'index']);
         Route::get('/stock/shipments', [StockShipmentController::class, 'index']);
         Route::get('/stock/shipments/{shipment}', [StockShipmentController::class, 'show']);

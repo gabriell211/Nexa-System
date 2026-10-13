@@ -16,6 +16,7 @@ final class StockDocumentedReceiptService
     public function __construct(
         private readonly InventoryLedgerService $ledger,
         private readonly AuditWriter $audit,
+        private readonly StockLotLedgerService $lots,
     ) {}
 
     public function create(Tenant $tenant, User $actor, array $input): StockReceiptDetail
@@ -71,6 +72,7 @@ final class StockDocumentedReceiptService
             $detail=StockReceiptDetail::query()->create([
                 'tenant_id'=>$tenant->id,'movement_id'=>$movement->id,...$attributes,
             ]);
+            $this->lots->registerReceipt($detail, $movement);
             $this->audit->write($tenant,$actor,'stock.receipt.documented',$detail,null,[
                 ...$attributes,'movement_id'=>$movement->id,
                 'item_id'=>$movement->item_id,'quantity'=>$movement->quantity,

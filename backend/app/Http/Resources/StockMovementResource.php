@@ -18,6 +18,12 @@ final class StockMovementResource extends JsonResource
             'source_before'=>$this->source_before,'source_after'=>$this->source_after,
             'destination_before'=>$this->destination_before,'destination_after'=>$this->destination_after,
             'reason'=>$this->reason,'created_at'=>$this->created_at,
+            'lot_allocations'=>$this->whenLoaded('lotAllocations', fn () => $this->lotAllocations->map(
+                static fn ($a): array => [
+                    'lot_id'=>$a->lot_id, 'quantity'=>(int) $a->quantity,
+                    'lot_number'=>$a->relationLoaded('lot') ? $a->lot?->lot_number : null,
+                ]
+            )),
             'item'=>new StockItemResource($this->whenLoaded('item')),
             'source'=>new StockLocationResource($this->whenLoaded('source')),
             'destination'=>new StockLocationResource($this->whenLoaded('destination')),

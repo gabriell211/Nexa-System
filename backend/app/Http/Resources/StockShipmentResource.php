@@ -20,6 +20,12 @@ final class StockShipmentResource extends JsonResource
             'reserved_quantity'=>$this->quantity - $this->shipped_quantity - $this->cancelled_quantity,
             'in_transit_quantity'=>$this->shipped_quantity - $this->received_quantity - $this->lost_quantity,
             'status'=>$this->status, 'reason'=>$this->reason,
+            'lot_transit'=>$this->whenLoaded('lotTransit', fn () => $this->lotTransit->map(
+                static fn ($t): array => [
+                    'lot_id'=>$t->lot_id,'shipped_quantity'=>$t->shipped_quantity,
+                    'received_quantity'=>$t->received_quantity,'lost_quantity'=>$t->lost_quantity,
+                ]
+            )),
             'created_at'=>$this->created_at, 'updated_at'=>$this->updated_at,
             'item'=>new StockItemResource($this->whenLoaded('item')),
             'source'=>new StockLocationResource($this->whenLoaded('source')),

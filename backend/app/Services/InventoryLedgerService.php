@@ -14,7 +14,10 @@ use Illuminate\Validation\ValidationException;
 
 final class InventoryLedgerService
 {
-    public function __construct(private readonly AuditWriter $audit) {}
+    public function __construct(
+        private readonly AuditWriter $audit,
+        private readonly StockLotLedgerService $lots,
+    ) {}
 
     public function move(Tenant $tenant, User $actor, array $input): StockMovement
     {
@@ -47,7 +50,7 @@ final class InventoryLedgerService
                     throw ValidationException::withMessages(['request_id' => 'A operação pertence a outro usuário.']);
                 }
 
-                return $existing->load(['item','source','destination','actor:id,name']);
+                return $existing->load(['item','source','destination','actor:id,name','lotAllocations.lot']);
             }
 
             if (!$item->active) {
@@ -115,13 +118,14 @@ final class InventoryLedgerService
                 'destination_before' => $beforeTo, 'destination_after' => $afterTo,
                 'actor_user_id' => $actor->id, 'reason' => $input['reason'],
             ]);
+            $this->lots->applyMovement($movement);
             $this->audit->write($tenant, $actor, 'stock.movement.created', $movement, null,
                 $movement->only([
                     'request_id','kind','item_id','source_location_id','destination_location_id',
                     'quantity','source_before','source_after','destination_before','destination_after','reason',
                 ]));
 
-            return $movement->load(['item','source','destination','actor:id,name']);
+            return $movement->load(['item','source','destination','actor:id,name','lotAllocations.lot']);
         }, 3);
     }
 
