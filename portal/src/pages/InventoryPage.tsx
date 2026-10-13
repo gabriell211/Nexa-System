@@ -40,12 +40,31 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <div className="stock-field"><label>{label}{children}</label></div>;
 }
 
+function centsFromBrazilianValue(value: string): number | null {
+  if (!value.trim()) return null;
+  const normalized=value.trim().replace(',', '.');
+  if (!/^[0-9]{1,8}(?:\.[0-9]{1,2})?$/.test(normalized)) return null;
+  const [whole, fractional='']=normalized.split('.');
+  const cents=Number(whole)*100+Number(fractional.padEnd(2,'0'));
+  return Number.isSafeInteger(cents)&&cents<=1000000000 ? cents : null;
+}
+
 function NewItem({ token, onCreated }: { token: string | null; onCreated: () => Promise<void> }) {
   const [sku, setSku] = useState(''); const [name, setName] = useState('');
   const [category, setCategory] = useState('toner'); const [unit, setUnit] = useState('un');
+  const [brand,setBrand]=useState('');const [color,setColor]=useState('');
+  const [cost,setCost]=useState('');const [price,setPrice]=useState('');
+  const [yieldPages,setYieldPages]=useState('');
+  const costCents=centsFromBrazilianValue(cost);
+  const priceCents=centsFromBrazilianValue(price);
   const save = useMutation({
     mutationFn: () => api<unknown>('/stock/items', token, {
-      method: 'POST', body: JSON.stringify({ sku: sku.trim(), name: name.trim(), category: category.trim(), unit }),
+      method: 'POST', body: JSON.stringify({
+      sku: sku.trim(), name: name.trim(), category: category.trim(), unit,
+      brand:brand.trim()||null,color:color.trim()||null,
+      cost_cents:costCents,price_cents:priceCents,
+      yield_pages:yieldPages?Number(yieldPages):null,
+    }),
     }),
     onSuccess: async () => { setSku(''); setName(''); await onCreated(); },
   });
@@ -57,9 +76,18 @@ function NewItem({ token, onCreated }: { token: string | null; onCreated: () => 
       <Field label="Descrição *"><input required minLength={2} maxLength={180} value={name} onChange={e => setName(e.target.value)}/></Field>
       <Field label="Tipo / categoria *"><input required minLength={2} maxLength={80} value={category} onChange={e => setCategory(e.target.value)}/></Field>
       <Field label="Unidade *"><input required maxLength={16} value={unit} onChange={e => setUnit(e.target.value)}/></Field>
+      <Field label="Marca"><input maxLength={120} value={brand} onChange={e=>setBrand(e.target.value)}/></Field>
+      <Field label="Cor"><input maxLength={40} value={color} onChange={e=>setColor(e.target.value)}/></Field>
+      <Field label="Custo em R$"><input inputMode="decimal" placeholder="68,50" value={cost} onChange={e=>setCost(e.target.value)}/></Field>
+      <Field label="Preço em R$"><input inputMode="decimal" placeholder="159,90" value={price} onChange={e=>setPrice(e.target.value)}/></Field>
+      <Field label="Rendimento (páginas)"><input type="number" min={1} max={100000000} step={1} value={yieldPages} onChange={e=>setYieldPages(e.target.value)}/></Field>
     </div>
+    {(cost && costCents===null) || (price && priceCents===null) ?
+      <p role="alert" className="notice error">Custo e preço devem ter até duas casas decimais.</p> : null}
     {save.error && <p role="alert" className="notice error">{readableError(save.error)}</p>}
-    <button className="button primary" type="submit" disabled={save.isPending}><Plus size={17}/> Cadastrar item</button>
+    <button className="button primary" type="submit" disabled={
+      save.isPending || Boolean(cost&&costCents===null) || Boolean(price&&priceCents===null)
+    }><Plus size={17}/> Cadastrar item</button>
   </form>;
 }
 

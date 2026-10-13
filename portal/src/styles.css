@@ -230,3 +230,7 @@ td.mono { font-family: ui-monospace, monospace; }
 .shipment-metrics small { color:#8090a6; font-size:11px; }
 .shipment-event-form { padding:15px; }
 @media(max-width:580px){ .shipment-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+
+/* Supplier catalog and fiscal receipt forms */
+.stock-form-grid .stock-field label { display:flex; flex-direction:column; gap:8px; }
+.stock-form-grid .stock-field select { min-width:0; }
