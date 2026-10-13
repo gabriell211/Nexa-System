@@ -20,6 +20,6 @@ final class User extends Authenticatable
 
     public function tenants(): BelongsToMany
     {
-        return $this->belongsToMany(Tenant::class)->withPivot('role')->withTimestamps();
+        return $this->belongsToMany(Tenant::class)->withPivot('role', 'customer_scope')->withTimestamps();
     }
 }

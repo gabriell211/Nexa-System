@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\CollectorIngestRequest;
 use App\Models\CollectorAgent;
+use App\Models\Customer;
+use App\Models\Tenant;
 use App\Models\Printer;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -28,11 +30,21 @@ final class CollectorIngestController extends Controller
             abort(401, 'Invalid collector credentials.');
         }
 
+        $tenantActive = Tenant::query()
+            ->whereKey($agent->tenant_id)->where('active', true)->exists();
+        $customerActive = Customer::query()
+            ->where('tenant_id', $agent->tenant_id)
+            ->whereKey($agent->customer_id)->where('active', true)->exists();
+        if (!$tenantActive || !$customerActive) {
+            abort(403, 'Collector organization or customer is inactive.');
+        }
+
         $samples = $request->validated('samples');
         $printerIds = collect($samples)->pluck('printer_id')->unique()->values();
         $allowed = Printer::query()
             ->where('tenant_id', $agent->tenant_id)
             ->where('customer_id', $agent->customer_id)
+            ->where('active', true)
             ->whereIn('id', $printerIds)
             ->pluck('id')
             ->map(fn ($id): int => (int) $id);
@@ -65,6 +77,31 @@ final class CollectorIngestController extends Controller
 
         DB::transaction(function () use ($agent, $rows, $now): void {
             DB::table('printer_readings')->insertOrIgnore($rows);
+
+            // A repeated UUID is an ACK only when it represents the exact same reading.
+            // Check after the insert to account for concurrent retries on PostgreSQL.
+            $stored = DB::table('printer_readings')
+                ->where('tenant_id', $agent->tenant_id)
+                ->whereIn('sample_id', array_column($rows, 'sample_id'))
+                ->get()
+                ->keyBy('sample_id');
+
+            foreach ($rows as $row) {
+                $existing = $stored->get($row['sample_id']);
+                $matches = $existing
+                    && (int) $existing->printer_id === (int) $row['printer_id']
+                    && ($existing->meter_total === null ? $row['meter_total'] === null : (string) $existing->meter_total === (string) $row['meter_total'])
+                    && ($existing->meter_mono === null ? $row['meter_mono'] === null : (string) $existing->meter_mono === (string) $row['meter_mono'])
+                    && ($existing->meter_color === null ? $row['meter_color'] === null : (string) $existing->meter_color === (string) $row['meter_color'])
+                    && CarbonImmutable::parse($existing->collected_at, 'UTC')->equalTo($row['collected_at']);
+
+                if (!$matches) {
+                    throw ValidationException::withMessages([
+                        'samples' => 'Sample identifier conflicts with a previously accepted reading.',
+                    ]);
+                }
+            }
+
             $agent->update(['last_seen_at' => $now]);
         });
 

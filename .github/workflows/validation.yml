@@ -1,0 +1,186 @@
+name: Nexa validation
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexa-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  requirement-trace:
+    name: README requirement traceability
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify all documented requirements and acceptance cases
+        run: python3 scripts/verify_requirements.py
+
+  laravel:
+    name: Laravel API tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_sqlite, pdo_pgsql, bcmath
+          coverage: none
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare application key
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: PHP syntax scan
+        run: find app bootstrap database routes -name '*.php' -print0 | xargs -0 -n1 php -l > /dev/null
+      - name: Run feature tests
+        run: php artisan test
+
+  postgres-integration:
+    name: Laravel PostgreSQL integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: nexa_test
+          POSTGRES_USER: nexa
+          POSTGRES_PASSWORD: ci-only-postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nexa -d nexa_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_pgsql, bcmath, pcntl
+          coverage: none
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare application
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - name: Execute feature tests against PostgreSQL
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: nexa_test
+          DB_USERNAME: nexa
+          DB_PASSWORD: ci-only-postgres
+          DB_SSLMODE: disable
+        run: php artisan test
+      - name: Verify concurrent reservations and stock issues in separate processes
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 5432
+          DB_DATABASE: nexa_test
+          DB_USERNAME: nexa
+          DB_PASSWORD: ci-only-postgres
+          DB_SSLMODE: disable
+        run: php ../scripts/postgres_stock_concurrency.php
+
+  http-session-smoke:
+    name: Real HTTP session and CSRF smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DB_CONNECTION: sqlite
+      SESSION_DRIVER: file
+      SESSION_SECURE_COOKIE: "false"
+      CACHE_STORE: file
+      NEXA_BOOTSTRAP_EMAIL: smoke-owner@example.test
+      NEXA_BOOTSTRAP_PASSWORD: test-only-long-password-2026
+      NEXA_BOOTSTRAP_TENANT: nexa-demo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_sqlite, bcmath
+          coverage: none
+      - name: Install backend dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare independent integration database
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          touch database/smoke.sqlite
+          echo "DB_DATABASE=$(pwd)/database/smoke.sqlite" >> "$GITHUB_ENV"
+      - name: Migrate and bootstrap
+        run: |
+          php artisan migrate --force
+          php artisan nexa:bootstrap
+      - name: Start real HTTP server
+        run: |
+          php artisan serve --host=127.0.0.1 --port=8080 > /tmp/nexa-http-smoke.log 2>&1 &
+          echo $! > /tmp/nexa-http-smoke.pid
+      - name: Verify CSRF and cookie sessions end to end
+        run: python3 ../scripts/browser_session_smoke.py
+      - name: Display server log on error
+        if: failure()
+        run: cat /tmp/nexa-http-smoke.log || true
+
+  portal:
+    name: React portal build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck and bundle
+        run: npm run build
+
+  portal-image:
+    name: Portal container build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production portal image
+        run: docker build -t nexa-portal:test ./portal
+      - name: Validate nginx configuration
+        run: docker run --rm --add-host api:127.0.0.1 nexa-portal:test nginx -t
+
+  collector:
+    name: Rust collector core tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test collector core and daemon
+        run: cargo test -p nexa-collector-core -p nexa-collector-daemon

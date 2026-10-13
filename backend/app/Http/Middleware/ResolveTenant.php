@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 
 use App\Models\Tenant;
 use App\Models\User;
+use Laravel\Sanctum\PersonalAccessToken;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -14,7 +15,7 @@ final class ResolveTenant
     public function handle(Request $request, Closure $next): Response
     {
         $user = $request->user();
-        if (!$user instanceof User || !$user->active || $user->currentAccessToken() === null) {
+        if (!$user instanceof User || !$user->active || !($user->currentAccessToken() instanceof PersonalAccessToken)) {
             abort(401);
         }
 
@@ -41,6 +42,7 @@ final class ResolveTenant
 
         $request->attributes->set('nexa_tenant', $tenant);
         $request->attributes->set('nexa_role', $membership->pivot->role);
+        $request->attributes->set('nexa_customer_scope', $membership->pivot->customer_scope);
         return $next($request);
     }
 }

@@ -15,6 +15,10 @@ final class AuthController extends Controller
 {
     public function login(Request $request): JsonResponse
     {
+        if (!config('nexa.allow_legacy_token_login')) {
+            abort(410, 'Legacy bearer login is disabled. Use the browser session endpoint.');
+        }
+
         $data = $request->validate([
             'email' => ['required', 'email', 'max:255'],
             'password' => ['required', 'string'],
@@ -41,6 +45,7 @@ final class AuthController extends Controller
             'user' => $request->user()->only(['id','name','email']),
             'tenant' => $request->attributes->get('nexa_tenant')->only(['id','name','slug']),
             'role' => $request->attributes->get('nexa_role'),
+            'customer_scope' => $request->attributes->get('nexa_customer_scope'),
         ]);
     }
     public function logout(Request $request): JsonResponse

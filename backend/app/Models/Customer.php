@@ -13,4 +13,6 @@ final class Customer extends Model
     protected function casts(): array { return ['active' => 'boolean']; }
     public function tenant(): BelongsTo { return $this->belongsTo(Tenant::class); }
     public function printers(): HasMany { return $this->hasMany(Printer::class); }
+    public function locations(): HasMany { return $this->hasMany(CustomerLocation::class); }
+    public function costCenters(): HasMany { return $this->hasMany(CostCenter::class); }
 }
