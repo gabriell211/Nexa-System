@@ -196,3 +196,13 @@ td.mono { font-family: ui-monospace, monospace; }
 .assignment-history h3 { font-size: 14px; }
 .assignment-history p { color: #8292a5; font-size: 12px; }
 .assignment-history table { min-width: 550px; }
+
+/* Scoped portfolios: admin-only controls */
+.portfolio-options { padding: 14px; background: #f5f8fe; border-radius: 10px; display: flex; flex-direction: column; gap: 14px; margin-bottom: 12px; }
+.portfolio-info { color: #65778d; font-size: 12px; margin: 7px 0; }
+.portfolio-customer-list { overflow: auto; max-height: 300px; border: 1px solid #e5ecf5; border-radius: 9px; }
+.portfolio-customer { display: flex; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #eef3f9; font-size: 12px; color: #334b67; cursor: pointer; }
+.portfolio-customer input { accent-color: #397cf7; }
+.portfolio-customer small { display: block; color: #8192aa; margin-top: 4px; }
+.portfolio-readonly { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #7287a0; }
+.modal-subtitle { color: #8292a5; font-size: 12px; margin: 8px 0 0; }

@@ -127,3 +127,18 @@ Implementado em código e com testes de integração:
 **Pendente para NX-005/NX-053**: posse vs propriedade, transferência entre clientes, histórico de responsáveis, vínculos com contratos, alocação retroativa com validação de períodos, duplicidade de série/identificação física e reconciliation de produção por período de instalação.
 
 A implementação atual registra eventos a partir da data da ação (não aceita retroatividade). A alocação existente de impressoras anteriores não é criada artificialmente por backfill; somente mudanças explicitamente registradas passam a ter histórico.
+
+## Entrega 6 — RBAC por carteira de clientes (2026-10-12)
+
+Implementação submetida (pendente de homologação completa):
+- `tenant_user.customer_scope` mantém acesso `all` por padrão para usuários legados; `assigned` exige seleção explícita de clientes.
+- `customer_user_access` guarda vínculos por tenant/usuário/cliente com FKs compostas, evitando referências cruzadas.
+- Middlewares web e bearer fazem verificação por objeto em rotas de clientes, impressoras, alocações, unidades e centros de custo.
+- Consultas de listagem e dashboard filtradas por carteira no banco, não no React.
+- Gerenciamento de carteira com endpoint exclusivo para `owner` e `admin`, trilha de auditoria e validação dos IDs.
+- Perfis owner/admin não podem ser convertidos para carteira restrita.
+- UI administrativa de operadores com carteira `all` ou `assigned`, seleção paginada de clientes e confirmação da alteração.
+- Cobertura automatizada para escopo vazio, vazamento cross-tenant, URLs diretas, token bearer, dashboard e restrição de alteração.
+
+Pendentes: restrições por unidade/departamento, bloqueios contextuais por ação, tratamento de mudança de papel, onboarding de usuário com convites/MFA, teste real em navegador e análise de concorrência sob produção.
+**Não marcar NX-016, NX-017 ou NX-019 como 100% atendidos: trata-se somente de escopo de carteira.**

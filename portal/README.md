@@ -61,3 +61,9 @@ No parque, a ação de localização abre um painel com a unidade, departamento 
 - Antes de inativar unidade, departamento ou centro de custo com impressoras, mova ou libere os equipamentos vinculados.
 - As alocações são sempre registradas com data de ação atual; sem inventar datas históricas.
 - O painel atualmente limita seletores aos 100 primeiros locais/centros ativos, e o histórico às 25 movimentações mais recentes. Busca paginada e seleção remota permanecem pendentes.
+
+## Permissões por carteira
+
+Administradores `owner/admin` acessam `/equipe` para conceder acesso a todos os clientes ou somente aos explicitamente selecionados. A filtragem ocorre no Laravel, inclusive ao acessar IDs pela URL, no dashboard e ao usar tokens bearer legados. Sem clientes atribuídos, a lista fica vazia; o acesso não é ampliado implicitamente.
+
+A interface ainda não cria/invita operadores; a membership deve existir. Mudanças de papel, MFA e restrições mais granulares por unidade estão pendentes.

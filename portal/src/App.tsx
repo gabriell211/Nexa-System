@@ -4,10 +4,11 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-rou
 import {
   Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList,
   Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon,
-  Search, ShieldCheck, Trash2, Users, X, MapPin,
+  Search, ShieldCheck, Trash2, Users, X, MapPin, UserRoundCog,
 } from 'lucide-react';
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
 import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
+import { StaffPage } from './pages/StaffPage';
 import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
 import type {
   AuditEntry, Credentials, CurrentUser, Customer, CustomerPayload, Dashboard,
@@ -143,7 +144,8 @@ function Shell({ token, identity, onLogout }: {
         <NavLink to="/clientes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Users size={19}/> Clientes</NavLink>
         <NavLink to="/parque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><PrinterIcon size={19}/> Parque de impressoras</NavLink>
         {canAudit && <><span className="nav-caption nav-secondary">ADMINISTRAÇÃO</span>
-          <NavLink to="/auditoria" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ClipboardList size={19}/> Auditoria</NavLink></>}
+          <NavLink to="/auditoria" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ClipboardList size={19}/> Auditoria</NavLink>
+          <NavLink to="/equipe" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><UserRoundCog size={19}/> Equipe e carteiras</NavLink></>}
       </nav>
       <div className="sidebar-footer">
         <div className="profile-circle">{identity.user.name.slice(0, 1).toUpperCase()}</div>
@@ -165,6 +167,7 @@ function Shell({ token, identity, onLogout }: {
           <Route path="/clientes/:id/unidades" element={<CustomerOrganizationPage token={token} canWrite={canWrite} />} />
           <Route path="/parque" element={<PrintersPage token={token} canWrite={canWrite} />} />
           {canAudit && <Route path="/auditoria" element={<AuditPage token={token} />} />}
+          {canAudit && <Route path="/equipe" element={<StaffPage token={token} />} />}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
