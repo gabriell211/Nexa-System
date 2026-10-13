@@ -19,6 +19,9 @@ use App\Http\Controllers\Api\V1\StockBalanceController;
 use App\Http\Controllers\Api\V1\StockMovementController;
 use App\Http\Controllers\Api\V1\StockOperatorController;
 use App\Http\Controllers\Api\V1\StockShipmentController;
+use App\Http\Controllers\Api\V1\StockSupplierController;
+use App\Http\Controllers\Api\V1\StockCompatibilityController;
+use App\Http\Controllers\Api\V1\StockDocumentedReceiptController;
 use Illuminate\Support\Facades\Route;
 
 // Identical resources, separate authentication transports. Web requests receive
@@ -48,6 +51,10 @@ $registerBackoffice = static function (): void {
 
     Route::middleware('nexa.roles:owner,admin,manager,warehouse')->group(static function (): void {
         Route::get('/stock/items', [StockItemController::class, 'index']);
+        Route::get('/stock/suppliers', [StockSupplierController::class, 'index']);
+        Route::get('/stock/receipts', [StockDocumentedReceiptController::class, 'index']);
+        Route::get('/stock/items/{item}/compatibilities', [StockCompatibilityController::class, 'index']);
+        Route::get('/stock/items/{item}/compatibility-check', [StockCompatibilityController::class, 'check']);
         Route::get('/stock/operators', StockOperatorController::class);
         Route::get('/stock/locations', [StockLocationController::class, 'index']);
         Route::get('/stock/balances', StockBalanceController::class);
@@ -55,6 +62,10 @@ $registerBackoffice = static function (): void {
         Route::get('/stock/shipments', [StockShipmentController::class, 'index']);
         Route::get('/stock/shipments/{shipment}', [StockShipmentController::class, 'show']);
         Route::post('/stock/items', [StockItemController::class, 'store']);
+        Route::post('/stock/suppliers', [StockSupplierController::class, 'store']);
+        Route::post('/stock/receipts', [StockDocumentedReceiptController::class, 'store']);
+        Route::post('/stock/items/{item}/compatibilities', [StockCompatibilityController::class, 'store']);
+        Route::delete('/stock/items/{item}/compatibilities/{compatibility}', [StockCompatibilityController::class, 'destroy']);
         Route::post('/stock/locations', [StockLocationController::class, 'store']);
         Route::post('/stock/movements', [StockMovementController::class, 'store']);
         Route::post('/stock/shipments', [StockShipmentController::class, 'store']);

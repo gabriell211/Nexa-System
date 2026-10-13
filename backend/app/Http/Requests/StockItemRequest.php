@@ -22,6 +22,11 @@ final class StockItemRequest extends FormRequest
             'category' => [$required, 'string', 'min:2', 'max:80'],
             'unit' => ['sometimes', 'string', 'min:1', 'max:16'],
             'active' => ['sometimes', 'boolean'],
+            'brand' => ['sometimes','nullable','string','max:120'],
+            'color' => ['sometimes','nullable','string','max:40'],
+            'price_cents' => ['sometimes','nullable','integer','between:0,1000000000'],
+            'cost_cents' => ['sometimes','nullable','integer','between:0,1000000000'],
+            'yield_pages' => ['sometimes','nullable','integer','between:1,100000000'],
         ];
     }
 }

@@ -19,7 +19,7 @@ final class InventoryCatalogService
         return DB::transaction(function () use ($tenant, $actor, $data): StockItem {
             $item = StockItem::query()->create($data + ['tenant_id' => $tenant->id]);
             $this->audit->write($tenant, $actor, 'stock.item.created', $item, null,
-                $item->only(['sku','name','category','unit','active']));
+                $item->only(['sku','name','category','unit','active','brand','color','price_cents','cost_cents','yield_pages']));
             return $item;
         });
     }
