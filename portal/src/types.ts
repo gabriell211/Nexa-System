@@ -1,7 +1,7 @@
 export interface User { id: number; name: string; email?: string }
 export interface Tenant { id: number; name: string; slug?: string }
 export interface Credentials { email: string; password: string; tenant: string }
-export interface CurrentUser { user: User; tenant: Tenant; role: string }
+export interface CurrentUser { user: User; tenant: Tenant; role: string; customer_scope: 'all' | 'assigned' }
 export interface Page<T> {
   data: T[];
   meta?: { current_page: number; last_page: number; total: number };

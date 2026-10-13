@@ -45,6 +45,7 @@ final class AuthController extends Controller
             'user' => $request->user()->only(['id','name','email']),
             'tenant' => $request->attributes->get('nexa_tenant')->only(['id','name','slug']),
             'role' => $request->attributes->get('nexa_role'),
+            'customer_scope' => $request->attributes->get('nexa_customer_scope'),
         ]);
     }
     public function logout(Request $request): JsonResponse

@@ -122,6 +122,8 @@ function Shell({ token, identity, onLogout }: {
 }) {
   const canWrite = adminRoles.has(identity.role);
   const canAudit = ['owner', 'admin'].includes(identity.role);
+  const canStock = (canAudit || identity.customer_scope === 'all') &&
+    ['owner','admin','manager','warehouse'].includes(identity.role);
 
   if (!internalRoles.has(identity.role)) {
     return <main className="blocked">
@@ -144,7 +146,7 @@ function Shell({ token, identity, onLogout }: {
         <NavLink to="/dashboard" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><LayoutDashboard size={19}/> Visão geral</NavLink>
         <NavLink to="/clientes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Users size={19}/> Clientes</NavLink>
         <NavLink to="/parque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><PrinterIcon size={19}/> Parque de impressoras</NavLink>
-        {['owner','admin','manager','warehouse'].includes(identity.role) &&
+        {canStock &&
           <NavLink to="/estoque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Database size={19}/> Estoque</NavLink>}
         {canAudit && <><span className="nav-caption nav-secondary">ADMINISTRAÇÃO</span>
           <NavLink to="/auditoria" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ClipboardList size={19}/> Auditoria</NavLink>
@@ -169,7 +171,7 @@ function Shell({ token, identity, onLogout }: {
           <Route path="/clientes" element={<CustomersPage token={token} canWrite={canWrite} />} />
           <Route path="/clientes/:id/unidades" element={<CustomerOrganizationPage token={token} canWrite={canWrite} />} />
           <Route path="/parque" element={<PrintersPage token={token} canWrite={canWrite} />} />
-          {['owner','admin','manager','warehouse'].includes(identity.role) && <Route path="/estoque" element={<InventoryPage token={token} />} />}
+          {canStock && <Route path="/estoque" element={<InventoryPage token={token} />} />}
           {canAudit && <Route path="/auditoria" element={<AuditPage token={token} />} />}
           {canAudit && <Route path="/equipe" element={<StaffPage token={token} />} />}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

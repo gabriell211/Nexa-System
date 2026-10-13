@@ -47,6 +47,7 @@ final class BrowserAuthController extends Controller
             'user' => $user->only(['id', 'name', 'email']),
             'tenant' => $tenant->only(['id', 'name', 'slug']),
             'role' => $membership->pivot->role,
+            'customer_scope' => $membership->pivot->customer_scope,
         ])->header('Cache-Control', 'no-store, private');
     }
 
