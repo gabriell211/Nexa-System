@@ -193,6 +193,48 @@ positions = {row["location_id"]: row["quantity"] for row in data["data"]}
 assert positions[location_id] == 0
 assert positions[destination_id] == 1
 
+# Documented supplier receipt and compatibility checks through the actual HTTP API.
+status, data = call("POST", "/stock/suppliers", {
+    "code": "HTTP-SUPPLIER", "name": "HTTP smoke supplier",
+    "email": "supplier@example.test",
+}, csrf)
+expect(status, 201, "register stock supplier")
+supplier_id = data["data"]["id"]
+
+status, data = call("POST", f"/stock/items/{item_id}/compatibilities", {
+    "printer_manufacturer": "  Kyocera  ", "printer_model": "  MA5500    IFX  ",
+}, csrf)
+expect(status, 201, "register model compatibility")
+assert data["data"]["printer_manufacturer"] == "kyocera"
+assert data["data"]["printer_model"] == "ma5500 ifx"
+
+receipt_id = str(uuid.uuid4())
+documented = {
+    "request_id": receipt_id, "supplier_id": supplier_id, "item_id": item_id,
+    "destination_location_id": destination_id, "quantity": 2,
+    "lot_number": "HTTP-LOT-10", "invoice_reference": "NF-HTTP-2026",
+    "unit_cost_cents": 6899, "reason": "Documented purchase shipment receipt",
+}
+status, data = call("POST", "/stock/receipts", documented, csrf)
+expect(status, 201, "documented lot receipt")
+receipt_record_id = data["data"]["id"]
+assert data["data"]["unit_cost_cents"] == 6899
+assert data["data"]["movement"]["quantity"] == 2
+
+status, data = call("POST", "/stock/receipts", documented, csrf)
+expect(status, 201, "documented lot receipt idempotent retry")
+assert data["data"]["id"] == receipt_record_id
+
+status, _ = call("POST", "/stock/receipts", {
+    **documented, "unit_cost_cents": 6999,
+}, csrf)
+expect(status, 422, "documented receipt cost conflict rejected")
+
+status, data = call("GET", "/stock/balances")
+expect(status, 200, "documented lot receipt affects stock ledger")
+positions = {row["location_id"]: row["quantity"] for row in data["data"]}
+assert positions[destination_id] == 3
+
 status, _ = call("POST", "/auth/logout", {}, csrf)
 expect(status, 200, "server session logout")
 
