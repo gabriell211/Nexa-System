@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\StockItemController;
 use App\Http\Controllers\Api\V1\StockLocationController;
 use App\Http\Controllers\Api\V1\StockBalanceController;
 use App\Http\Controllers\Api\V1\StockMovementController;
+use App\Http\Controllers\Api\V1\StockOperatorController;
 use Illuminate\Support\Facades\Route;
 
 // Identical resources, separate authentication transports. Web requests receive
@@ -46,6 +47,7 @@ $registerBackoffice = static function (): void {
 
     Route::middleware('nexa.roles:owner,admin,manager,warehouse')->group(static function (): void {
         Route::get('/stock/items', [StockItemController::class, 'index']);
+        Route::get('/stock/operators', StockOperatorController::class);
         Route::get('/stock/locations', [StockLocationController::class, 'index']);
         Route::get('/stock/balances', StockBalanceController::class);
         Route::get('/stock/movements', [StockMovementController::class, 'index']);

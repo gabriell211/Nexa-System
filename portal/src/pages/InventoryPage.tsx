@@ -82,7 +82,7 @@ function NewLocation({ token, onCreated }: { token: string | null; onCreated: ()
   });
   const staff = useQuery({
     queryKey: ['stock-warehouse-staff'],
-    queryFn: () => api<Page<Staff>>('/staff' + queryString({ per_page: 100 }), token),
+    queryFn: () => api<Page<Staff>>('/stock/operators' + queryString({ per_page: 100 }), token),
     enabled: kind === 'technician',
   });
   const save = useMutation({
@@ -153,10 +153,10 @@ function MoveStock({ token, onCreated }: {
     queryKey: ['stock-options-locations'],
     queryFn: () => api<Page<StockLocation>>('/stock/locations' + queryString({per_page: 100}), token),
   });
-  const changed = (setter: (value: never) => void, value: never) => {
+  function changed<T>(setter: (value: T) => void, value: T): void {
     setter(value);
     setRequestId(crypto.randomUUID());
-  };
+  }
   const save = useMutation({
     mutationFn: () => api<unknown>('/stock/movements', token, {
       method: 'POST',
@@ -180,27 +180,27 @@ function MoveStock({ token, onCreated }: {
     <h3>Registrar movimentação</h3>
     <p className="stock-hint">Cada operação exige justificativa. O mesmo identificador impede registrar a baixa duas vezes.</p>
     <div className="stock-form-grid">
-      <Field label="Movimentação *"><select value={kind} onChange={e => changed(setKind as (v: never)=>void, e.target.value as never)}>
+      <Field label="Movimentação *"><select value={kind} onChange={e => changed(setKind, e.target.value as Kind)}>
         <option value="receipt">Entrada externa</option>
         <option value="transfer">Transferência entre locais</option>
         <option value="issue">Baixa / consumo</option>
       </select></Field>
-      <Field label="Item *"><select required value={itemId} onChange={e => changed(setItemId as (v: never)=>void, e.target.value as never)}>
+      <Field label="Item *"><select required value={itemId} onChange={e => changed(setItemId, e.target.value)}>
         <option value="">Selecionar item</option>
         {(items.data?.data ?? []).filter(i=>i.active).map(i=><option key={i.id} value={i.id}>{i.sku} — {i.name}</option>)}
       </select></Field>
-      {kind !== 'receipt' && <Field label="Origem *"><select required value={from} onChange={e => changed(setFrom as (v: never)=>void, e.target.value as never)}>
+      {kind !== 'receipt' && <Field label="Origem *"><select required value={from} onChange={e => changed(setFrom, e.target.value)}>
         <option value="">Selecionar origem</option>
         {activeLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
       </select></Field>}
-      {kind !== 'issue' && <Field label="Destino *"><select required value={to} onChange={e => changed(setTo as (v: never)=>void, e.target.value as never)}>
+      {kind !== 'issue' && <Field label="Destino *"><select required value={to} onChange={e => changed(setTo, e.target.value)}>
         <option value="">Selecionar destino</option>
         {activeLocations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
       </select></Field>}
       <Field label="Quantidade *"><input required min={1} max={1000000} step={1} type="number" value={quantity}
-        onChange={e => changed(setQuantity as (v: never)=>void, Number(e.target.value) as never)}/></Field>
+        onChange={e => changed(setQuantity, Number(e.target.value))}/></Field>
       <Field label="Justificativa *"><input required minLength={5} maxLength={500} value={reason}
-        onChange={e => changed(setReason as (v: never)=>void, e.target.value as never)}/></Field>
+        onChange={e => changed(setReason, e.target.value)}/></Field>
     </div>
     {optionsError && <p className="notice error" role="alert">{readableError(optionsError)}</p>}
     {save.error && <p className="notice error" role="alert">{readableError(save.error)}</p>}
