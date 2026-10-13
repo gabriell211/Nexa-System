@@ -92,6 +92,51 @@ jobs:
           DB_SSLMODE: disable
         run: php artisan test
 
+  http-session-smoke:
+    name: Real HTTP session and CSRF smoke
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DB_CONNECTION: sqlite
+      SESSION_DRIVER: file
+      SESSION_SECURE_COOKIE: "false"
+      CACHE_STORE: file
+      NEXA_BOOTSTRAP_EMAIL: smoke-owner@example.test
+      NEXA_BOOTSTRAP_PASSWORD: test-only-long-password-2026
+      NEXA_BOOTSTRAP_TENANT: nexa-demo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, intl, pdo_sqlite, bcmath
+          coverage: none
+      - name: Install backend dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare independent integration database
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          touch database/smoke.sqlite
+          echo "DB_DATABASE=$(pwd)/database/smoke.sqlite" >> "$GITHUB_ENV"
+      - name: Migrate and bootstrap
+        run: |
+          php artisan migrate --force
+          php artisan nexa:bootstrap
+      - name: Start real HTTP server
+        run: |
+          php artisan serve --host=127.0.0.1 --port=8080 > /tmp/nexa-http-smoke.log 2>&1 &
+          echo $! > /tmp/nexa-http-smoke.pid
+      - name: Verify CSRF and cookie sessions end to end
+        run: python3 ../scripts/browser_session_smoke.py
+      - name: Display server log on error
+        if: failure()
+        run: cat /tmp/nexa-http-smoke.log || true
+
   portal:
     name: React portal build
     runs-on: ubuntu-latest
