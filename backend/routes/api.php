@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\V1\StockLocationController;
 use App\Http\Controllers\Api\V1\StockBalanceController;
 use App\Http\Controllers\Api\V1\StockMovementController;
 use App\Http\Controllers\Api\V1\StockOperatorController;
+use App\Http\Controllers\Api\V1\StockShipmentController;
 use Illuminate\Support\Facades\Route;
 
 // Identical resources, separate authentication transports. Web requests receive
@@ -51,9 +52,15 @@ $registerBackoffice = static function (): void {
         Route::get('/stock/locations', [StockLocationController::class, 'index']);
         Route::get('/stock/balances', StockBalanceController::class);
         Route::get('/stock/movements', [StockMovementController::class, 'index']);
+        Route::get('/stock/shipments', [StockShipmentController::class, 'index']);
+        Route::get('/stock/shipments/{shipment}', [StockShipmentController::class, 'show']);
         Route::post('/stock/items', [StockItemController::class, 'store']);
         Route::post('/stock/locations', [StockLocationController::class, 'store']);
         Route::post('/stock/movements', [StockMovementController::class, 'store']);
+        Route::post('/stock/shipments', [StockShipmentController::class, 'store']);
+        Route::post('/stock/shipments/{shipment}/dispatch', [StockShipmentController::class, 'dispatch']);
+        Route::post('/stock/shipments/{shipment}/receive', [StockShipmentController::class, 'receive']);
+        Route::post('/stock/shipments/{shipment}/close', [StockShipmentController::class, 'close']);
     });
 
     Route::get('/audit-entries', AuditEntryController::class)->middleware('nexa.roles:owner,admin');
