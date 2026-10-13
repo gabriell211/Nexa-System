@@ -108,7 +108,14 @@ final class ServiceTicketTest extends TestCase
         $this->withToken($token)->getJson("/api/v1/tickets/{$id}")
             ->assertOk()->assertJsonCount(2,'data.comments')
             ->assertJsonPath('data.comments.0.internal',true);
-        $this->assertDatabaseMissing('audit_entries',['after_state'=>'Nota técnica não pública']);
+        $audit = \App\Models\AuditEntry::query()
+            ->where('action','ticket.comment.created')->get();
+        $this->assertCount(2, $audit);
+        foreach ($audit as $entry) {
+            $this->assertStringNotContainsString(
+                'Nota técnica não pública', json_encode($entry->after_state)
+            );
+        }
     }
 
     public function test_restricted_portfolio_filters_lists_and_blocks_objects_and_internal_work(): void
