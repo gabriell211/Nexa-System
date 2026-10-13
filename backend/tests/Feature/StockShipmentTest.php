@@ -200,4 +200,16 @@ final class StockShipmentTest extends TestCase
         $this->action($technician,$id,'dispatch',1)->assertForbidden();
         $this->assertDatabaseCount('stock_shipment_events',0);
     }
+
+    public function test_only_supervisory_roles_can_write_off_in_transit_loss(): void
+    {
+        extract($this->fixture());
+        $id = $this->reserve($token,$item,$from,$to,2)->assertCreated()->json('data.id');
+        $warehouse = $this->token($tenant, 'warehouse');
+        $this->action($warehouse,$id,'dispatch',2)->assertOk();
+        $this->action($warehouse,$id,'close',0)->assertForbidden();
+        $this->action($token,$id,'close',0)->assertOk()
+            ->assertJsonPath('data.status','closed_with_loss')
+            ->assertJsonPath('data.lost_quantity',2);
+    }
 }

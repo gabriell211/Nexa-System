@@ -157,7 +157,7 @@ final class StockShipmentService
                     'item_id'=>$shipment->item_id,
                     'source_location_id'=>$shipment->source_location_id,
                     'destination_location_id'=>null,
-                    'quantity'=>$amount, 'reason'=>'Remessa #'.$shipment->id.': '.$data['reason'],
+                    'quantity'=>$amount, 'reason'=>mb_substr('Remessa #'.$shipment->id.': '.$data['reason'], 0, 500),
                 ]);
             } elseif ($kind === 'receive') {
                 $transit = $shipment->shipped_quantity - $shipment->received_quantity - $shipment->lost_quantity;
@@ -174,7 +174,7 @@ final class StockShipmentService
                     'item_id'=>$shipment->item_id,
                     'source_location_id'=>null,
                     'destination_location_id'=>$shipment->destination_location_id,
-                    'quantity'=>$amount, 'reason'=>'Recebimento da remessa #'.$shipment->id.': '.$data['reason'],
+                    'quantity'=>$amount, 'reason'=>mb_substr('Recebimento da remessa #'.$shipment->id.': '.$data['reason'], 0, 500),
                 ]);
                 $shipment->received_quantity += $amount;
             } else {

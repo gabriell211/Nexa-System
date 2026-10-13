@@ -77,6 +77,11 @@ final class StockShipmentController extends Controller
     public function close(StockShipmentCloseRequest $request, int $shipment): StockShipmentResource
     {
         $this->portfolio->assertFull($request);
+        // Writing off missing inventory is a supervisory action, not routine
+        // warehouse dispatch/receipt. Do not grant it to warehouse operators.
+        if (!in_array($request->attributes->get('nexa_role'), ['owner', 'admin', 'manager'], true)) {
+            abort(403, 'Encerramento com perdas/cancelamento exige supervisão.');
+        }
         return new StockShipmentResource($this->shipments->close(
             $request->attributes->get('nexa_tenant'), $request->user(), $shipment, $request->validated()
         ));

@@ -96,8 +96,8 @@ function ShipmentCreate({ token, onSaved }: { token: string | null; onSaved: () 
   </form>;
 }
 
-function ShipmentDetail({ id, token, onClose, onChanged }: {
-  id: number;token:string|null;onClose:()=>void;onChanged:()=>Promise<void>;
+function ShipmentDetail({ id, token, canClose, onClose, onChanged }: {
+  id: number;token:string|null;canClose:boolean;onClose:()=>void;onChanged:()=>Promise<void>;
 }) {
   const qc=useQueryClient();
   const [kind,setKind]=useState<EventKind>('dispatch');
@@ -167,7 +167,7 @@ function ShipmentDetail({ id, token, onClose, onChanged }: {
             }}>
               {pending>0&&<option value="dispatch">Expedir material</option>}
               {transit>0&&<option value="receive">Confirmar recebimento</option>}
-              <option value="close">Encerrar (falta/cancelamento)</option>
+              {canClose&&<option value="close">Encerrar (falta/cancelamento)</option>}
             </select></div>
           {activeKind!=='close'&&<div className="stock-field"><label htmlFor="ship-event-qty">Quantidade · máximo {max}</label>
             <input id="ship-event-qty" type="number" min={1} max={max} value={quantity}
@@ -194,7 +194,7 @@ function ShipmentDetail({ id, token, onClose, onChanged }: {
   </section></div>;
 }
 
-export function ShipmentsPage({token}:{token:string|null}) {
+export function ShipmentsPage({token,canClose}:{token:string|null;canClose:boolean}) {
   const qc=useQueryClient();
   const [page,setPage]=useState(1);
   const [selected,setSelected]=useState<number|null>(null);
@@ -236,7 +236,7 @@ export function ShipmentsPage({token}:{token:string|null}) {
         </div></div>}
     </section>
     <ShipmentCreate token={token} onSaved={refresh}/>
-    {selected!==null&&<ShipmentDetail key={selected} id={selected} token={token}
+    {selected!==null&&<ShipmentDetail key={selected} id={selected} token={token} canClose={canClose}
       onClose={()=>setSelected(null)} onChanged={refresh}/>}
   </div>;
 }
