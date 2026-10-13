@@ -129,7 +129,7 @@
 | NX-100 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Transferência provedor → técnico, provedor → cliente, técnico → cliente, cliente → técnico e devolução ao provedor. |
 | NX-101 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Movimento transacional com origem/destino, saldo antes/depois, autorização, justificativa e trilha de auditoria. |
 | NX-102 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Bloqueio de saldo negativo e de consumo concorrente da mesma unidade; reservas para chamados e reposições. |
-| NX-103 | Estoque, movimentação e reposição | NÃO COMPROVADO | Inventário físico, ajuste supervisionado, perdas, baixas, devoluções e histórico contábil de estoque. |
+| NX-103 | Estoque, movimentação e reposição | PARCIAL — seleção por lote e vencimento; inventário físico não implementado | Inventário físico, ajuste supervisionado, perdas, baixas, devoluções e histórico contábil de estoque. |
 | NX-104 | Estoque, movimentação e reposição | NÃO COMPROVADO | Controle de estoque mínimo, crítico, segurança e sugestão de compra. |
 | NX-105 | Estoque, movimentação e reposição | NÃO COMPROVADO | Programação de reposição por intervalo, clientes, modelos, tipos e demanda prevista. |
 | NX-106 | Estoque, movimentação e reposição | NÃO COMPROVADO | Revisão da sugestão com ajuste de quantidades, item de segurança e inserção manual de itens. |
@@ -456,3 +456,10 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 - `NX-099`: fornecedor escopado ao tenant, documento, lote, validade e custo registrados num recebimento atômico vinculado ao razão de estoque.
 - Não existe rastreio por lote nas movimentações posteriores, FIFO/FEFO, importação NF-e, item serializado nem troca confirmada por equipamento. Logo, o aceite integral **não** está alcançado.
 - Testes de banco, API e sessão HTTP são condição necessária; não substituem teste de operação de almoxarifado e qualidade de documentação fiscal.
+
+## Progresso de lote e FEFO (13/10/2026)
+
+- FEFO agora identifica lotes por recebimento, registra alocações do movimento e conserva posições rastreadas por local. Os registros legados permanecem sem proveniência comprovada.
+- Remessas mantêm vínculo contábil dos lotes enviados, recebidos e perdidos. Atribuição parcial por FEFO é uma **inferência operacional** até existir leitura física do lote.
+- Saldos `available_quantity` excluem estoque conhecido vencido, sem diminuir o saldo físico; `expired_quantity` é apresentado separadamente.
+- `NX-099/102/103`: avanço técnico PARCIAL. Aceite exige reconciliação físico-contábil, reserva por lote, confirmação de picking/recebimento e homologação operacional em campo.

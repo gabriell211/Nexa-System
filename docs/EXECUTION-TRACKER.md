@@ -239,3 +239,22 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Falta importação de nota fiscal XML/NF-e, tributos, unidades fracionadas, múltiplas linhas na mesma nota, devolução por lote, previsão de vencimento, vínculo da troca ao equipamento e normalização de códigos GTIN/EAN.
 - Suporte a catálogos com mais de 100 registros no seletor React exige busca paginada.
 - `NX-078` e `NX-099` continuam **PARCIAIS**, sem aceite E2E de fluxo fiscal/hardware.
+
+## Entrega 10 — contabilidade por lote, FEFO e disponibilidade vencida (2026-10-13)
+
+**Código implementado e integrado:** `stock_lots`, `stock_lot_balances`, `stock_movement_lot_allocations` e `stock_shipment_lot_transit` foram adicionados à base persistida. Entradas documentadas passam a criar lote único por recebimento, posições físicas por lote/local e ligação ao movimento de estoque. Baixas e transferências escolhem lotes válidos por FEFO (menor validade primeiro, nulo por último, desempate cronológico) e armazenam quais quantidades foram alocadas de cada lote. Expedições e recebimentos mantêm lotes em trânsito, registrando perdas no encerramento. `GET /api/v1/stock/lots` expõe posições paginadas sem mostrar outras empresas; o portal agora apresenta a aba Lotes.
+
+**Prevenção contra dados inventados:** estoque antigo anterior à migração, e entradas sem documento, continuam fisicamente contabilizados, mas não recebem lote automático. A quantidade rastreável pode ser inferior à física. Nenhuma migração preenche lotes históricos artificialmente.
+
+**Correção adicional:** saldos físicos de lotes vencidos permanecem registrados, mas são excluídos de novas reservas e de `available_quantity`, expostos separadamente em `expired_quantity`. Unidades legadas sem lote continuam contabilizadas como não rastreadas, sem apropriação a lotes fictícios.
+
+**Testes:** Feature Laravel para FEFO, transferência, legado misto, lote vencido, remessa parcial, perda, isolamento multiempresa, idempotência e bloqueio de reserva vencida; smoke HTTP para leitura dos lotes e baixa rastreada, além dos testes anteriores de reserva/concorrência PostgreSQL.
+
+### Limitações e bloqueios de aceite
+
+- **FEFO atual é alocação contábil por regra**, não prova de picking físico. Uma remessa recebida parcialmente é atribuída por FEFO dentre lotes em trânsito; sem conferência/escaneamento do lote físico no destino, não é possível afirmar que exatamente aquele lote chegou. Exigir confirmação física por lote e divergências na fase logística.
+- **Não há rastreabilidade por unidade serializada**, etiquetas GS1, leitura de código, conferência de lacre, cadeia de custódia comprovada ou quarentena física/avaria.
+- **Não há reconciliação completa de estoque legado**, inventário físico supervisionado, perdas com aprovação de inventário, relatórios de divergência ou valorização por custo médio tributário.
+- Estoque vencido permanece no saldo físico até ajuste/retirada autorizado. A API não deve fingir que sumiu.
+- O controle de reserva ainda é por SKU/local, e não por lote escolhido pelo operador; é seguro no agregado, mas não garante a seleção física antecipada do lote.
+- `NX-099`, `NX-102` e `NX-103` permanecem **PARCIAIS** até os testes de campo, reconciliação e aceite de processos reais.
