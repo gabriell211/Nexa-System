@@ -108,12 +108,20 @@ function ShipmentDetail({ id, token, onClose, onChanged }: {
     queryKey:['shipment-detail',id],
     queryFn:()=>api<{data:Shipment}>('/stock/shipments/'+id,token),
   });
+  const shipment=details.data?.data;
+  const pending=shipment?.reserved_quantity??0;
+  const transit=shipment?.in_transit_quantity??0;
+  // Hide invalid actions after a partial receipt or full dispatch without
+  // accidentally submitting an action absent from the select options.
+  const activeKind: EventKind = kind==='dispatch'&&pending===0
+    ? (transit>0?'receive':'close')
+    : kind==='receive'&&transit===0 ? (pending>0?'dispatch':'close') : kind;
   const mutation=useMutation({
-    mutationFn:()=>api<{data:Shipment}>('/stock/shipments/'+id+'/'+kind,token,{
+    mutationFn:()=>api<{data:Shipment}>('/stock/shipments/'+id+'/'+activeKind,token,{
       method:'POST',
       body:JSON.stringify({
         request_id:requestId,reason:reason.trim(),
-        ...(kind==='close'?{}:{quantity}),
+        ...(activeKind==='close'?{}:{quantity}),
       }),
     }),
     onSuccess:async()=>{
@@ -126,12 +134,9 @@ function ShipmentDetail({ id, token, onClose, onChanged }: {
   });
   function change<T>(set:(value:T)=>void,value:T){set(value);setRequestId(crypto.randomUUID());}
   function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();mutation.mutate();}
-  const shipment=details.data?.data;
-  const pending=shipment?.reserved_quantity??0;
-  const transit=shipment?.in_transit_quantity??0;
   const closed=['received','cancelled','closed_with_loss','closed_partial'].includes(shipment?.status??'');
-  const max=kind==='dispatch'?pending:transit;
-  const valid=kind==='close'||(quantity>0&&quantity<=max);
+  const max=activeKind==='dispatch'?pending:transit;
+  const valid=activeKind==='close'||(quantity>0&&quantity<=max);
   const when=(date:string)=>new Date(date).toLocaleString('pt-BR');
   return <div className="modal-overlay"><section className="modal printer-assignment-modal" role="dialog"
     aria-modal="true" aria-labelledby="shipment-heading">
@@ -157,21 +162,21 @@ function ShipmentDetail({ id, token, onClose, onChanged }: {
         <h3>Registrar evento</h3>
         <div className="stock-form-grid">
           <div className="stock-field"><label htmlFor="ship-action">Operação</label>
-            <select id="ship-action" value={kind} onChange={e=>{
+            <select id="ship-action" value={activeKind} onChange={e=>{
               change(setKind,e.target.value as EventKind);setQuantity(1);
             }}>
               {pending>0&&<option value="dispatch">Expedir material</option>}
               {transit>0&&<option value="receive">Confirmar recebimento</option>}
               <option value="close">Encerrar (falta/cancelamento)</option>
             </select></div>
-          {kind!=='close'&&<div className="stock-field"><label htmlFor="ship-event-qty">Quantidade · máximo {max}</label>
+          {activeKind!=='close'&&<div className="stock-field"><label htmlFor="ship-event-qty">Quantidade · máximo {max}</label>
             <input id="ship-event-qty" type="number" min={1} max={max} value={quantity}
               onChange={e=>change(setQuantity,Number(e.target.value))} required/></div>}
           <div className="stock-field"><label htmlFor="ship-event-reason">Justificativa</label>
             <input id="ship-event-reason" minLength={5} maxLength={500} required
               value={reason} onChange={e=>change(setReason,e.target.value)}/></div>
         </div>
-        {kind==='close'&&<p className="stock-hint">Ao encerrar, o saldo ainda reservado é cancelado. Quantidades expedidas e não recebidas são registradas como falta, sem entrada fictícia.</p>}
+        {activeKind==='close'&&<p className="stock-hint">Ao encerrar, o saldo ainda reservado é cancelado. Quantidades expedidas e não recebidas são registradas como falta, sem entrada fictícia.</p>}
         {mutation.error&&<p role="alert" className="notice error">{readableError(mutation.error)}</p>}
         <button className="button primary" disabled={mutation.isPending||!valid}
           type="submit"><CheckCircle2 size={16}/>{mutation.isPending?'Registrando...':'Confirmar operação'}</button>

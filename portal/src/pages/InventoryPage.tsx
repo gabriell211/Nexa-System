@@ -12,7 +12,7 @@ interface StockLocation {
   customer_id: number | null; customer_location_id: number | null;
   technician_user_id: number | null; active: boolean;
 }
-interface Balance { item_id: number; location_id: number; quantity: number; item: StockItem; location: StockLocation }
+interface Balance { item_id: number; location_id: number; quantity: number; reserved_quantity: number; available_quantity: number; item: StockItem; location: StockLocation }
 interface Movement {
   id: number; request_id: string; kind: Kind; quantity: number; created_at: string; reason: string;
   source_before: number | null; source_after: number | null;
@@ -252,7 +252,7 @@ export function InventoryPage({token}: {token: string | null}) {
         listing.error ? <p role="alert" className="notice error">{readableError(listing.error)}</p> :
         listing.data.data.length===0 ? <div className="empty-state"><Package size={30}/><p>Nenhum registro nesta categoria.</p></div> :
         <div className="table-wrap"><table><thead><tr>
-          {section==='balances' ? <><th>Item</th><th>Local</th><th>Saldo</th></> :
+          {section==='balances' ? <><th>Item</th><th>Local</th><th>Físico</th><th>Reservado</th><th>Disponível</th></> :
            section==='movements' ? <><th>Item</th><th>Operação</th><th>Origem / destino</th><th>Quantidade</th><th>Responsável</th><th>Data</th></> :
            section==='items' ? <><th>SKU</th><th>Item</th><th>Tipo</th><th>Estado</th></> :
              <><th>Local</th><th>Tipo</th><th>Cliente</th><th>Estado</th></>}</tr></thead>
@@ -260,7 +260,9 @@ export function InventoryPage({token}: {token: string | null}) {
             if (section==='balances') {
               const b=record as Balance;return <tr key={b.item_id + '-' + b.location_id}>
                 <td><strong>{b.item.sku}</strong><small>{b.item.name}</small></td><td>{b.location.name}</td>
-                <td><strong>{b.quantity.toLocaleString('pt-BR')} {b.item.unit}</strong></td></tr>;
+                <td><strong>{b.quantity.toLocaleString('pt-BR')} {b.item.unit}</strong></td>
+                <td>{b.reserved_quantity.toLocaleString('pt-BR')} {b.item.unit}</td>
+                <td><strong>{b.available_quantity.toLocaleString('pt-BR')} {b.item.unit}</strong></td></tr>;
             }
             if (section==='movements') {
               const m=record as Movement;return <tr key={m.id}>

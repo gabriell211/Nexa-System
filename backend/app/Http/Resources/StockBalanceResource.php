@@ -12,6 +12,8 @@ final class StockBalanceResource extends JsonResource
     {
         return ['item_id'=>$this->item_id,'location_id'=>$this->location_id,
             'quantity'=>(int) $this->quantity,
+            'reserved_quantity'=>(int) $this->reserved_quantity,
+            'available_quantity'=>(int) $this->available_quantity,
             'item'=>new StockItemResource($this->whenLoaded('item')),
             'location'=>new StockLocationResource($this->whenLoaded('location'))];
     }

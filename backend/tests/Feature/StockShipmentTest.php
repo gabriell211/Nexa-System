@@ -71,7 +71,9 @@ final class StockShipmentTest extends TestCase
             ->assertJsonPath('data.reserved_quantity',7)->json('data.id');
 
         $this->withToken($token)->getJson('/api/v1/stock/balances')
-            ->assertOk()->assertJsonPath('data.0.quantity',10);
+            ->assertOk()->assertJsonPath('data.0.quantity',10)
+            ->assertJsonPath('data.0.reserved_quantity',7)
+            ->assertJsonPath('data.0.available_quantity',3);
         $this->withToken($token)->postJson('/api/v1/stock/movements', [
             'request_id'=>(string) Str::uuid(),'kind'=>'issue','item_id'=>$item,
             'source_location_id'=>$from,'destination_location_id'=>null,
@@ -117,6 +119,8 @@ final class StockShipmentTest extends TestCase
             'tenant_id'=>$tenant->id,'item_id'=>$item,'location_id'=>$to,'quantity'=>3,
         ]);
         $this->assertDatabaseCount('stock_shipment_events',5);
+        $this->withToken($token)->getJson('/api/v1/stock/balances')
+            ->assertOk()->assertJsonPath('data.0.available_quantity',7);
         $this->withToken($token)->getJson("/api/v1/stock/shipments/{$id}")
             ->assertOk()->assertJsonCount(5,'data.events');
         $this->action($token,$id,'dispatch',1)->assertUnprocessable();
