@@ -218,4 +218,36 @@ final class StockLotLedgerTest extends TestCase
         $this->withToken($limited)->getJson('/api/v1/stock/lots')->assertForbidden();
         $this->assertDatabaseCount('stock_lots',1);
     }
+
+    public function test_reservation_excludes_expired_known_lots_and_balance_reports_unusable_stock(): void
+    {
+        extract($this->fixture());
+        [$receipt]=$this->receiveLot($token,$item,$supplier,$from,'EXPIRED-RESERVE',2,5);
+        DB::table('stock_lots')->where('receipt_detail_id',$receipt['id'])
+            ->update(['expires_on'=>now('UTC')->subDay()->toDateString()]);
+
+        $this->withToken($token)->getJson('/api/v1/stock/balances')
+            ->assertOk()->assertJsonPath('data.0.quantity',5)
+            ->assertJsonPath('data.0.expired_quantity',5)
+            ->assertJsonPath('data.0.available_quantity',0);
+        $this->withToken($token)->postJson('/api/v1/stock/shipments',[
+            'request_id'=>(string)Str::uuid(),'item_id'=>$item,
+            'source_location_id'=>$from,'destination_location_id'=>$to,
+            'quantity'=>1,'reason'=>'Must not reserve expired batch',
+        ])->assertUnprocessable();
+        $this->assertDatabaseCount('stock_shipments',0);
+
+        // A legacy untracked unit can still be reserved without assigning
+        // it falsely to the expired known lot.
+        $this->move($token,'receipt',$item,null,$from,1)->assertCreated();
+        $this->withToken($token)->getJson('/api/v1/stock/balances')
+            ->assertOk()->assertJsonPath('data.0.quantity',6)
+            ->assertJsonPath('data.0.expired_quantity',5)
+            ->assertJsonPath('data.0.available_quantity',1);
+        $this->withToken($token)->postJson('/api/v1/stock/shipments',[
+            'request_id'=>(string)Str::uuid(),'item_id'=>$item,
+            'source_location_id'=>$from,'destination_location_id'=>$to,
+            'quantity'=>1,'reason'=>'Reserve only nonexpired legacy stock',
+        ])->assertCreated();
+    }
 }

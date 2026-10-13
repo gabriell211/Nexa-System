@@ -13,7 +13,7 @@ interface StockLocation {
   customer_id: number | null; customer_location_id: number | null;
   technician_user_id: number | null; active: boolean;
 }
-interface Balance { item_id: number; location_id: number; quantity: number; reserved_quantity: number; available_quantity: number; item: StockItem; location: StockLocation }
+interface Balance { item_id: number; location_id: number; quantity: number; reserved_quantity: number; expired_quantity: number; available_quantity: number; item: StockItem; location: StockLocation }
 interface Movement {
   id: number; request_id: string; kind: Kind; quantity: number; created_at: string; reason: string;
   source_before: number | null; source_after: number | null;
@@ -282,7 +282,7 @@ export function InventoryPage({token}: {token: string | null}) {
         listing.error ? <p role="alert" className="notice error">{readableError(listing.error)}</p> :
         listing.data.data.length===0 ? <div className="empty-state"><Package size={30}/><p>Nenhum registro nesta categoria.</p></div> :
         <div className="table-wrap"><table><thead><tr>
-          {section==='balances' ? <><th>Item</th><th>Local</th><th>Físico</th><th>Reservado</th><th>Disponível</th></> :
+          {section==='balances' ? <><th>Item</th><th>Local</th><th>Físico</th><th>Reservado</th><th>Vencido</th><th>Disponível</th></> :
            section==='lots' ? <><th>Item</th><th>Lote</th><th>Local</th><th>Saldo rastreado</th><th>Validade</th><th>Custo unitário</th></> :
            section==='movements' ? <><th>Item</th><th>Operação</th><th>Origem / destino</th><th>Quantidade</th><th>Rastreio</th><th>Responsável</th><th>Data</th></> :
            section==='items' ? <><th>SKU</th><th>Item</th><th>Tipo</th><th>Estado</th></> :
@@ -293,6 +293,7 @@ export function InventoryPage({token}: {token: string | null}) {
                 <td><strong>{b.item.sku}</strong><small>{b.item.name}</small></td><td>{b.location.name}</td>
                 <td><strong>{b.quantity.toLocaleString('pt-BR')} {b.item.unit}</strong></td>
                 <td>{b.reserved_quantity.toLocaleString('pt-BR')} {b.item.unit}</td>
+                <td>{b.expired_quantity.toLocaleString('pt-BR')} {b.item.unit}</td>
                 <td><strong>{b.available_quantity.toLocaleString('pt-BR')} {b.item.unit}</strong></td></tr>;
             }
             if (section==='lots') {
