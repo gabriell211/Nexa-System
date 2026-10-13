@@ -19,6 +19,7 @@ final class StockShipmentService
     public function __construct(
         private readonly InventoryLedgerService $ledger,
         private readonly AuditWriter $audit,
+        private readonly StockLotLedgerService $lots,
     ) {}
 
     public function reserve(Tenant $tenant, User $actor, array $data): StockShipment
@@ -159,6 +160,7 @@ final class StockShipmentService
                     'destination_location_id'=>null,
                     'quantity'=>$amount, 'reason'=>mb_substr('Remessa #'.$shipment->id.': '.$data['reason'], 0, 500),
                 ]);
+                $this->lots->recordDispatch($shipment, $movement);
             } elseif ($kind === 'receive') {
                 $transit = $shipment->shipped_quantity - $shipment->received_quantity - $shipment->lost_quantity;
                 if ($amount < 1 || $amount > $transit) {
@@ -176,12 +178,14 @@ final class StockShipmentService
                     'destination_location_id'=>$shipment->destination_location_id,
                     'quantity'=>$amount, 'reason'=>mb_substr('Recebimento da remessa #'.$shipment->id.': '.$data['reason'], 0, 500),
                 ]);
+                $this->lots->recordReceipt($shipment, $movement);
                 $shipment->received_quantity += $amount;
             } else {
                 $shipment->cancelled_quantity = $shipment->quantity - $shipment->shipped_quantity;
                 $shipment->lost_quantity = $shipment->shipped_quantity - $shipment->received_quantity;
                 // Closing explicitly writes off undistributed reservations and transit shortages.
                 $amount = $shipment->lost_quantity;
+                $this->lots->recordLoss($shipment);
             }
 
             $shipment->status = $this->status($shipment);

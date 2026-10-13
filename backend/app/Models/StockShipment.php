@@ -21,6 +21,11 @@ final class StockShipment extends Model
             'lost_quantity'=>'integer','cancelled_quantity'=>'integer',
         ];
     }
+    public function lotTransit(): HasMany
+    {
+        return $this->hasMany(StockShipmentLotTransit::class, 'shipment_id');
+    }
+
     public function item(): BelongsTo { return $this->belongsTo(StockItem::class, 'item_id'); }
     public function source(): BelongsTo { return $this->belongsTo(StockLocation::class, 'source_location_id'); }
     public function destination(): BelongsTo { return $this->belongsTo(StockLocation::class, 'destination_location_id'); }
