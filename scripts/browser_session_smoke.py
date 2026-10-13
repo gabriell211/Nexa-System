@@ -11,6 +11,7 @@ import json
 import os
 import sys
 import time
+import uuid
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
@@ -89,6 +90,53 @@ assert data.get("data", {}).get("name") == "HTTP smoke customer"
 status, data = call("GET", "/customers")
 expect(status, 200, "read client list using cookie")
 assert any(item.get("name") == "HTTP smoke customer" for item in data["data"])
+
+
+# Exercise inventory over a real HTTP/cookie/CSRF boundary as well as PHPUnit.
+status, data = call("POST", "/stock/items", {
+    "sku": "HTTP-SMOKE-TONER", "name": "HTTP inventory toner",
+    "category": "toner", "unit": "un",
+}, csrf)
+expect(status, 201, "inventory item create")
+item_id = data["data"]["id"]
+
+status, data = call("POST", "/stock/locations", {
+    "name": "HTTP smoke warehouse", "kind": "provider",
+}, csrf)
+expect(status, 201, "warehouse creation")
+location_id = data["data"]["id"]
+
+movement_id = str(uuid.uuid4())
+receipt = {
+    "request_id": movement_id, "kind": "receipt", "item_id": item_id,
+    "source_location_id": None, "destination_location_id": location_id,
+    "quantity": 2, "reason": "Smoke authenticated inventory receipt",
+}
+status, data = call("POST", "/stock/movements", receipt, csrf)
+expect(status, 201, "stock receipt")
+stock_movement_id = data["data"]["id"]
+assert data["data"]["destination_after"] == 2
+
+status, data = call("POST", "/stock/movements", receipt, csrf)
+expect(status, 201, "idempotent duplicate receipt")
+assert data["data"]["id"] == stock_movement_id
+
+status, _ = call("POST", "/stock/movements", {
+    **receipt, "quantity": 9,
+}, csrf)
+expect(status, 422, "conflicting retry must fail")
+
+status, _ = call("POST", "/stock/movements", {
+    "request_id": str(uuid.uuid4()), "kind": "issue", "item_id": item_id,
+    "source_location_id": location_id, "destination_location_id": None,
+    "quantity": 3, "reason": "Reject insufficient balance",
+}, csrf)
+expect(status, 422, "prevent negative stock")
+
+status, data = call("GET", "/stock/balances")
+expect(status, 200, "read stock positions")
+assert len(data["data"]) == 1
+assert data["data"][0]["quantity"] == 2
 
 status, _ = call("POST", "/auth/logout", {}, csrf)
 expect(status, 200, "server session logout")
