@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\V1\StockSupplierController;
 use App\Http\Controllers\Api\V1\StockCompatibilityController;
 use App\Http\Controllers\Api\V1\StockDocumentedReceiptController;
 use App\Http\Controllers\Api\V1\ServiceTicketController;
+use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
 use Illuminate\Support\Facades\Route;
 
 // Identical resources, separate authentication transports. Web requests receive
@@ -79,6 +80,7 @@ $registerBackoffice = static function (): void {
 
     Route::middleware('nexa.roles:owner,admin,manager,supervisor,technician')->group(static function (): void {
         Route::get('/tickets', [ServiceTicketController::class, 'index']);
+        Route::get('/tickets/operators', ServiceTicketOperatorController::class);
         Route::get('/tickets/{ticket}', [ServiceTicketController::class, 'show']);
         Route::post('/tickets', [ServiceTicketController::class, 'store']);
         Route::post('/tickets/{ticket}/transition', [ServiceTicketController::class, 'transition']);

@@ -91,10 +91,8 @@ function Detail({id,canReopen,onClose,onChanged}:{
   });
   const staff=useQuery({
     queryKey:['ticket-staff'],
-    queryFn:()=>api<Page<Staff>>('/stock/operators'+queryString({per_page:100}),null),
-    enabled:false, // Separate helpdesk assignment selector is not yet implemented.
+    queryFn:()=>api<Page<Staff>>('/tickets/operators'+queryString({per_page:100}),null),
   });
-  void staff;
   const mutation=useMutation({
     mutationFn:()=>api<{data:Ticket}>('/tickets/'+id+'/transition',null,{
       method:'POST',body:JSON.stringify({
@@ -133,6 +131,11 @@ function Detail({id,canReopen,onClose,onChanged}:{
               <select id="ticket-status" required value={status??''} onChange={e=>setStatus(e.target.value as Status)}>
                 <option value="">Selecionar</option>
                 {allowed.map(x=><option key={x} value={x}>{statuses[x]}</option>)}
+              </select></div>
+            <div className="stock-field"><label htmlFor="ticket-assignee">Responsável</label>
+              <select id="ticket-assignee" value={assignee} onChange={e=>setAssignee(e.target.value)}>
+                <option value="">Manter atual</option>
+                {(staff.data?.data??[]).map(user=><option key={user.id} value={user.id}>{user.name}</option>)}
               </select></div>
             <div className="stock-field"><label htmlFor="ticket-reason">Motivo</label>
               <input id="ticket-reason" required minLength={5} maxLength={500}

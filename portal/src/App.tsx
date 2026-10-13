@@ -2,7 +2,7 @@ import { useDeferredValue, useState, type FormEvent, type ReactNode } from 'reac
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList,
+  Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList, ClipboardCheck,
   Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon,
   Search, ShieldCheck, Trash2, Users, X, MapPin, UserRoundCog,
 } from 'lucide-react';
@@ -12,6 +12,7 @@ import { StaffPage } from './pages/StaffPage';
 import { InventoryPage } from './pages/InventoryPage';
 import { ShipmentsPage } from './pages/ShipmentsPage';
 import { SuppliesPage } from './pages/SuppliesPage';
+import { TicketsPage } from './pages/TicketsPage';
 import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
 import type {
   AuditEntry, Credentials, CurrentUser, Customer, CustomerPayload, Dashboard,
@@ -148,6 +149,10 @@ function Shell({ token, identity, onLogout }: {
         <NavLink to="/dashboard" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><LayoutDashboard size={19}/> Visão geral</NavLink>
         <NavLink to="/clientes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Users size={19}/> Clientes</NavLink>
         <NavLink to="/parque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><PrinterIcon size={19}/> Parque de impressoras</NavLink>
+        {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
+          <NavLink to="/chamados" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
+            <ClipboardCheck size={19}/> Chamados
+          </NavLink>}
         {canStock && <NavLink to="/estoque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Database size={19}/> Estoque</NavLink>}
         {canStock && <NavLink to="/reposicoes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ArrowRight size={19}/> Remessas</NavLink>}
         {canStock && <NavLink to="/suprimentos" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ClipboardList size={19}/> Suprimentos</NavLink>}
@@ -174,6 +179,8 @@ function Shell({ token, identity, onLogout }: {
           <Route path="/clientes" element={<CustomersPage token={token} canWrite={canWrite} />} />
           <Route path="/clientes/:id/unidades" element={<CustomerOrganizationPage token={token} canWrite={canWrite} />} />
           <Route path="/parque" element={<PrintersPage token={token} canWrite={canWrite} />} />
+          {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
+            <Route path="/chamados" element={<TicketsPage canReopen={canWrite||identity.role==='supervisor'} />} />}
           {canStock && <Route path="/estoque" element={<InventoryPage token={token} />} />}
           {canStock && <Route path="/reposicoes" element={<ShipmentsPage token={token} canClose={canWrite} />} />}
           {canStock && <Route path="/suprimentos" element={<SuppliesPage token={token} canRemove={canWrite} />} />}

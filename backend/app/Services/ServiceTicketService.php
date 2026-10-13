@@ -66,7 +66,7 @@ final class ServiceTicketService
                 abort(403,'Reabertura de chamado exige supervisão.');
             }
             if (array_key_exists('assigned_user_id',$data)) {
-                $this->validateAssignee($tenant,$data['assigned_user_id']);
+                $this->validateAssignee($tenant,$data['assigned_user_id']===null?null:(int)$data['assigned_user_id']);
                 $ticket->assigned_user_id=$data['assigned_user_id'];
             }
             if ($new==='in_progress' && $ticket->assigned_user_id===null) {
@@ -154,7 +154,7 @@ final class ServiceTicketService
                 throw ValidationException::withMessages(['printer_id'=>'Impressora não pertence ao cliente ativo.']);
             }
         }
-        $this->validateAssignee($tenant,$data['assigned_user_id']??null);
+        $this->validateAssignee($tenant,isset($data['assigned_user_id'])?(int)$data['assigned_user_id']:null);
     }
 
     private function validateAssignee(Tenant $tenant,?int $assigneeId): void
