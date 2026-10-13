@@ -226,7 +226,7 @@ final class StockShipmentService
     private function details(StockShipment $shipment): StockShipment
     {
         return $shipment->load([
-            'item','source','destination','events'=>fn ($q) => $q->with('actor:id,name')->orderBy('id'),
+            'item','source','destination','lotTransit','events'=>fn ($q) => $q->with('actor:id,name')->orderBy('id'),
         ]);
     }
 }

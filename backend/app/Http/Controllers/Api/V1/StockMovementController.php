@@ -29,7 +29,7 @@ final class StockMovementController extends Controller
         ]);
         return StockMovementResource::collection(
             StockMovement::query()->where('tenant_id', $request->attributes->get('nexa_tenant')->id)
-                ->with(['item','source','destination','actor:id,name'])
+                ->with(['item','source','destination','actor:id,name','lotAllocations.lot'])
                 ->orderByDesc('id')->paginate($data['per_page'] ?? 25)
         );
     }

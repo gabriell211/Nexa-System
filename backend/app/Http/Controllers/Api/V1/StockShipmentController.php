@@ -33,7 +33,7 @@ final class StockShipmentController extends Controller
         return StockShipmentResource::collection(
             StockShipment::query()->where('tenant_id', $request->attributes->get('nexa_tenant')->id)
                 ->when(isset($filters['status']), static fn ($q) => $q->where('status', $filters['status']))
-                ->with(['item','source','destination'])->orderByDesc('id')
+                ->with(['item','source','destination','lotTransit'])->orderByDesc('id')
                 ->paginate($filters['per_page'] ?? 25)
         );
     }
@@ -43,7 +43,7 @@ final class StockShipmentController extends Controller
         $this->portfolio->assertFull($request);
         $record = StockShipment::query()
             ->where('tenant_id', $request->attributes->get('nexa_tenant')->id)
-            ->with(['item','source','destination','events'=>static fn ($query) =>
+            ->with(['item','source','destination','lotTransit','events'=>static fn ($query) =>
                 $query->with('actor:id,name')->orderBy('id')])
             ->findOrFail($shipment);
         return new StockShipmentResource($record);
