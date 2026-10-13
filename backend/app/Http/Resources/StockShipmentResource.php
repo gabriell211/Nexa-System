@@ -28,7 +28,7 @@ final class StockShipmentResource extends JsonResource
                 static fn ($event): array => [
                     'id'=>$event->id,'kind'=>$event->kind,'quantity'=>$event->quantity,
                     'reason'=>$event->reason,'created_at'=>$event->created_at,
-                    'actor'=>$event->whenLoaded('actor', fn () => $event->actor?->only(['id','name'])),
+                    'actor'=>$event->relationLoaded('actor') ? $event->actor?->only(['id','name']) : null,
                 ]
             )),
         ];
