@@ -24,6 +24,24 @@ use Illuminate\Validation\ValidationException;
  */
 final class StockLotLedgerService
 {
+    /**
+     * A reserved SKU cannot include physically expired, known lots.
+     * Must be called while the stock_items row lock is held for writes.
+     */
+    public function eligiblePhysical(int $tenantId, int $itemId, int $locationId, int $physical): int
+    {
+        $expired = (int) DB::table('stock_lot_balances as balances')
+            ->join('stock_lots as lots', 'lots.id', '=', 'balances.lot_id')
+            ->where('balances.tenant_id', $tenantId)
+            ->where('lots.item_id', $itemId)
+            ->where('balances.location_id', $locationId)
+            ->whereNotNull('lots.expires_on')
+            ->where('lots.expires_on', '<', now('UTC')->toDateString())
+            ->sum('balances.quantity');
+
+        return max(0, $physical - $expired);
+    }
+
     public function registerReceipt(StockReceiptDetail $receipt, StockMovement $movement): void
     {
         $tenantId = (int) $movement->tenant_id;

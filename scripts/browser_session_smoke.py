@@ -235,6 +235,28 @@ expect(status, 200, "documented lot receipt affects stock ledger")
 positions = {row["location_id"]: row["quantity"] for row in data["data"]}
 assert positions[destination_id] == 3
 
+# Lot allocation is observable in the real HTTP API, without inventing
+# provenance for the legacy units received earlier.
+status, data = call("GET", "/stock/lots")
+expect(status, 200, "read tracked lot positions")
+assert len(data["data"]) == 1
+assert data["data"][0]["lot_number"] == "HTTP-LOT-10"
+assert data["data"][0]["quantity"] == 2
+assert data["data"][0]["expired"] is False
+
+status, data = call("POST", "/stock/movements", {
+    "request_id": str(uuid.uuid4()), "kind": "issue", "item_id": item_id,
+    "source_location_id": destination_id, "destination_location_id": None,
+    "quantity": 1, "reason": "FEFO consumption over real HTTP",
+}, csrf)
+expect(status, 201, "consume one tracked lot unit")
+assert data["data"]["lot_allocations"][0]["lot_number"] == "HTTP-LOT-10"
+assert data["data"]["lot_allocations"][0]["quantity"] == 1
+
+status, data = call("GET", "/stock/lots")
+expect(status, 200, "tracked lot balance after consumption")
+assert data["data"][0]["quantity"] == 1
+
 status, _ = call("POST", "/auth/logout", {}, csrf)
 expect(status, 200, "server session logout")
 

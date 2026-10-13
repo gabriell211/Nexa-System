@@ -63,7 +63,8 @@ final class StockShipmentService
                 ->where('tenant_id', $tenant->id)->where('item_id', $itemId)
                 ->where('location_id', $sourceId)->value('quantity') ?? 0);
 
-            if ($physical - $this->reserved($tenant->id, $itemId, $sourceId) < $quantity) {
+            $eligible = $this->lots->eligiblePhysical($tenant->id, $itemId, $sourceId, $physical);
+            if ($eligible - $this->reserved($tenant->id, $itemId, $sourceId) < $quantity) {
                 throw ValidationException::withMessages(['quantity' => 'Saldo disponível insuficiente para reservar.']);
             }
 

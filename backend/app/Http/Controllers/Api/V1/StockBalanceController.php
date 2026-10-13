@@ -42,11 +42,27 @@ final class StockBalanceController extends Controller
                 ->selectRaw('SUM(quantity - shipped_quantity - cancelled_quantity) AS reserved')
                 ->groupBy('item_id', 'source_location_id')->get()
                 ->keyBy(static fn ($row): string => $row->item_id.':'.$row->source_location_id);
+            $expiredPositions = DB::table('stock_lot_balances as balances')
+                ->join('stock_lots as lots', 'lots.id', '=', 'balances.lot_id')
+                ->where('balances.tenant_id', $request->attributes->get('nexa_tenant')->id)
+                ->whereIn('lots.item_id', $rows->pluck('item_id')->unique()->all())
+                ->whereIn('balances.location_id', $rows->pluck('location_id')->unique()->all())
+                ->whereNotNull('lots.expires_on')
+                ->where('lots.expires_on', '<', now('UTC')->toDateString())
+                ->select('lots.item_id', 'balances.location_id')
+                ->selectRaw('SUM(balances.quantity) AS expired')
+                ->groupBy('lots.item_id', 'balances.location_id')->get()
+                ->keyBy(static fn ($row): string => $row->item_id.':'.$row->location_id);
+
             foreach ($rows as $balance) {
                 $key = $balance->item_id.':'.$balance->location_id;
                 $reserved = (int) ($reservations->get($key)?->reserved ?? 0);
                 $balance->setAttribute('reserved_quantity', $reserved);
-                $balance->setAttribute('available_quantity', max(0, $balance->quantity - $reserved));
+                $expired = (int) ($expiredPositions->get($key)?->expired ?? 0);
+                $balance->setAttribute('expired_quantity', $expired);
+                $balance->setAttribute(
+                    'available_quantity', max(0, (int) $balance->quantity - $reserved - $expired)
+                );
             }
         }
 

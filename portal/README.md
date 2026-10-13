@@ -99,3 +99,11 @@ A suíte CI executa um teste separado de processos reais (`scripts/postgres_stoc
 A nova tela `/suprimentos` cria fornecedores por código, registra recebimento em lote/notas com custo em centavos e define quais fabricantes/modelos foram confirmados para um SKU. O catálogo de estoque permite informar marca, cor, preço, custo e rendimento nominal. A API evita saldo órfão: entrada física + metadados + auditoria são confirmados atomicamente.
 
 **Atenção:** o lote de entrada é metadado fiscal, não saldo por lote. O sistema ainda **não** consegue afirmar qual lote físico saiu em uma transferência ou reposição, nem implementar FIFO/FEFO. Compatibilidade não cadastrada é reportada como desconhecida. Valores monetários representam BRL em centavos inteiros; retenção e impostos deverão seguir modelo fiscal específico.
+
+## Controle de lotes e FEFO (entrega 10)
+
+A aba **Lotes** em `/estoque` exibe SKU, lote, local, quantidade conhecida, validade e custo histórico. `/stock/lots` retorna esses dados por tenant com paginação. Baixas e transferências agora alocam lotes FEFO; movimentações registram as parcelas por lote. Em remessas, o rastreamento de lotes em trânsito conserva quantidade expedida, recebida e registrada como perda.
+
+A coluna **Vencido** em saldos separa o estoque físico expirado conhecido do saldo disponível. Reservas recusam quantidades que só possam ser atendidas por lotes vencidos. Estoque legado sem lote continua disponível, mas sem proveniência falsamente atribuída.
+
+**Atenção:** FEFO é uma regra contábil automática e pressupõe que o operador selecione fisicamente o lote correspondente. A confirmação efetiva do número de lote no picking e recebimento ainda não existe; recebimentos parciais não provam qual lote chegou sem conferência. Não declarar rastreabilidade física certificada ou FIFO/FEFO homologado em campo.
