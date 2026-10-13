@@ -125,7 +125,7 @@
 | NX-096 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Configuração granular de quais suprimentos geram alerta e sugestões de troca por impressora. |
 | NX-097 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Preparar motor estatístico determinístico; qualquer futuro uso de IA deverá ser isolado, validado e opcional. |
 | NX-098 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Estoque da empresa, depósitos, técnicos e cada localidade do cliente, com posições de saldo separadas. |
-| NX-099 | Estoque, movimentação e reposição | NÃO COMPROVADO | Cadastro de fornecedores, nota fiscal/documento, lote, custo, validade e entrada unitária ou em massa. |
+| NX-099 | Estoque, movimentação e reposição | PARCIAL — fornecedor e lote de entrada; sem rastreamento pós-entrada | Cadastro de fornecedores, nota fiscal/documento, lote, custo, validade e entrada unitária ou em massa. |
 | NX-100 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Transferência provedor → técnico, provedor → cliente, técnico → cliente, cliente → técnico e devolução ao provedor. |
 | NX-101 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Movimento transacional com origem/destino, saldo antes/depois, autorização, justificativa e trilha de auditoria. |
 | NX-102 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Bloqueio de saldo negativo e de consumo concorrente da mesma unidade; reservas para chamados e reposições. |
@@ -449,3 +449,10 @@ O caso `NX-102` continua PARCIAL, mas ganhou evidência adicional além de teste
 executou dois processos PHP com conexões separadas na mesma instância PostgreSQL 17; a disputa pela última unidade produziu exatamente uma reserva e uma recusa e, após cancelamento, exatamente uma baixa e uma recusa. O teste também provou que uma saída direta não consome unidade reservada.
 
 Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outros modos de isolamento, múltiplos depósitos em alta escala, nem compatibilidade com impressoras físicas.
+
+## Suprimentos, compatibilidade e recepção fiscal (2026-10-13)
+
+- `NX-078`: SKU enriquecido com marca, cor, rendimento nominal, custo e preço exatos em centavos; mapeamento explícito fabricante/modelo. Compatibilidade desconhecida não é falsamente confirmada.
+- `NX-099`: fornecedor escopado ao tenant, documento, lote, validade e custo registrados num recebimento atômico vinculado ao razão de estoque.
+- Não existe rastreio por lote nas movimentações posteriores, FIFO/FEFO, importação NF-e, item serializado nem troca confirmada por equipamento. Logo, o aceite integral **não** está alcançado.
+- Testes de banco, API e sessão HTTP são condição necessária; não substituem teste de operação de almoxarifado e qualidade de documentação fiscal.

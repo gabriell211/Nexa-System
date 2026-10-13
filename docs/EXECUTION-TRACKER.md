@@ -218,3 +218,24 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Suite Laravel: **61 testes / 442 asserts** tanto em SQLite como PostgreSQL 17, somados a smoke HTTP real, Rust, TypeScript, Docker/Nginx e rastreabilidade.
 - CI: [#38421263725](https://github.com/gabriell211/Nexa-System/actions/runs/38421263725).
 - Ainda não representa benchmark de carga, failover, simulação de estoque com múltiplos nós ou comportamento em falhas de rede.
+
+## Entrega 9 — fornecedores, custos, lotes de entrada e compatibilidade (2026-10-13)
+
+### Implementado em branch (liberação condicionada ao CI da última revisão)
+- `stock_items` mantém marca, cor, custo/preço em centavos inteiros, rendimento nominal e SKU. Valores em reais são convertidos no React para inteiros sem operação monetária em float.
+- `stock_suppliers` cadastra fornecedores únicos por código dentro de cada tenant, com e-mail/documento e auditoria.
+- `stock_item_compatibilities` associa SKU a fabricante/modelo de impressora com comparação normalizada (espaços e caixa); duplicatas bloqueadas. Modelo sem evidência é `unknown`, não `incompatible`.
+- `stock_receipt_details` liga supplier, nota/documento, lote, validade opcional e custo de aquisição **a um movimento real de entrada**; chaves compostas garantem vínculo do mesmo tenant.
+- `StockDocumentedReceiptService` confirma entrada de saldo, metadados fiscais e auditoria numa única transação. Falhas ou conflito UUID não podem gravar apenas parte do recebimento.
+- Recusa fornecedor externo/inativo, lote com validade anterior ao dia UTC corrente, preço inválido e repetição do UUID com metadata distinta.
+- Endpoints `/stock/suppliers`, `/stock/receipts`, `/stock/items/{id}/compatibilities` e `/stock/items/{id}/compatibility-check?printer_id=x` são autenticados por web session ou bearer com mesmo enforcement tenant/carteira.
+- Portal `/suprimentos`: fornecedores, entrada documentada e compatibilidade; cadastro de SKU na tela de estoque agora admite marca/cor/preço/custo/rendimento.
+- Casos de teste novos para cents, fornecedores e material cross-tenant, lotes vencidos, recebimento atômico, idempotência, auditoria e compatibilidade de impressora.
+
+### Limites explícitos
+- **Não existe estoque segregado por lote nas movimentações seguintes**. O número do lote pertence ao documento de entrada e não rastreia qual lote foi expedido, instalado ou consumido. Não afirmar FIFO/FEFO, série individual ou inventário lote-a-lote.
+- Preço/custo por SKU podem divergir do custo histórico registrado por lote; entradas históricas preservam o custo de cada evento sem reescrever valores antigos.
+- Ausência de compatibilidade cadastrada = desconhecida. A confirmação manual não comprova compatibilidade física sem homologação de fabricante ou teste operacional.
+- Falta importação de nota fiscal XML/NF-e, tributos, unidades fracionadas, múltiplas linhas na mesma nota, devolução por lote, previsão de vencimento, vínculo da troca ao equipamento e normalização de códigos GTIN/EAN.
+- Suporte a catálogos com mais de 100 registros no seletor React exige busca paginada.
+- `NX-078` e `NX-099` continuam **PARCIAIS**, sem aceite E2E de fluxo fiscal/hardware.

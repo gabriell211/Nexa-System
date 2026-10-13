@@ -93,3 +93,9 @@ A tela de criação usa as primeiras 100 opções disponíveis; busca/paginaçã
 ## Concorrência PostgreSQL na integração
 
 A suíte CI executa um teste separado de processos reais (`scripts/postgres_stock_concurrency.php`), com conexões independentes ao PostgreSQL. Duas reservas ou duas baixas da última unidade devem produzir um único sucesso e uma única rejeição, mantendo saldo correto. O cenário passou em [CI #38421263725](https://github.com/gabriell211/Nexa-System/actions/runs/38421263725). Isso não substitui teste de carga nem prova tolerância a falhas em produção.
+
+## Suprimentos — fornecedores e entradas fiscais (entrega 9)
+
+A nova tela `/suprimentos` cria fornecedores por código, registra recebimento em lote/notas com custo em centavos e define quais fabricantes/modelos foram confirmados para um SKU. O catálogo de estoque permite informar marca, cor, preço, custo e rendimento nominal. A API evita saldo órfão: entrada física + metadados + auditoria são confirmados atomicamente.
+
+**Atenção:** o lote de entrada é metadado fiscal, não saldo por lote. O sistema ainda **não** consegue afirmar qual lote físico saiu em uma transferência ou reposição, nem implementar FIFO/FEFO. Compatibilidade não cadastrada é reportada como desconhecida. Valores monetários representam BRL em centavos inteiros; retenção e impostos deverão seguir modelo fiscal específico.
