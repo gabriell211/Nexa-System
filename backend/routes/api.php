@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\V1\CustomerLocationController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\PrinterController;
 use App\Http\Controllers\Api\V1\PrinterAssignmentController;
+use App\Http\Controllers\Api\V1\StaffPortfolioController;
 use Illuminate\Support\Facades\Route;
 
 // Identical resources, separate authentication transports. Web requests receive
@@ -40,6 +41,11 @@ $registerBackoffice = static function (): void {
     });
 
     Route::get('/audit-entries', AuditEntryController::class)->middleware('nexa.roles:owner,admin');
+    Route::middleware('nexa.roles:owner,admin')->group(static function (): void {
+        Route::get('/staff', [StaffPortfolioController::class, 'index']);
+        Route::get('/staff/{user}/portfolio', [StaffPortfolioController::class, 'show']);
+        Route::put('/staff/{user}/portfolio', [StaffPortfolioController::class, 'update']);
+    });
 };
 
 Route::prefix('v1')->group(function () use ($registerBackoffice): void {
@@ -48,7 +54,7 @@ Route::prefix('v1')->group(function () use ($registerBackoffice): void {
     // Transitional non-browser API. Issuing new bearer credentials is disabled
     // by default; existing explicitly issued tokens remain scoped to a tenant.
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
-    Route::name('machine.')->middleware(['nexa.bearer', 'auth:sanctum', 'nexa.tenant'])->group(
+    Route::name('machine.')->middleware(['nexa.bearer', 'auth:sanctum', 'nexa.tenant', 'nexa.portfolio'])->group(
         static function () use ($registerBackoffice): void {
             Route::get('/auth/me', [AuthController::class, 'me']);
             Route::post('/auth/logout', [AuthController::class, 'logout']);
@@ -61,7 +67,7 @@ Route::prefix('v1')->group(function () use ($registerBackoffice): void {
             Route::get('/auth/csrf', [BrowserAuthController::class, 'csrf'])->middleware('throttle:120,1');
             Route::post('/auth/login', [BrowserAuthController::class, 'login'])->middleware('throttle:5,1');
 
-            Route::middleware(['auth:web', 'nexa.browser-tenant'])->group(
+            Route::middleware(['auth:web', 'nexa.browser-tenant', 'nexa.portfolio'])->group(
                 static function () use ($registerBackoffice): void {
                     Route::get('/auth/me', [AuthController::class, 'me']);
                     Route::post('/auth/logout', [BrowserAuthController::class, 'logout']);

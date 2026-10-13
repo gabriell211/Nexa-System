@@ -7,6 +7,7 @@ use App\Http\Requests\CustomerRequest;
 use Illuminate\Database\Eloquent\Builder;
 use App\Http\Resources\CustomerResource;
 use App\Services\CustomerService;
+use App\Services\CustomerPortfolio;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -14,7 +15,8 @@ use Illuminate\Routing\Controller;
 
 final class CustomerController extends Controller
 {
-    public function __construct(private readonly CustomerService $customers) {}
+    public function __construct(private readonly CustomerService $customers,
+        private readonly CustomerPortfolio $portfolio) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -28,7 +30,7 @@ final class CustomerController extends Controller
         $term = mb_strtolower(trim($filters['q'] ?? ''));
 
         return CustomerResource::collection(
-            $tenant->customers()
+            $this->portfolio->customers($tenant->customers(), $request)
                 ->when($request->boolean('active_only'), fn (Builder $query) => $query->where('active', true))
                 ->when($term !== '', fn (Builder $query) => $query->whereRaw('LOWER(name) LIKE ?', ['%'.$term.'%']))
                 ->orderBy('name')
@@ -38,6 +40,7 @@ final class CustomerController extends Controller
 
     public function store(CustomerRequest $request): JsonResponse
     {
+        $this->portfolio->assertFull($request);
         $customer = $this->customers->create(
             $request->attributes->get('nexa_tenant'),
             $request->user(),

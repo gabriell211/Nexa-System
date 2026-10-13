@@ -7,6 +7,7 @@ use App\Http\Requests\PrinterRequest;
 use Illuminate\Database\Eloquent\Builder;
 use App\Http\Resources\PrinterResource;
 use App\Services\PrinterService;
+use App\Services\CustomerPortfolio;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -14,7 +15,8 @@ use Illuminate\Routing\Controller;
 
 final class PrinterController extends Controller
 {
-    public function __construct(private readonly PrinterService $printers) {}
+    public function __construct(private readonly PrinterService $printers,
+        private readonly CustomerPortfolio $portfolio) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -28,7 +30,7 @@ final class PrinterController extends Controller
         $term = mb_strtolower(trim($filters['q'] ?? ''));
 
         return PrinterResource::collection(
-            $tenant->printers()
+            $this->portfolio->printers($tenant->printers(), $request)
                 ->with(['customer:id,name','currentAssignment.location:id,name'])
                 ->when($request->boolean('active_only'), fn (Builder $query) => $query->where('active', true))
                 ->when($term !== '', function (Builder $query) use ($term): void {

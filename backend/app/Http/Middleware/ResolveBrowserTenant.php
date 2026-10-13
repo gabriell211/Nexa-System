@@ -30,6 +30,7 @@ final class ResolveBrowserTenant
         // Resolve dynamically: removing a membership takes effect on the next request.
         $request->attributes->set('nexa_tenant', $tenant);
         $request->attributes->set('nexa_role', $membership->pivot->role);
+        $request->attributes->set('nexa_customer_scope', $membership->pivot->customer_scope);
 
         return $next($request);
     }

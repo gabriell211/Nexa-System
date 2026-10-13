@@ -42,6 +42,7 @@ final class ResolveTenant
 
         $request->attributes->set('nexa_tenant', $tenant);
         $request->attributes->set('nexa_role', $membership->pivot->role);
+        $request->attributes->set('nexa_customer_scope', $membership->pivot->customer_scope);
         return $next($request);
     }
 }
