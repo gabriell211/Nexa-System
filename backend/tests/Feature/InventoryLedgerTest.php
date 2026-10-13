@@ -200,4 +200,17 @@ final class InventoryLedgerTest extends TestCase
             ->assertOk()->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.name', 'Toner preto');
     }
+
+    public function test_integer_like_string_ids_cannot_bypass_same_location_rule(): void
+    {
+        extract($this->basic());
+        $this->withToken($token)->postJson('/api/v1/stock/movements', [
+            'request_id' => (string) Str::uuid(),
+            'kind' => 'transfer', 'item_id' => $item,
+            'source_location_id' => (string) $provider,
+            'destination_location_id' => $provider,
+            'quantity' => '1', 'reason' => 'Mixed integer representations',
+        ])->assertUnprocessable();
+        $this->assertDatabaseCount('stock_movements', 0);
+    }
 }
