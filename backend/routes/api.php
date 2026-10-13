@@ -13,6 +13,10 @@ use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\PrinterController;
 use App\Http\Controllers\Api\V1\PrinterAssignmentController;
 use App\Http\Controllers\Api\V1\StaffPortfolioController;
+use App\Http\Controllers\Api\V1\StockItemController;
+use App\Http\Controllers\Api\V1\StockLocationController;
+use App\Http\Controllers\Api\V1\StockBalanceController;
+use App\Http\Controllers\Api\V1\StockMovementController;
 use Illuminate\Support\Facades\Route;
 
 // Identical resources, separate authentication transports. Web requests receive
@@ -38,6 +42,16 @@ $registerBackoffice = static function (): void {
         Route::apiResource('customers.locations.departments', CustomerDepartmentController::class)->only(['store', 'update', 'destroy']);
         Route::apiResource('customers.cost-centers', CostCenterController::class)
             ->parameters(['cost-centers' => 'costCenter'])->only(['store', 'update', 'destroy']);
+    });
+
+    Route::middleware('nexa.roles:owner,admin,manager,warehouse')->group(static function (): void {
+        Route::get('/stock/items', [StockItemController::class, 'index']);
+        Route::get('/stock/locations', [StockLocationController::class, 'index']);
+        Route::get('/stock/balances', StockBalanceController::class);
+        Route::get('/stock/movements', [StockMovementController::class, 'index']);
+        Route::post('/stock/items', [StockItemController::class, 'store']);
+        Route::post('/stock/locations', [StockLocationController::class, 'store']);
+        Route::post('/stock/movements', [StockMovementController::class, 'store']);
     });
 
     Route::get('/audit-entries', AuditEntryController::class)->middleware('nexa.roles:owner,admin');
