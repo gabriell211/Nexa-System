@@ -104,7 +104,7 @@
 | NX-075 | Telemetria, contadores e produção | PARCIAL — sem aceite E2E | Gráficos com datas e fuso corretos e distinção clara entre produção zero e produção desconhecida. |
 | NX-076 | Telemetria, contadores e produção | NÃO COMPROVADO | Armazenamento histórico particionado/retenção configurável e consulta eficiente em parque grande. |
 | NX-077 | Telemetria, contadores e produção | NÃO COMPROVADO | Relatórios de impressões/cópias, digitalizações e totais por cliente com grupos por unidade e departamento. |
-| NX-078 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Catálogo de suprimentos e peças com tipo, marca, modelo, código SKU, cor, preço, custo, rendimento e compatibilidade. |
+| NX-078 | Suprimentos, peças e inteligência de consumo | PARCIAL — implementação e CI; sem aceite integral | Catálogo de suprimentos e peças com tipo, marca, modelo, código SKU, cor, preço, custo, rendimento e compatibilidade. |
 | NX-079 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Tipos personalizáveis (toner, cilindro, revelador, fusor, kit, reservatório, tinta e outros) com controles por tipo. |
 | NX-080 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Leitura e histórico de nível, capacidade, série, cobertura e indicadores reportados pela impressora. |
 | NX-081 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Separação entre nível informado pelo hardware e nível real estimado com confiabilidade explícita. |
@@ -124,20 +124,20 @@
 | NX-095 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Identificação de desperdício, possibilidade de remanejamento/reutilização autorizada e custos evitáveis. |
 | NX-096 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Configuração granular de quais suprimentos geram alerta e sugestões de troca por impressora. |
 | NX-097 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Preparar motor estatístico determinístico; qualquer futuro uso de IA deverá ser isolado, validado e opcional. |
-| NX-098 | Estoque, movimentação e reposição | NÃO COMPROVADO | Estoque da empresa, depósitos, técnicos e cada localidade do cliente, com posições de saldo separadas. |
+| NX-098 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Estoque da empresa, depósitos, técnicos e cada localidade do cliente, com posições de saldo separadas. |
 | NX-099 | Estoque, movimentação e reposição | NÃO COMPROVADO | Cadastro de fornecedores, nota fiscal/documento, lote, custo, validade e entrada unitária ou em massa. |
-| NX-100 | Estoque, movimentação e reposição | NÃO COMPROVADO | Transferência provedor → técnico, provedor → cliente, técnico → cliente, cliente → técnico e devolução ao provedor. |
-| NX-101 | Estoque, movimentação e reposição | NÃO COMPROVADO | Movimento transacional com origem/destino, saldo antes/depois, autorização, justificativa e trilha de auditoria. |
-| NX-102 | Estoque, movimentação e reposição | NÃO COMPROVADO | Bloqueio de saldo negativo e de consumo concorrente da mesma unidade; reservas para chamados e reposições. |
+| NX-100 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Transferência provedor → técnico, provedor → cliente, técnico → cliente, cliente → técnico e devolução ao provedor. |
+| NX-101 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Movimento transacional com origem/destino, saldo antes/depois, autorização, justificativa e trilha de auditoria. |
+| NX-102 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Bloqueio de saldo negativo e de consumo concorrente da mesma unidade; reservas para chamados e reposições. |
 | NX-103 | Estoque, movimentação e reposição | NÃO COMPROVADO | Inventário físico, ajuste supervisionado, perdas, baixas, devoluções e histórico contábil de estoque. |
 | NX-104 | Estoque, movimentação e reposição | NÃO COMPROVADO | Controle de estoque mínimo, crítico, segurança e sugestão de compra. |
 | NX-105 | Estoque, movimentação e reposição | NÃO COMPROVADO | Programação de reposição por intervalo, clientes, modelos, tipos e demanda prevista. |
 | NX-106 | Estoque, movimentação e reposição | NÃO COMPROVADO | Revisão da sugestão com ajuste de quantidades, item de segurança e inserção manual de itens. |
 | NX-107 | Estoque, movimentação e reposição | NÃO COMPROVADO | Lista de reposições programadas com data limite, responsável e estado de envio/recebimento. |
-| NX-108 | Estoque, movimentação e reposição | NÃO COMPROVADO | Baixa no estoque de origem ao confirmar envio e entrada no estoque da unidade ao confirmar recebimento. |
+| NX-108 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Baixa no estoque de origem ao confirmar envio e entrada no estoque da unidade ao confirmar recebimento. |
 | NX-109 | Estoque, movimentação e reposição | NÃO COMPROVADO | Confirmação de recebimento pelo provedor ou usuário cliente autorizado. |
-| NX-110 | Estoque, movimentação e reposição | NÃO COMPROVADO | Tratamento de envio parcial, recebimento parcial, extravio, divergência e cancelamento. |
-| NX-111 | Estoque, movimentação e reposição | NÃO COMPROVADO | Rastreio por movimentação, técnico, cliente, unidade e impressora. |
+| NX-110 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Tratamento de envio parcial, recebimento parcial, extravio, divergência e cancelamento. |
+| NX-111 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Rastreio por movimentação, técnico, cliente, unidade e impressora. |
 | NX-112 | Alertas e manutenções preventivas | NÃO COMPROVADO | Alertas de falha da impressora, de comunicação impressora/agente/servidor e de manutenção preventiva. |
 | NX-113 | Alertas e manutenções preventivas | NÃO COMPROVADO | Criticidade, categoria, origem, timestamps e estados ativo, reconhecido, vinculado, resolvido e ignorado. |
 | NX-114 | Alertas e manutenções preventivas | NÃO COMPROVADO | Atraso configurável antes do alerta de desconexão, para reduzir ruído de instabilidades curtas. |
@@ -430,3 +430,14 @@
 7. Homologação do Collector em OS e modelos reais, testes E2E, segurança, backup/restore, DR e performance.
 
 **Proibição de conclusão fictícia:** somente atualizar linha para APROVADO com commit, teste, ambiente, artefato do CI e prova E2E correspondente.
+
+## Evidências incrementais de estoque e remessas (13/10/2026)
+
+A classificação `PARCIAL` acima NÃO significa aceitação integral. Esta tabela foi atualizada somente para os itens cujo backend e parte da interface passaram na suíte de integração.
+
+- `NX-078`: item com SKU, categoria, unidade e escopo multiempresa. Ainda sem preço, rendimento e compatibilidade.
+- `NX-098/100/101/102`: local provedor/técnico/unidade, razão transacional, saldos físicos, saldo reservado, disponível, saídas seguras e UUID idempotente. Sem reservas por chamado, testes de corrida interprocessos e integridade financeira.
+- `NX-108/110`: remessas, expedição parcial, recebimento parcial, encerramento com cancelamento e registro explícito de perdas. Sem aprovação do destinatário, transportadoras, documentos, reenvio/retorno ou execução fiscal.
+- `NX-111`: rastreabilidade por localização, ator, data e remessa. Ainda não integra o registro de instalação por impressora nem operação do cliente.
+- **Evidência automatizada:** [Nexa validation #38420512354](https://github.com/gabriell211/Nexa-System/actions/runs/38420512354), 61 testes Laravel e 442 asserts em SQLite e PostgreSQL 17, Rust, React/TypeScript, Docker/Nginx, verificação README e smoke HTTP de reserva/expedição/recebimento/perda.
+- **Falta para APROVADO:** execução E2E em navegador real, teste concorrente multiprocesso, homologação com operadores e clientes, demais subrequisitos originais, regras de lote/expiração e provas de instalação.
