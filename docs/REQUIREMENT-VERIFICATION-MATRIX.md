@@ -441,3 +441,11 @@ A classificação `PARCIAL` acima NÃO significa aceitação integral. Esta tabe
 - `NX-111`: rastreabilidade por localização, ator, data e remessa. Ainda não integra o registro de instalação por impressora nem operação do cliente.
 - **Evidência automatizada:** [Nexa validation #38420512354](https://github.com/gabriell211/Nexa-System/actions/runs/38420512354), 61 testes Laravel e 442 asserts em SQLite e PostgreSQL 17, Rust, React/TypeScript, Docker/Nginx, verificação README e smoke HTTP de reserva/expedição/recebimento/perda.
 - **Falta para APROVADO:** execução E2E em navegador real, teste concorrente multiprocesso, homologação com operadores e clientes, demais subrequisitos originais, regras de lote/expiração e provas de instalação.
+
+## Prova de concorrência com banco real (13/10/2026)
+
+O caso `NX-102` continua PARCIAL, mas ganhou evidência adicional além de testes sequenciais:
+[CI PostgreSQL #38421263725](https://github.com/gabriell211/Nexa-System/actions/runs/38421263725)
+executou dois processos PHP com conexões separadas na mesma instância PostgreSQL 17; a disputa pela última unidade produziu exatamente uma reserva e uma recusa e, após cancelamento, exatamente uma baixa e uma recusa. O teste também provou que uma saída direta não consome unidade reservada.
+
+Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outros modos de isolamento, múltiplos depósitos em alta escala, nem compatibilidade com impressoras físicas.

@@ -89,3 +89,7 @@ O painel `/reposicoes` permite reservar material livre, expedir quantidades parc
 - A aplicação ainda não gerencia comprovantes, transportadoras, documento fiscal, lotes, reservas por chamado, confirmação por cliente, expedições multi-SKU ou previsão de reposição.
 
 A tela de criação usa as primeiras 100 opções disponíveis; busca/paginação remota para catálogos grandes está pendente.
+
+## Concorrência PostgreSQL na integração
+
+A suíte CI executa um teste separado de processos reais (`scripts/postgres_stock_concurrency.php`), com conexões independentes ao PostgreSQL. Duas reservas ou duas baixas da última unidade devem produzir um único sucesso e uma única rejeição, mantendo saldo correto. O cenário passou em [CI #38421263725](https://github.com/gabriell211/Nexa-System/actions/runs/38421263725). Isso não substitui teste de carga nem prova tolerância a falhas em produção.

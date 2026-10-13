@@ -206,3 +206,15 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - A migração não gera registros de remessas retroativos ou fictícios.
 
 **NÃO marcar NX-100/101/102/108/110 integralmente atendidos.** O escopo atual somente cobre parte do fluxo logístico, com contabilidade de unidades inteiras.
+
+## Entrega 8b — concorrência real PostgreSQL (2026-10-13)
+
+- `scripts/postgres_stock_concurrency.php` executado após PHPUnit no job PostgreSQL 17.
+- Dois processos PHP concorrentes com conexões independentes disputam a **última unidade disponível**.
+- Reserva concorrente: **um processo confirma e o outro recebe validação**, preservando exatamente uma reserva.
+- Saída direta de saldo totalmente reservado é recusada.
+- Após cancelar a reserva, dois processos disputam uma saída de 1 unidade; exatamente **uma saída confirma e a outra é recusada**.
+- Conclusão validada no banco: `quantity=0`, `issues=1`.
+- Suite Laravel: **61 testes / 442 asserts** tanto em SQLite como PostgreSQL 17, somados a smoke HTTP real, Rust, TypeScript, Docker/Nginx e rastreabilidade.
+- CI: [#38421263725](https://github.com/gabriell211/Nexa-System/actions/runs/38421263725).
+- Ainda não representa benchmark de carga, failover, simulação de estoque com múltiplos nós ou comportamento em falhas de rede.
