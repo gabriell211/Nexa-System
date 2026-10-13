@@ -75,3 +75,17 @@ A seção `/estoque` possui lista persistida de itens, depósitos/locais (proved
 Os papéis owner/admin/manager/warehouse com acesso à carteira inteira podem operar o estoque; usuários com carteira limitada não acessam os saldos de toda a operadora. O registro técnico exige vínculo do membro à operadora, e um local de cliente exige vínculo com unidade ativa.
 
 **Ainda não é um WMS completo:** catálogo de fornecedores, lote, custo, compatibilidade de consumíveis, reservas, envio/recebimento parcial, perdas, devoluções, documentos fiscais, inventário físico, mínimos e logística não estão implementados. A UI usa seleção dos primeiros 100 registros; listas volumosas precisam de pesquisa remota e seleção paginada. Não confundir saída/entrada direta com mercadoria em trânsito.
+
+## Reservas e remessas (entrega 8)
+
+O painel `/reposicoes` permite reservar material livre, expedir quantidades parciais, confirmar recebimentos parciais e encerrar remessas. Saldo físico, saldo reservado e saldo disponível aparecem separadamente em `/estoque`.
+
+- Reservar não movimenta fisicamente o material. A quantidade reservada deixa de estar disponível para outras saídas.
+- Expedir dá baixa da origem e marca quantidade em trânsito.
+- Receber adiciona ao destino apenas as unidades confirmadas.
+- Encerrar cancela a parcela não expedida e registra explicitamente eventual falta em trânsito.
+- Retentativas usam UUID idempotente, e as operações são auditadas.
+- Somente owner/admin/manager podem registrar perdas e cancelamentos finais. Warehouse pode operar expedição e recebimento.
+- A aplicação ainda não gerencia comprovantes, transportadoras, documento fiscal, lotes, reservas por chamado, confirmação por cliente, expedições multi-SKU ou previsão de reposição.
+
+A tela de criação usa as primeiras 100 opções disponíveis; busca/paginação remota para catálogos grandes está pendente.

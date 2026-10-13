@@ -176,3 +176,33 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 3. A movimentação e a auditoria se confirmam ou são revertidas juntas.
 4. Nenhuma associação pode apontar para outro tenant; verificações em aplicação + chaves compostas no banco.
 5. O inventário global da operadora é inacessível a membros com carteira restrita.
+
+## Entrega 8 — reservas, envio em trânsito, recebimento parcial e perdas (2026-10-13)
+
+### Implementado, sem aceite integral de NX-100..111
+- `stock_shipments` registra origem, destino, item, quantidade solicitada, embarcada, recebida, perdida, cancelada e status.
+- `stock_shipment_events` registra expedição, recebimento e encerramento com UUID de idempotência, ator, justificativa e referência aos movimentos do razão.
+- Reserva inicial protege o saldo disponível sem abater o saldo físico.
+- `InventoryLedgerService` bloqueia movimentações normais que consumam quantidades já reservadas.
+- Expedição parcial reduz a reserva e dá baixa física na origem; remessa em trânsito não é lançada no destino.
+- Recebimento parcial cria entrada real somente das unidades confirmadas.
+- Encerramento cancela a parcela ainda reservada e registra separadamente a falta em trânsito, sem inventar entrada nem estornar baixa.
+- Unicidade por tenant e request_id permite retry seguro de criação e eventos, rejeitando payload divergente ou outro ator.
+- `owner/admin/manager` precisam autorizar encerramento com perda/cancelamento; almoxarifado pode expedir e confirmar.
+- API GET/POST `/stock/shipments` e operações `/{id}/dispatch`, `/{id}/receive`, `/{id}/close`.
+- Tela `/reposicoes` usa listagens reais, detalhes e eventos do servidor.
+- Estoque agora mostra **físico, reservado, disponível** por item/local, com consulta agregada sem N+1.
+- Testes Feature em SQLite e PostgreSQL validam reserva, transferência, recebimento parcial, falta, encerramento, repetição, RBAC e isolamento.
+- Smoke HTTP autentica e faz reserva, expedição, retry de expedição, recebimento parcial e encerramento com perda.
+
+### Pendente
+- `NX-099`: fornecedor, notas, lotes, custo e validade.
+- `NX-102`: reserva para chamados com integração e testes de concorrência em múltiplos processos.
+- `NX-105..107`: programação periódica, previsão e responsáveis por reposição.
+- `NX-108..111`: confirmação por destinatário cliente, comprovantes, rastreio externo, transportadora, fluxo de divergência com aprovação e envio multipartes.
+- Estoque técnico/cliente permanece sob autorização interna; portal do cliente não deve enxergar nem confirmar remessas sem fluxo específico de acesso.
+- Armazenamento de valores financeiros exatos, ajuste fiscal e rastreabilidade por lote/série ainda não foram modelados.
+- Testes de carga, agentes reais, UX E2E com navegador e homologação operacional ainda pendentes.
+- A migração não gera registros de remessas retroativos ou fictícios.
+
+**NÃO marcar NX-100/101/102/108/110 integralmente atendidos.** O escopo atual somente cobre parte do fluxo logístico, com contabilidade de unidades inteiras.
