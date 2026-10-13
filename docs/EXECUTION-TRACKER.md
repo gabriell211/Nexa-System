@@ -142,3 +142,37 @@ Implementação submetida (pendente de homologação completa):
 
 Pendentes: restrições por unidade/departamento, bloqueios contextuais por ação, tratamento de mudança de papel, onboarding de usuário com convites/MFA, teste real em navegador e análise de concorrência sob produção.
 **Não marcar NX-016, NX-017 ou NX-019 como 100% atendidos: trata-se somente de escopo de carteira.**
+
+## Entrega 7 — estoque transacional inicial (2026-10-13)
+
+### Implementado em código (NÃO significa aceite integral dos NX)
+
+- `NX-078` (parcial): catálogo tenant-scoped de materiais com SKU único por tenant, categoria, nome e unidade.
+- `NX-098` (parcial): posições independentes de estoque por empresa, técnico (membro) ou unidade ativa de cliente, com FK composta protegendo tenant/cliente/unidade.
+- `NX-100` (parcial): entrada externa, transferência direta entre posições e baixa/consumo.
+- `NX-101` (parcial): transação serializada por item, registros de antes/depois, quem movimentou, data, justificativa e auditoria.
+- `NX-102` (parcial): bloqueio de saída maior que saldo, idempotência por UUID, chave única por posição e proteção contra consumo duplo sob serialização no PostgreSQL.
+- Novo `/estoque` em React: itens, locais, saldos, movimentações e formulários integrados, sem dados simulados.
+- Permissão explícita para owner/admin/manager/warehouse com acesso integral à carteira; usuário limitado a clientes não acessa saldo global da operadora.
+- Testes Feature em SQLite e PostgreSQL: saldos distintos, transferências, baixa, rollback por falta de saldo, UUID repetido, colisão divergente, vínculos cross-tenant e acesso não autorizado.
+- CI anterior já incluía checagem NX/QA, Laravel/PHP, TypeScript/React, Docker/Nginx, Rust e smoke HTTP de sessão/CSRF.
+
+### Não implementado / requisitos dependentes
+
+- `NX-078/079`: SKU compatível com modelos, rendimento, custo exato, tipos parametrizáveis, preços, lotes, histórico de ajustes e catálogo de fornecedores.
+- `NX-086/087`: regras e confirmação de troca de suprimento com baixa vinculada a impressora e compatibilidade.
+- `NX-099/103/104`: entrada fiscal, fornecedor, lote, validade, inventário físico, ajuste/avaria, mínimo e estoque de segurança.
+- `NX-102`: reserva de material, testes de concorrência verdadeiramente paralelos, recuperação de deadlock interprocessos.
+- `NX-105..111`: envio, transporte, recebimento, divergências/quantidades parciais, programação de reposição e rastreamento logístico completo.
+- Ainda não há fluxo para reativar/inativar/editar catálogo ou locais; não criar registros falsos para demonstrar UI.
+- Primeira UI usa seletores dos primeiros 100 elementos e lista histórica paginada em 25; busca remota em carteiras grandes permanece pendente.
+- Reservas, movimentações de retorno com documentos e razão fiscal financeira não foram homologadas.
+- `NX-098/100/101/102` ficam **PARCIAIS** até teste de operação real, validação concorrente, relatório de auditoria e aceite E2E.
+
+### Invariantes
+
+1. Saldo não pode ser negativo na API.
+2. Um UUID de movimentação só pode representar um único payload e ator; repetição idêntica retorna o registro sem reaplicar a baixa.
+3. A movimentação e a auditoria se confirmam ou são revertidas juntas.
+4. Nenhuma associação pode apontar para outro tenant; verificações em aplicação + chaves compostas no banco.
+5. O inventário global da operadora é inacessível a membros com carteira restrita.

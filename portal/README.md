@@ -67,3 +67,11 @@ No parque, a ação de localização abre um painel com a unidade, departamento 
 Administradores `owner/admin` acessam `/equipe` para conceder acesso a todos os clientes ou somente aos explicitamente selecionados. A filtragem ocorre no Laravel, inclusive ao acessar IDs pela URL, no dashboard e ao usar tokens bearer legados. Sem clientes atribuídos, a lista fica vazia; o acesso não é ampliado implicitamente.
 
 A interface ainda não cria/invita operadores; a membership deve existir. Mudanças de papel, MFA e restrições mais granulares por unidade estão pendentes.
+
+## Estoque — entrega inicial
+
+A seção `/estoque` possui lista persistida de itens, depósitos/locais (provedor, técnico ou unidade de cliente), posições de saldo, entradas, transferências e baixas com justificativa. Requisições são transacionais no Laravel e contêm UUID de idempotência. Uma tentativa de retirar mais que o saldo retorna validação e não cria histórico.
+
+Os papéis owner/admin/manager/warehouse com acesso à carteira inteira podem operar o estoque; usuários com carteira limitada não acessam os saldos de toda a operadora. O registro técnico exige vínculo do membro à operadora, e um local de cliente exige vínculo com unidade ativa.
+
+**Ainda não é um WMS completo:** catálogo de fornecedores, lote, custo, compatibilidade de consumíveis, reservas, envio/recebimento parcial, perdas, devoluções, documentos fiscais, inventário físico, mínimos e logística não estão implementados. A UI usa seleção dos primeiros 100 registros; listas volumosas precisam de pesquisa remota e seleção paginada. Não confundir saída/entrada direta com mercadoria em trânsito.
