@@ -138,6 +138,61 @@ expect(status, 200, "read stock positions")
 assert len(data["data"]) == 1
 assert data["data"][0]["quantity"] == 2
 
+
+# Real shipment workflow: reservation does not consume physical units,
+# dispatch removes origin stock, and only confirmed receipt adds destination.
+status, data = call("POST", "/stock/locations", {
+    "name": "HTTP destination warehouse", "kind": "provider",
+}, csrf)
+expect(status, 201, "shipment destination warehouse")
+destination_id = data["data"]["id"]
+
+status, data = call("POST", "/stock/shipments", {
+    "request_id": str(uuid.uuid4()), "item_id": item_id,
+    "source_location_id": location_id, "destination_location_id": destination_id,
+    "quantity": 2, "reason": "HTTP shipment smoke reservation",
+}, csrf)
+expect(status, 201, "reserve shipment stock")
+shipment_id = data["data"]["id"]
+assert data["data"]["reserved_quantity"] == 2
+
+status, data = call("GET", "/stock/balances")
+expect(status, 200, "reserved stock is still physical")
+assert data["data"][0]["quantity"] == 2
+assert data["data"][0]["available_quantity"] == 0
+
+event_uuid = str(uuid.uuid4())
+shipment_dispatch = {
+    "request_id": event_uuid, "quantity": 2, "reason": "HTTP shipment dispatched",
+}
+status, data = call("POST", f"/stock/shipments/{shipment_id}/dispatch", shipment_dispatch, csrf)
+expect(status, 200, "dispatch shipment")
+assert data["data"]["in_transit_quantity"] == 2
+
+status, data = call("POST", f"/stock/shipments/{shipment_id}/dispatch", shipment_dispatch, csrf)
+expect(status, 200, "shipment dispatch remains idempotent")
+assert data["data"]["shipped_quantity"] == 2
+
+status, data = call("POST", f"/stock/shipments/{shipment_id}/receive", {
+    "request_id": str(uuid.uuid4()), "quantity": 1, "reason": "Partial receipt at warehouse",
+}, csrf)
+expect(status, 200, "partial shipment receipt")
+assert data["data"]["received_quantity"] == 1
+assert data["data"]["in_transit_quantity"] == 1
+
+status, data = call("POST", f"/stock/shipments/{shipment_id}/close", {
+    "request_id": str(uuid.uuid4()), "reason": "Remainder confirmed lost in transit",
+}, csrf)
+expect(status, 200, "close shipment with shortage")
+assert data["data"]["lost_quantity"] == 1
+assert data["data"]["status"] == "closed_with_loss"
+
+status, data = call("GET", "/stock/balances")
+expect(status, 200, "inspect final shipment physical positions")
+positions = {row["location_id"]: row["quantity"] for row in data["data"]}
+assert positions[location_id] == 0
+assert positions[destination_id] == 1
+
 status, _ = call("POST", "/auth/logout", {}, csrf)
 expect(status, 200, "server session logout")
 
