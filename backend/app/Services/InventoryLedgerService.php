@@ -82,8 +82,13 @@ final class InventoryLedgerService
             if ($sourceId !== null) {
                 $from = $this->lockedBalance($tenant->id, $item->id, (int) $sourceId);
                 $beforeFrom = (int) $from->quantity;
-                if ($beforeFrom < $amount) {
-                    throw ValidationException::withMessages(['quantity' => 'Saldo insuficiente na origem.']);
+                $reserved = app(StockShipmentService::class)->reserved(
+                    $tenant->id, $item->id, (int) $sourceId
+                );
+                if ($beforeFrom - $reserved < $amount) {
+                    throw ValidationException::withMessages([
+                        'quantity' => 'Saldo disponível insuficiente (estoque reservado para remessas).',
+                    ]);
                 }
                 $afterFrom = $beforeFrom - $amount;
             }
