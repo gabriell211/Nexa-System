@@ -115,7 +115,7 @@ function NewReceipt({token,onSaved}:{token:string|null;onSaved:()=>Promise<void>
   </form>;
 }
 
-function CompatibilityEditor({token}:{token:string|null}) {
+function CompatibilityEditor({token,canRemove}:{token:string|null;canRemove:boolean}) {
   const qc=useQueryClient();
   const [itemId,setItemId]=useState('');
   const [maker,setMaker]=useState('');const [model,setModel]=useState('');
@@ -160,15 +160,15 @@ function CompatibilityEditor({token}:{token:string|null}) {
           <div className="table-wrap"><table><thead><tr><th>Fabricante</th><th>Modelo</th><th>Ação</th></tr></thead>
             <tbody>{matches.data.data.map(x=><tr key={x.id}>
               <td>{x.printer_manufacturer}</td><td>{x.printer_model}</td>
-              <td><button className="button ghost" disabled={remove.isPending}
-                onClick={()=>remove.mutate(x.id)}><ShieldCheck size={15}/> Retirar vínculo</button></td>
+              <td>{canRemove ? <button className="button ghost" disabled={remove.isPending}
+                onClick={()=>remove.mutate(x.id)}><ShieldCheck size={15}/> Retirar vínculo</button> : 'Somente supervisão'}</td>
             </tr>)}</tbody></table></div>
       )}
     </>}
   </section>;
 }
 
-export function SuppliesPage({token}:{token:string|null}) {
+export function SuppliesPage({token,canRemove}:{token:string|null;canRemove:boolean}) {
   const qc=useQueryClient();
   const [page,setPage]=useState(1);
   const [notice,setNotice]=useState('');
@@ -214,7 +214,7 @@ export function SuppliesPage({token}:{token:string|null}) {
     <div className="stock-forms">
       <NewReceipt token={token} onSaved={refresh}/>
       <NewSupplier token={token} onSaved={refresh}/>
-      <CompatibilityEditor token={token}/>
+      <CompatibilityEditor token={token} canRemove={canRemove}/>
     </div>
     <p className="stock-footnote">Lotes são registrados na entrada, mas ainda não rastreados nas baixas, transferências ou FIFO/FEFO. Não utilizar estes registros como rastreabilidade por unidade física até concluir o módulo de consumo por lote.</p>
   </div>;

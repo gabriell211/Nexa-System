@@ -176,7 +176,7 @@ function Shell({ token, identity, onLogout }: {
           <Route path="/parque" element={<PrintersPage token={token} canWrite={canWrite} />} />
           {canStock && <Route path="/estoque" element={<InventoryPage token={token} />} />}
           {canStock && <Route path="/reposicoes" element={<ShipmentsPage token={token} canClose={canWrite} />} />}
-          {canStock && <Route path="/suprimentos" element={<SuppliesPage token={token} />} />}
+          {canStock && <Route path="/suprimentos" element={<SuppliesPage token={token} canRemove={canWrite} />} />}
           {canAudit && <Route path="/auditoria" element={<AuditPage token={token} />} />}
           {canAudit && <Route path="/equipe" element={<StaffPage token={token} />} />}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
