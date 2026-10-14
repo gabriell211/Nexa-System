@@ -404,3 +404,18 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - **Este NÃO é um limite do tamanho físico em disco**. Páginas/indexação SQLite, WAL, SHM, arquivos temporários, fragmentação, backups e registros auxiliares continuam fora da cota. Um limite físico rígido requer provisionamento/quotas de filesystem e política testada de checkpoint/recuperação.
 - Faltam criptografia da outbox, proteção OS contra cópias não autorizadas, janela de retenção auditada, simulação de 48h sem rede e recuperação de falta de espaço/energia.
 - NX-035 e NX-045 permanecem **PARCIAIS** até testes E2E e homologação de produção.
+
+## Entrega 21 — guard observacional de tamanho físico SQLite (14/10/2026)
+
+### Implementação incremental
+- Nova configuração opcional `max_sqlite_files_bytes` (default 512 MiB; 1..64 GiB), validada e com compatibilidade para JSON antigo.
+- Núcleo Rust guarda caminho do arquivo SQLite e retorna `SqliteFootprint`: tamanho em bytes de DB, WAL, SHM, total, limiar e condição de saturação. Sidecars ausentes contam como zero; erros inesperados de leitura do filesystem não são omitidos.
+- `Outbox::enqueue` verifica a pressão antes do INSERT e mantém a semântica anterior de idempotência; erro tipado `SqliteSoftLimit` não descarta registros. `Outbox::at_capacity` integra contagem + orçamento de payload + guard de arquivos.
+- Daemon pausa novas consultas SNMP quando o guard é atingido, evita gravações desnecessárias do relógio de coleta sob pressão, mas mantém processamento de upload/ACK e quarentena. CLI `--storage-status` lê diagnóstico sem rede.
+- Console Tauri/React exibe soma e componentes DB/WAL/SHM, limiar configurado e mensagens de saturação.
+- Testes Rust cobrem somatório físico, guard bloqueando novas coletas sem impedir ACK/restore e validação de limite configurado.
+
+### Atenção — sem homologação completa
+- **Não equivale a quota rígida de disco ou garantia contra ENOSPC.** Operações podem ultrapassar o limite entre a medição e a escrita, incluindo concorrência e WAL; metadados em outros caminhos, backups, temporários e disponibilidade física livre não são monitorados.
+- ACK não encolhe necessariamente DB/WAL, e operação de VACUUM/CHKPT manual exige supervisão e backup. Não há política de mínimo espaço livre nem instalações de serviço nativo nem criptografia em repouso.
+- O monitoramento local é observacional e não inclui testes reais de interrupção elétrica/disco cheio; `NX-035` e `NX-045` continuam **PARCIAIS**.
