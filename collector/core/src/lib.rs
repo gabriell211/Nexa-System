@@ -229,6 +229,15 @@ pub struct Reading {
     pub meter_color: Option<u64>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct QuarantinedReading {
+    pub sample_id: String,
+    pub printer_id: u64,
+    pub collected_at: String,
+    pub quarantined_at: String,
+    pub reason: String,
+}
+
 pub struct Outbox {
     connection: Connection,
     max_pending_samples: u64,
@@ -260,6 +269,13 @@ impl Outbox {
             CREATE TABLE IF NOT EXISTS state (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS quarantined_readings (
+                sample_id TEXT PRIMARY KEY,
+                payload TEXT NOT NULL,
+                queued_at TEXT NOT NULL,
+                quarantined_at TEXT NOT NULL,
+                reason TEXT NOT NULL
             );"
         )?;
         Ok(Self { connection: db, max_pending_samples })
@@ -274,7 +290,10 @@ impl Outbox {
         let affected = self.connection.execute(
             "INSERT OR IGNORE INTO outbox(sample_id, payload, queued_at)
              SELECT ?1, ?2, ?3
-             WHERE (SELECT COUNT(*) FROM outbox) < ?4",
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM quarantined_readings WHERE sample_id = ?1
+             ) AND (SELECT COUNT(*) FROM outbox)
+                 + (SELECT COUNT(*) FROM quarantined_readings) < ?4",
             params![sample_id, payload, Utc::now().to_rfc3339(), self.max_pending_samples],
         )?;
         if affected > 0 {
@@ -291,12 +310,114 @@ impl Outbox {
         match existing {
             Some(saved) if saved == payload => Ok(false),
             Some(_) => Err(CollectorError::SampleConflict),
-            None => Err(CollectorError::OutboxFull { limit: self.max_pending_samples }),
+            None => {
+                let quarantined: bool = self.connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM quarantined_readings WHERE sample_id = ?1)",
+                    [&sample_id], |row| row.get(0),
+                )?;
+                if quarantined {
+                    Err(CollectorError::SampleConflict)
+                } else {
+                    Err(CollectorError::OutboxFull { limit: self.max_pending_samples })
+                }
+            },
         }
     }
 
     pub fn pending(&self) -> Result<u64, CollectorError> {
         Ok(self.connection.query_row("SELECT COUNT(*) FROM outbox", [], |row| row.get::<_,u64>(0))?)
+    }
+
+    /// All retained records consume the same capacity; isolation never frees
+    /// storage to collect more while rejected samples await operator review.
+    pub fn retained(&self) -> Result<u64, CollectorError> {
+        Ok(self.pending()? + self.quarantined_count()?)
+    }
+
+    pub fn quarantined_count(&self) -> Result<u64, CollectorError> {
+        Ok(self.connection.query_row(
+            "SELECT COUNT(*) FROM quarantined_readings", [],
+            |row| row.get::<_, u64>(0),
+        )?)
+    }
+
+    /// Sanitized metadata only. The original reading stays in SQLite and is
+    /// not exposed through the console, logs or API.
+    pub fn quarantined_readings(&self, limit: usize) -> Result<Vec<QuarantinedReading>, CollectorError> {
+        let mut query = self.connection.prepare(
+            "SELECT sample_id, payload, quarantined_at, reason
+             FROM quarantined_readings ORDER BY quarantined_at, sample_id LIMIT ?1"
+        )?;
+        let rows = query.query_map([limit.clamp(1, 100) as i64], |row| {
+            let id: String = row.get(0)?;
+            let payload: String = row.get(1)?;
+            let quarantined_at: String = row.get(2)?;
+            let reason: String = row.get(3)?;
+            Ok((id, payload, quarantined_at, reason))
+        })?;
+        rows.map(|row| {
+            let (sample_id, payload, quarantined_at, reason) = row?;
+            let reading: Reading = serde_json::from_str(&payload)?;
+            if reading.sample_id.to_string() != sample_id {
+                return Err(CollectorError::SampleConflict);
+            }
+            Ok(QuarantinedReading {
+                sample_id, printer_id: reading.printer_id,
+                collected_at: reading.collected_at.to_rfc3339(),
+                quarantined_at, reason,
+            })
+        }).collect()
+    }
+
+    /// Moves one individually rejected sample in a single transaction.
+    /// The raw JSON is always retained; no implicit purge of financial meters.
+    pub fn quarantine(&mut self, sample_id: Uuid, reason: &'static str) -> Result<(), CollectorError> {
+        let transaction = self.connection.transaction()?;
+        let moved = transaction.execute(
+            "INSERT INTO quarantined_readings(sample_id, payload, queued_at, quarantined_at, reason)
+             SELECT sample_id, payload, queued_at, ?2, ?3 FROM outbox WHERE sample_id = ?1",
+            params![sample_id.to_string(), Utc::now().to_rfc3339(), reason],
+        )?;
+        if moved != 1 {
+            return Err(CollectorError::SampleConflict);
+        }
+        let deleted = transaction.execute(
+            "DELETE FROM outbox WHERE sample_id = ?1", [sample_id.to_string()],
+        )?;
+        if deleted != 1 {
+            return Err(CollectorError::SampleConflict);
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Explicit recovery action. A repeated UUID already in outbox is never
+    /// overwritten; operator must resolve the server-side cause before retry.
+    pub fn restore_quarantined(&mut self, sample_id: Uuid) -> Result<bool, CollectorError> {
+        let transaction = self.connection.transaction()?;
+        let restored = transaction.execute(
+            "INSERT OR IGNORE INTO outbox(sample_id, payload, queued_at)
+             SELECT sample_id, payload, queued_at FROM quarantined_readings
+             WHERE sample_id = ?1",
+            [sample_id.to_string()],
+        )?;
+        if restored == 0 {
+            let exists: bool = transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM quarantined_readings WHERE sample_id = ?1)",
+                [sample_id.to_string()], |row| row.get(0)
+            )?;
+            if exists {
+                return Err(CollectorError::SampleConflict);
+            }
+            return Ok(false);
+        }
+        let deleted = transaction.execute(
+            "DELETE FROM quarantined_readings WHERE sample_id = ?1",
+            [sample_id.to_string()],
+        )?;
+        if deleted != 1 { return Err(CollectorError::SampleConflict); }
+        transaction.commit()?;
+        Ok(true)
     }
 
     pub fn next_batch(&self, limit: usize) -> Result<Vec<Reading>, CollectorError> {
@@ -450,24 +571,56 @@ pub fn heartbeat_sleep_seconds(seconds: u64, collector_id: Uuid) -> u64 {
     seconds + (collector_id.as_u128() as u64 % (spread + 1))
 }
 
-pub fn upload_pending(
+/// Interpret the backend's batch-level 422 cautiously. First retry *one*
+/// sample: only an independently rejected UUID is quarantined. Other failures
+/// (including authorization, rate limits and network outages) retain the queue.
+fn process_upload_batch<F>(
+    outbox: &mut Outbox,
+    samples: &[Reading],
+    mut send: F,
+) -> Result<usize, CollectorError>
+where
+    F: FnMut(&[Reading]) -> Result<Vec<Uuid>, CollectorError>,
+{
+    if samples.is_empty() { return Ok(0); }
+    let acknowledged = match send(samples) {
+        Ok(ids) => ids,
+        Err(CollectorError::HttpStatus { status: 422, .. }) => {
+            let first = &samples[..1];
+            match if samples.len() == 1 {
+                Err(CollectorError::HttpStatus { status: 422, retry_after_seconds: None })
+            } else {
+                send(first)
+            } {
+                Ok(ids) => {
+                    validate_upload_ack(first, &ids)?;
+                    outbox.acknowledge(&ids)?;
+                    return Ok(ids.len());
+                }
+                Err(CollectorError::HttpStatus { status: 422, .. }) => {
+                    outbox.quarantine(first[0].sample_id, "individually-rejected-422")?;
+                    return Ok(0);
+                }
+                Err(other) => return Err(other),
+            }
+        }
+        Err(other) => return Err(other),
+    };
+    validate_upload_ack(samples, &acknowledged)?;
+    outbox.acknowledge(&acknowledged)?;
+    Ok(acknowledged.len())
+}
+
+fn send_ingest_samples(
     cfg: &CollectorConfig,
     token: &str,
-    outbox: &mut Outbox,
-) -> Result<usize, CollectorError> {
-    if token.is_empty() {
-        return Err(CollectorError::Configuration("NEXA_COLLECTOR_TOKEN is required".into()));
-    }
-    let samples = outbox.next_batch(100)?;
-    if samples.is_empty() { return Ok(0); }
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
+    samples: &[Reading],
+    client: &reqwest::blocking::Client,
+) -> Result<Vec<Uuid>, CollectorError> {
     let response = client
         .post(format!("{}/api/v1/collector/ingest", cfg.api_url.trim_end_matches('/')))
         .bearer_auth(token)
-        .json(&IngestBody { collector_id: cfg.collector_id, samples: &samples })
+        .json(&IngestBody { collector_id: cfg.collector_id, samples })
         .send()?;
     if !response.status().is_success() {
         return Err(CollectorError::HttpStatus {
@@ -478,9 +631,28 @@ pub fn upload_pending(
         });
     }
     let ack: IngestAck = response.json()?;
-    validate_upload_ack(&samples, &ack.acknowledged)?;
-    outbox.acknowledge(&ack.acknowledged)?;
-    Ok(ack.acknowledged.len())
+    Ok(ack.acknowledged)
+}
+
+pub fn upload_pending(
+    cfg: &CollectorConfig,
+    token: &str,
+    outbox: &mut Outbox,
+) -> Result<usize, CollectorError> {
+    if token.len() != 64 || !token.as_bytes().iter().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(CollectorError::Configuration(
+            "collector token must be 64 hex characters".into(),
+        ));
+    }
+    let samples = outbox.next_batch(100)?;
+    if samples.is_empty() { return Ok(0); }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    process_upload_batch(outbox, &samples, |subset| {
+        send_ingest_samples(cfg, token, subset, &client)
+    })
 }
 
 #[cfg(test)]
@@ -688,6 +860,90 @@ mod tests {
             diagnostics.seconds_until_retry(Utc::now()),
             Err(CollectorError::Configuration(_))
         ));
+    }
+
+    #[test]
+    fn isolates_only_single_reading_confirmed_rejected_and_preserves_the_rest() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("queue.sqlite");
+        let good = sample_with_meter(10);
+        let bad = sample_with_meter(11);
+        let newer = sample_with_meter(12);
+        let mut outbox = Outbox::open_bounded(&path, 3).unwrap();
+        outbox.enqueue(&good).unwrap();
+        outbox.enqueue(&bad).unwrap();
+        outbox.enqueue(&newer).unwrap();
+
+        // Simulate the backend's atomic batch 422: a batch containing 'bad'
+        // is rejected, even when other readings are legitimate.
+        let fake_api = |batch: &[Reading]| -> Result<Vec<Uuid>, CollectorError> {
+            if batch.iter().any(|reading| reading.sample_id == bad.sample_id) {
+                return Err(CollectorError::HttpStatus {
+                    status: 422, retry_after_seconds: None,
+                });
+            }
+            Ok(batch.iter().map(|reading| reading.sample_id).collect())
+        };
+
+        for _ in 0..3 {
+            let batch = outbox.next_batch(100).unwrap();
+            if batch.is_empty() { break; }
+            process_upload_batch(&mut outbox, &batch, fake_api).unwrap();
+        }
+        assert_eq!(outbox.pending().unwrap(), 0);
+        assert_eq!(outbox.quarantined_count().unwrap(), 1);
+        assert_eq!(outbox.retained().unwrap(), 1);
+        let quarantined = outbox.quarantined_readings(10).unwrap();
+        assert_eq!(quarantined[0].sample_id, bad.sample_id.to_string());
+        assert_eq!(quarantined[0].reason, "individually-rejected-422");
+
+        // No silent data loss, no new data admitted in excess of capacity,
+        // and quarantine contents remain recoverable after a process restart.
+        drop(outbox);
+        let mut reopened = Outbox::open_bounded(&path, 3).unwrap();
+        assert_eq!(reopened.quarantined_count().unwrap(), 1);
+        assert!(reopened.restore_quarantined(bad.sample_id).unwrap());
+        assert_eq!(reopened.next_batch(10).unwrap()[0].sample_id, bad.sample_id);
+        assert_eq!(reopened.quarantined_count().unwrap(), 0);
+        assert!(!reopened.restore_quarantined(bad.sample_id).unwrap());
+    }
+
+    #[test]
+    fn quarantine_counts_toward_capacity_and_restoration_does_not_duplicate() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut outbox = Outbox::open_bounded(temp.path().join("queue.sqlite"), 1).unwrap();
+        let bad = sample_with_meter(12);
+        outbox.enqueue(&bad).unwrap();
+        outbox.quarantine(bad.sample_id, "individually-rejected-422").unwrap();
+        assert_eq!(outbox.pending().unwrap(), 0);
+        assert_eq!(outbox.retained().unwrap(), 1);
+        assert!(matches!(
+            outbox.enqueue(&sample_with_meter(13)),
+            Err(CollectorError::OutboxFull { limit: 1 })
+        ));
+        assert!(matches!(outbox.enqueue(&bad), Err(CollectorError::SampleConflict)));
+        assert!(outbox.restore_quarantined(bad.sample_id).unwrap());
+        assert_eq!(outbox.retained().unwrap(), 1);
+        outbox.acknowledge(&[bad.sample_id]).unwrap();
+        assert_eq!(outbox.retained().unwrap(), 0);
+        assert!(outbox.enqueue(&sample_with_meter(14)).unwrap());
+    }
+
+    #[test]
+    fn invalid_ack_or_transient_error_never_quarantines_any_reading() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut outbox = Outbox::open_bounded(temp.path().join("queue.sqlite"), 3).unwrap();
+        let sample = sample_with_meter(41);
+        outbox.enqueue(&sample).unwrap();
+        let samples = outbox.next_batch(10).unwrap();
+        let wrong_ack = process_upload_batch(&mut outbox, &samples, |_| Ok(vec![Uuid::new_v4()]));
+        assert!(matches!(wrong_ack, Err(CollectorError::InvalidAcknowledgement)));
+        let throttled = process_upload_batch(&mut outbox, &samples, |_| {
+            Err(CollectorError::HttpStatus { status: 429, retry_after_seconds: Some(60) })
+        });
+        assert!(matches!(throttled, Err(CollectorError::HttpStatus { status: 429, .. })));
+        assert_eq!(outbox.pending().unwrap(), 1);
+        assert_eq!(outbox.quarantined_count().unwrap(), 0);
     }
 
     #[test]

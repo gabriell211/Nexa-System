@@ -17,6 +17,13 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Quarentena reversível de leituras rejeitadas — incremento 19 (parcial)
+
+- Se um lote recebe HTTP `422`, o Collector tenta novamente **somente a leitura mais antiga**. Apenas caso essa leitura individual também receba `422`, ela é isolada por transação em `quarantined_readings` (SQLite). Erros de autorização, limitação de taxa, falhas de rede e ACK inválido **não** isolam leituras.
+- O registro original (payload completo, UUID, timestamp de coleta) permanece guardado, separado da outbox de envio. A quantidade isolada conta para a capacidade máxima do Collector e não libera espaço de coleta; assim não existe expurgo automático nem perda silenciosa.
+- Console desktop mostra quantidade e metadados sanitizados da quarentena, com UUID para revisão; restaurar requer comando explícito `--restore-quarantined <UUID>` após resolver a causa. O sistema não inventa contadores ou lançamentos financeiros.
+- `NX-034/035/038/045` continuam parciais. **Não há criptografia local, política fiscal de reconciliação, tratamento de reprocessamento além da janela de 14 dias, teste de campo nem homologação de produção.**
+
 ### Diagnóstico local persistente de transmissão — incremento 18 (parcial)
 
 - O daemon registra no SQLite da outbox informações sanitizadas: último ACK bem-sucedido, última falha, categoria, contagem consecutiva e próxima tentativa estimada.

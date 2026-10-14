@@ -1,4 +1,4 @@
-use nexa_collector_core::{read_config, DeliveryDiagnostics, Outbox};
+use nexa_collector_core::{read_config, DeliveryDiagnostics, Outbox, QuarantinedReading};
 use serde::Serialize;
 use std::env;
 
@@ -17,6 +17,8 @@ struct CollectorSnapshot {
     interval_seconds: Option<u64>,
     printers: Vec<PrinterInfo>,
     queue_pending: Option<u64>,
+    quarantine_count: Option<u64>,
+    quarantine_preview: Vec<QuarantinedReading>,
     queue_capacity: Option<u64>,
     delivery: Option<DeliveryDiagnostics>,
     last_run: Option<String>,
@@ -32,6 +34,8 @@ fn get_snapshot() -> CollectorSnapshot {
         interval_seconds: None,
         printers: Vec::new(),
         queue_pending: None,
+        quarantine_count: None,
+        quarantine_preview: Vec::new(),
         queue_capacity: None,
         delivery: None,
         last_run: None,
@@ -63,6 +67,11 @@ fn get_snapshot() -> CollectorSnapshot {
             match Outbox::open(path) {
                 Ok(outbox) => {
                     snapshot.queue_pending = outbox.pending().ok();
+                    snapshot.quarantine_count = outbox.quarantined_count().ok();
+                    match outbox.quarantined_readings(25) {
+                        Ok(readings) => snapshot.quarantine_preview = readings,
+                        Err(_) => snapshot.error = Some("Não foi possível ler os registros isolados.".into()),
+                    }
                     match outbox.delivery_diagnostics() {
                         Ok(delivery) => snapshot.delivery = Some(delivery),
                         Err(_) => snapshot.error = Some("Histórico de transmissão local inválido.".into()),

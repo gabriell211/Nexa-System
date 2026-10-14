@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
-  Activity, ArrowDownUp, CheckCircle2, CircleHelp, Database,
+  Activity, AlertTriangle, ArrowDownUp, CheckCircle2, CircleHelp, Database,
   HardDrive, LayoutDashboard, Network, Printer, RefreshCcw, Settings2, ShieldCheck,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -13,6 +13,13 @@ type DeliveryDiagnostics = {
   next_attempt_at: string | null;
   consecutive_failures: number;
 };
+type QuarantinedReading = {
+  sample_id: string;
+  printer_id: number;
+  collected_at: string;
+  quarantined_at: string;
+  reason: string;
+};
 type CollectorSnapshot = {
   configured: boolean;
   collector_id: string | null;
@@ -20,12 +27,14 @@ type CollectorSnapshot = {
   interval_seconds: number | null;
   printers: PrinterInfo[];
   queue_pending: number | null;
+  quarantine_count: number | null;
+  quarantine_preview: QuarantinedReading[];
   queue_capacity: number | null;
   delivery: DeliveryDiagnostics | null;
   last_run: string | null;
   error: string | null;
 };
-type Tab = "overview" | "printers" | "settings";
+type Tab = "overview" | "printers" | "quarantine" | "settings";
 
 function formatDate(value: string | null): string {
   if (!value) return "Nenhuma execução registrada";
@@ -56,15 +65,18 @@ export default function App() {
 
   const queuePending = snapshot?.queue_pending ?? 0;
   const queueCapacity = snapshot?.queue_capacity ?? 0;
+  const quarantineCount = snapshot?.quarantine_count ?? 0;
+  const retainedCount = queuePending + quarantineCount;
   const queueObserved = snapshot?.queue_pending !== null && snapshot?.queue_pending !== undefined
     && snapshot?.queue_capacity !== null && snapshot?.queue_capacity !== undefined && queueCapacity > 0;
-  const queuePercent = queueObserved ? Math.min(100, Math.round(queuePending / queueCapacity * 100)) : null;
-  const queueFull = queueObserved && queuePending >= queueCapacity;
-  const queueWarning = queueObserved && queuePending >= queueCapacity * 0.8;
+  const queuePercent = queueObserved ? Math.min(100, Math.round(retainedCount / queueCapacity * 100)) : null;
+  const queueFull = queueObserved && retainedCount >= queueCapacity;
+  const queueWarning = queueObserved && retainedCount >= queueCapacity * 0.8;
 
   const menu: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
     { id: "overview", label: "Visão geral", icon: LayoutDashboard },
     { id: "printers", label: "Impressoras", icon: Printer },
+    { id: "quarantine", label: "Quarentena", icon: AlertTriangle },
     { id: "settings", label: "Configuração", icon: Settings2 },
   ];
 
@@ -100,7 +112,7 @@ export default function App() {
           <div className="heading">
             <div>
               <p className="eyebrow">CONTROLE DA ESTAÇÃO</p>
-              <h1>{tab === "overview" ? "Visão geral" : tab === "printers" ? "Impressoras" : "Configurações"}</h1>
+              <h1>{tab === "overview" ? "Visão geral" : tab === "printers" ? "Impressoras" : tab === "quarantine" ? "Quarentena" : "Configurações"}</h1>
               <p>Informações lidas do arquivo de configuração e da fila local do Nexa Collector.</p>
             </div>
             <button type="button" className="primary-button" onClick={() => void refresh()} disabled={loading}>
@@ -134,11 +146,12 @@ export default function App() {
                     <span>{queuePercent}% da capacidade configurada</span></div>
                   <div className="queue-body">
                     <div className="queue-track" role="progressbar" aria-label="Fila de amostras pendentes"
-                      aria-valuemin={0} aria-valuemax={queueCapacity} aria-valuenow={queuePending}>
+                      aria-valuemin={0} aria-valuemax={queueCapacity} aria-valuenow={retainedCount}>
                       <div className={queueFull ? "queue-fill full" : queueWarning ? "queue-fill warning" : "queue-fill"}
                         style={{ width: `${queuePercent}%` }} />
                     </div>
-                    <p>{queuePending.toLocaleString("pt-BR")} / {queueCapacity.toLocaleString("pt-BR")} amostras ainda sem confirmação.</p>
+                    <p>{retainedCount.toLocaleString("pt-BR")} / {queueCapacity.toLocaleString("pt-BR")} amostras retidas
+                      ({queuePending.toLocaleString("pt-BR")} pendentes, {quarantineCount.toLocaleString("pt-BR")} isoladas).</p>
                   </div>
                 </section>
               )}
@@ -148,6 +161,12 @@ export default function App() {
                     ? "A fila atingiu o limite. Se o serviço estiver ativo, novas consultas SNMP são suspensas até a confirmação de leituras pendentes."
                     : "A fila está próxima do limite. Verifique a conectividade do serviço pelos logs e a confirmação de uploads no servidor."}
                   {" "}O console mostra apenas o estado persistido; não comprova a conectividade do equipamento.
+                </div>
+              )}
+              {quarantineCount > 0 && (
+                <div className="notice warning" role="status">
+                  {quarantineCount.toLocaleString("pt-BR")} leitura(s) isolada(s) após rejeição individual HTTP 422.
+                  Consulte a aba Quarentena para identificar os UUIDs e recuperar manualmente após corrigir a causa.
                 </div>
               )}
               <section className="panel">
@@ -194,6 +213,39 @@ export default function App() {
               </table></div>
               {!snapshot?.printers.length && <div className="empty">Nenhuma impressora configurada neste ponto de coleta.</div>}
             </section>
+          )}
+
+          {tab === "quarantine" && (
+            <>
+              <section className="panel">
+                <div className="panel-title">
+                  <h2>Leituras isoladas para revisão</h2>
+                  <span>{quarantineCount.toLocaleString("pt-BR")} registros · primeiros 25</span>
+                </div>
+                <div className="table-scroll"><table>
+                  <thead><tr><th>UUID da leitura</th><th>Impressora</th><th>Coletada</th><th>Isolada</th><th>Motivo</th></tr></thead>
+                  <tbody>
+                    {snapshot?.quarantine_preview.map((reading) => (
+                      <tr key={reading.sample_id}>
+                        <td className="mono">{reading.sample_id}</td>
+                        <td>#{reading.printer_id}</td>
+                        <td>{formatDate(reading.collected_at)}</td>
+                        <td>{formatDate(reading.quarantined_at)}</td>
+                        <td>{reading.reason === "individually-rejected-422" ? "Rejeição HTTP 422 individual" : "Requer análise"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table></div>
+                {!quarantineCount && (
+                  <div className="empty">Nenhuma leitura foi isolada neste ponto de coleta.</div>
+                )}
+              </section>
+              <div className="notice">
+                Nenhuma leitura isolada foi apagada ou lançada no faturamento. Após verificar a causa da rejeição,
+                um administrador do sistema pode restaurar uma amostra pelo comando
+                <code> --restore-quarantined &lt;UUID&gt;</code> do daemon. Esta tela não executa restaurações.
+              </div>
+            </>
           )}
 
           {tab === "settings" && (

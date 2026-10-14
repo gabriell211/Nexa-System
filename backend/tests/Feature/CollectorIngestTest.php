@@ -172,4 +172,56 @@ final class CollectorIngestTest extends TestCase
         $this->assertDatabaseCount('printer_readings', 0);
     }
 
+    public function test_expired_reading_rejects_whole_batch_but_individual_valid_reading_remains_acceptable(): void
+    {
+        $tenant = Tenant::create(['name' => 'Provider', 'slug' => 'mixed-readings']);
+        $customer = $tenant->customers()->create(['name' => 'Client']);
+        $printer = $tenant->printers()->create([
+            'customer_id' => $customer->id,
+            'manufacturer' => 'Generic',
+            'model' => 'Counter',
+        ]);
+        $token = bin2hex(random_bytes(32));
+        $collectorId = (string) Str::uuid();
+        CollectorAgent::create([
+            'tenant_id' => $tenant->id,
+            'customer_id' => $customer->id,
+            'collector_id' => $collectorId,
+            'token_hash' => hash('sha256', $token),
+        ]);
+
+        $expired = [
+            'sample_id' => (string) Str::uuid(),
+            'printer_id' => $printer->id,
+            'collected_at' => now('UTC')->subDays(15)->startOfSecond()->toIso8601String(),
+            'meter_total' => 50, 'meter_mono' => null, 'meter_color' => null,
+        ];
+        $fresh = [
+            'sample_id' => (string) Str::uuid(),
+            'printer_id' => $printer->id,
+            'collected_at' => now('UTC')->startOfSecond()->toIso8601String(),
+            'meter_total' => 70, 'meter_mono' => null, 'meter_color' => null,
+        ];
+
+        $this->withToken($token)->postJson('/api/v1/collector/ingest', [
+            'collector_id' => $collectorId,
+            'samples' => [$expired, $fresh],
+        ])->assertUnprocessable();
+        $this->assertDatabaseCount('printer_readings', 0);
+
+        $this->withToken($token)->postJson('/api/v1/collector/ingest', [
+            'collector_id' => $collectorId, 'samples' => [$expired],
+        ])->assertUnprocessable();
+        $this->assertDatabaseCount('printer_readings', 0);
+
+        $this->withToken($token)->postJson('/api/v1/collector/ingest', [
+            'collector_id' => $collectorId, 'samples' => [$fresh],
+        ])->assertOk()->assertJsonPath('acknowledged.0', $fresh['sample_id']);
+        $this->assertDatabaseCount('printer_readings', 1);
+        $this->assertDatabaseHas('printer_readings', [
+            'sample_id' => $fresh['sample_id'],
+            'meter_total' => 70,
+        ]);
+    }
+
 }

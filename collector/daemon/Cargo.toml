@@ -4,5 +4,6 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
 nexa-collector-core = { path = "../core" }
