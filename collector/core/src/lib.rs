@@ -1114,9 +1114,18 @@ fn validate_upload_ack(
     Ok(())
 }
 
+/// Bounded advisory diagnostics; no credentials, queue samples, or filenames.
+#[derive(Clone, Debug, Serialize)]
+pub struct WatchdogHeartbeat {
+    pub recent_incidents: usize,
+    pub circuit_open: bool,
+}
+
 #[derive(Serialize)]
 struct HeartbeatBody {
     collector_id: Uuid,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    watchdog: Option<WatchdogHeartbeat>,
 }
 #[derive(Deserialize)]
 struct HeartbeatAck {
@@ -1127,6 +1136,21 @@ struct HeartbeatAck {
 /// A successful HTTP POST is not enough: verify the bound identity and ACK.
 /// No meter or device state is uploaded as part of this heartbeat.
 pub fn send_heartbeat(cfg: &CollectorConfig, token: &str) -> Result<(), CollectorError> {
+    send_heartbeat_with_watchdog(cfg, token, None)
+}
+
+/// Sends only an authenticated, aggregate snapshot when an incident journal
+/// was successfully read. The backend uses its own reception timestamp.
+pub fn send_heartbeat_with_watchdog(
+    cfg: &CollectorConfig,
+    token: &str,
+    watchdog: Option<WatchdogHeartbeat>,
+) -> Result<(), CollectorError> {
+    if watchdog.as_ref().is_some_and(|status| status.recent_incidents > 32) {
+        return Err(CollectorError::Configuration(
+            "watchdog incident count exceeds the supported snapshot range".into()
+        ));
+    }
     if token.len() != 64 || !token.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
         return Err(CollectorError::Configuration("collector token must be 64 hex characters".into()));
     }
@@ -1137,7 +1161,7 @@ pub fn send_heartbeat(cfg: &CollectorConfig, token: &str) -> Result<(), Collecto
     let ack: HeartbeatAck = client
         .post(format!("{}/api/v1/collector/heartbeat", cfg.api_url.trim_end_matches('/')))
         .bearer_auth(token)
-        .json(&HeartbeatBody { collector_id: cfg.collector_id })
+        .json(&HeartbeatBody { collector_id: cfg.collector_id, watchdog })
         .send()?.error_for_status()?.json()?;
     if !ack.acknowledged || ack.collector_id != cfg.collector_id {
         return Err(CollectorError::Configuration("heartbeat ACK identity mismatch".into()));
