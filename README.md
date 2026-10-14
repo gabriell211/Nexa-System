@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Circuito de proteção contra reinícios repetidos — incremento 30 (parcial)
+
+- O watchdog agora registra localmente cada **saída por travamento induzida pelo próprio watchdog** (componente `main-loop` ou `heartbeat-worker`, UTC e versão de formato) em um pequeno arquivo `<queue.sqlite>.watchdog.json`, separado dos payloads e transações da fila SQLite. O histórico é limitado a 32 eventos; não contém leituras, tokens ou comunidades SNMP.
+- No início do serviço, se ocorreram **3 incidentes desse watchdog nos últimos 30 minutos**, a inicialização é bloqueada e retorna **saída normal** para impedir que `systemd` (`Restart=on-failure`), SCM e `launchd` (`SuccessfulExit=false`) continuem reiniciando o mesmo Collector. Leituras pendentes e a quarentena são preservadas. O serviço requer análise e partida administrativa posterior.
+- Novos comandos **offline** `--watchdog-status` (ocupação, circuito aberto e histórico retido) e `--reset-watchdog-circuit` (reconhecimento explícito do operador, mantendo os registros). A recuperação não limpa, modifica ou reconhece amostras SQLite.
+- Testes Rust incluem **processos filhos realmente encerrados com status 70** por travamentos simulados, além de limites de janela, reset explícito e corrupção do diário. Conteúdo de arquivo inválido bloqueia o serviço em modo supervisionado em vez de zerar os incidentes.
+- **Limites:** isso protege apenas contra saídas registradas pelo próprio watchdog; travamentos externos, corte de energia, perda de escrita do diário ou outros códigos de falha dependem dos supervisores existentes. O arquivo de diário não usa substituição atômica no Windows, e interrupção durante a escrita pode exigir análise manual. Ainda faltam simulações de reinício do OS com serviço real, rotação segura do diário, alertas centrais e homologação física. `NX-039` permanece **PARCIAL**.
+
 ### Watchdog independente do heartbeat — incremento 29 (parcial)
 
 - A supervisão do daemon agora mantém **dois indicadores monotônicos independentes**: progresso do loop principal (SNMP/outbox/upload) e progresso da thread de heartbeat. O heartbeat não pode mascarar a coleta travada, nem a coleta ativa pode mascarar uma thread de heartbeat travada.

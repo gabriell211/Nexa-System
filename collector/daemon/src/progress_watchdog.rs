@@ -4,6 +4,8 @@
 //! worker continues completing its bounded work (or sleeping cooperatively).
 //! If either worker stops making progress the OS supervisor can restart the
 //! process without modifying the durable SQLite outbox.
+use crate::recovery_guard::RecoveryGuard;
+use chrono::Utc;
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -86,11 +88,20 @@ impl ProgressWatchdog {
 /// Watchdog only observes state. It cannot checkpoint on its own.
 /// A hung worker exits with a nonzero status; existing service policy controls
 /// restart/backoff. The watchdog never opens/deletes/alters SQLite.
-pub(super) fn start_watchdog(progress: Arc<ProgressWatchdog>) {
+pub(super) fn start_watchdog(progress: Arc<ProgressWatchdog>, guard: RecoveryGuard) {
+    run_watcher(progress, guard, STALL_TIMEOUT, CHECK_INTERVAL);
+}
+
+fn run_watcher(
+    progress: Arc<ProgressWatchdog>,
+    guard: RecoveryGuard,
+    timeout: Duration,
+    interval: Duration,
+) {
     progress.arm();
     thread::spawn(move || loop {
-        thread::sleep(CHECK_INTERVAL);
-        let kind = match progress.state_at(Instant::now(), STALL_TIMEOUT) {
+        thread::sleep(interval);
+        let kind = match progress.state_at(Instant::now(), timeout) {
             ProgressState::Healthy => continue,
             ProgressState::Stopping => return,
             ProgressState::MainStalled => "main-loop",
@@ -99,8 +110,14 @@ pub(super) fn start_watchdog(progress: Arc<ProgressWatchdog>) {
         if progress.stopping.load(Ordering::Acquire) {
             return;
         }
+        // Persist the incident before terminating. A failing disk must not
+        // block recovery; a corrupt journal causes subsequent boots to halt
+        // safely and request manual inspection.
+        if let Err(error) = guard.record(kind, Utc::now()) {
+            eprintln!("Collector watchdog: incident journal unavailable ({error}); disk may require operator attention");
+        }
         eprintln!(
-            "Collector watchdog: {kind} progress stalled for 180 seconds; requesting service-manager recovery; SQLite outbox not purged"
+            "Collector watchdog: {kind} stalled; requesting service-manager recovery; SQLite outbox not purged"
         );
         std::process::exit(WATCHDOG_EXIT_CODE);
     });
@@ -109,6 +126,46 @@ pub(super) fn start_watchdog(progress: Arc<ProgressWatchdog>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::process::Command;
+
+    /// Executes an actual watchdog exit in a subprocess, never the parent
+    /// test runner and never a production executable test hook.
+    #[test]
+    fn watchdog_process_test_child() {
+        let Some(queue) = std::env::var_os("NEXA_INTERNAL_WATCHDOG_CHILD_QUEUE") else { return };
+        let guard = RecoveryGuard::for_queue(std::path::Path::new(&queue));
+        let progress = Arc::new(ProgressWatchdog::new(Arc::new(AtomicBool::new(false))));
+        run_watcher(progress, guard, Duration::from_millis(70), Duration::from_millis(10));
+        thread::sleep(Duration::from_secs(2));
+        panic!("watchdog did not terminate hung child");
+    }
+
+    #[test]
+    fn induced_hang_exits_nonzero_and_opens_persistent_circuit_after_three_incidents() {
+        let temp = tempfile::tempdir().unwrap();
+        let queue = temp.path().join("queue.sqlite");
+        std::fs::write(&queue, b"do-not-touch-original-queue").unwrap();
+        let guard = RecoveryGuard::for_queue(&queue);
+        let exe = std::env::current_exe().unwrap();
+        for attempt in 1..=3 {
+            let child = Command::new(&exe)
+                .arg("--exact")
+                .arg("progress_watchdog::tests::watchdog_process_test_child")
+                .arg("--nocapture")
+                .env("NEXA_INTERNAL_WATCHDOG_CHILD_QUEUE", &queue)
+                .output().unwrap();
+            assert_eq!(child.status.code(), Some(WATCHDOG_EXIT_CODE),
+                "induced watchdog hang attempt {attempt} should exit 70; stderr={}",
+                String::from_utf8_lossy(&child.stderr));
+            let (recent, open, _) = guard.status(Utc::now()).unwrap();
+            assert_eq!(recent, attempt);
+            assert_eq!(open, attempt >= 3);
+            assert_eq!(std::fs::read(&queue).unwrap(), b"do-not-touch-original-queue");
+        }
+        guard.reset(Utc::now()).unwrap();
+        assert!(!guard.circuit_open(Utc::now()).unwrap());
+    }
+
 
     fn fixed_checkpoint(w: &ProgressWatchdog, now: Instant) {
         let mut state = w.last_progress.lock().unwrap();

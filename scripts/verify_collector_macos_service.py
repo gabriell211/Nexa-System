@@ -45,7 +45,17 @@ assert "watcher.progressed()" in daemon
 assert "monitor.heartbeat_progressed()" in daemon
 assert "ProgressState::HeartbeatStalled" in watchdog
 assert "ProgressState::MainStalled" in watchdog
-assert "progress_watchdog::start_watchdog(Arc::clone(monitor))" in daemon
+assert "progress_watchdog::start_watchdog(Arc::clone(monitor), recovery_guard.clone())" in daemon
+guard = (root / "collector/daemon/src/recovery_guard.rs").read_text()
+assert "pub(super) const MAX_STALLS: usize = 3" in guard
+assert "const WINDOW_MINUTES: i64 = 30" in guard
+assert 'journal.events.push(StallEvent' in guard
+assert 'std::process::exit(WATCHDOG_EXIT_CODE)' in watchdog
+assert 'guard.record(kind, Utc::now())' in watchdog
+assert '--watchdog-status' in daemon
+assert '--reset-watchdog-circuit' in daemon
+assert 'if supervised_mode && args.len() == 3 {' in daemon
+assert 'recovery_guard.circuit_open(Utc::now())' in daemon
 
 assert "dscl . -create /Users/_nexacollector" in installer
 assert "dscl . -create /Groups/_nexacollector" in installer
