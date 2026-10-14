@@ -335,6 +335,26 @@ struct IngestAck {
     acknowledged: Vec<Uuid>,
 }
 
+/// Never delete a queued sample unless it was part of this exact request.
+/// Partial acknowledgements are allowed: other samples stay in the outbox.
+fn validate_upload_ack(
+    samples: &[Reading],
+    acknowledged: &[Uuid],
+) -> Result<(), CollectorError> {
+    if acknowledged.is_empty() {
+        return Err(CollectorError::InvalidAcknowledgement);
+    }
+    let requested: std::collections::HashSet<Uuid> =
+        samples.iter().map(|sample| sample.sample_id).collect();
+    let received: std::collections::HashSet<Uuid> = acknowledged.iter().copied().collect();
+    if acknowledged.len() != received.len()
+        || received.iter().any(|id| !requested.contains(id))
+    {
+        return Err(CollectorError::InvalidAcknowledgement);
+    }
+    Ok(())
+}
+
 #[derive(Serialize)]
 struct HeartbeatBody {
     collector_id: Uuid,
@@ -401,13 +421,7 @@ pub fn upload_pending(
         });
     }
     let ack: IngestAck = response.json()?;
-    if ack.acknowledged.is_empty() {
-        return Err(CollectorError::InvalidAcknowledgement);
-    }
-    let sent_ids: std::collections::HashSet<Uuid> = samples.iter().map(|s| s.sample_id).collect();
-    if ack.acknowledged.iter().any(|id| !sent_ids.contains(id)) {
-        return Err(CollectorError::InvalidAcknowledgement);
-    }
+    validate_upload_ack(&samples, &ack.acknowledged)?;
     outbox.acknowledge(&ack.acknowledged)?;
     Ok(ack.acknowledged.len())
 }
@@ -554,6 +568,25 @@ mod tests {
         assert!(cfg.validate().is_ok());
         let pause = heartbeat_sleep_seconds(60, id);
         assert!((60..=66).contains(&pause));
+    }
+
+    #[test]
+    fn rejects_unknown_duplicate_and_empty_upload_ack_without_consumption() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut outbox = Outbox::open_bounded(temp.path().join("queue.sqlite"), 3).unwrap();
+        let one = sample_with_meter(12);
+        let two = sample_with_meter(13);
+        outbox.enqueue(&one).unwrap();
+        outbox.enqueue(&two).unwrap();
+        let samples = outbox.next_batch(100).unwrap();
+        assert!(validate_upload_ack(&samples, &[]).is_err());
+        assert!(validate_upload_ack(&samples, &[Uuid::new_v4()]).is_err());
+        assert!(validate_upload_ack(&samples, &[one.sample_id, one.sample_id]).is_err());
+        assert_eq!(outbox.pending().unwrap(), 2);
+        assert!(validate_upload_ack(&samples, &[one.sample_id]).is_ok());
+        outbox.acknowledge(&[one.sample_id]).unwrap();
+        assert_eq!(outbox.pending().unwrap(), 1);
+        assert_eq!(outbox.next_batch(10).unwrap()[0].sample_id, two.sample_id);
     }
 
     #[test]
