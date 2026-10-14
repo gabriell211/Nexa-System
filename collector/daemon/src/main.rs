@@ -9,6 +9,8 @@ use std::{
 };
 use zeroize::Zeroizing;
 
+mod progress_watchdog;
+
 #[cfg(windows)]
 mod windows_service_runtime;
 #[cfg(target_os = "macos")]
@@ -187,6 +189,14 @@ fn run_application(
     upload_retry.restore(Instant::now(), retry_seconds, stored_retry.consecutive_failures);
     let mut next_poll = Instant::now();
     on_ready()?;
+    // An independent watchdog detects a blocked main collection/delivery
+    // loop even if the separate API heartbeat thread continues working.
+    // CLI, one-shot diagnostics and offline migrations never arm it.
+    let progress = if supervised_mode && !once {
+        Some(progress_watchdog::start_watchdog(Arc::clone(&shutdown)))
+    } else {
+        None
+    };
 
     loop {
         if shutdown.load(Ordering::Relaxed) { break; }
@@ -218,6 +228,12 @@ fn run_application(
                         }
                         Err(_) => eprintln!("SNMP reading unavailable for printer {}", printer.printer_id),
                     }
+                    // One unsuccessful device scan is still bounded work.
+                    // Without this tick a large fleet of slow/offline printers
+                    // could be mistaken for a deadlock.
+                    if let Some(ref watcher) = progress {
+                        watcher.progressed();
+                    }
                 }
             } else {
                 eprintln!("SNMP credential not configured; polling skipped");
@@ -228,12 +244,18 @@ fn run_application(
                 outbox.mark_run()?;
             }
             next_poll = Instant::now() + Duration::from_secs(cfg.interval_seconds);
+            if let Some(ref watcher) = progress {
+                watcher.progressed();
+            }
         }
 
         if let Some(ref secret) = token {
             attempt_upload(&cfg, secret, &mut outbox, &mut upload_retry)?;
         } else if once {
             eprintln!("Collector token not configured; queued samples retained");
+        }
+        if let Some(ref watcher) = progress {
+            watcher.progressed();
         }
 
         if once {
@@ -246,7 +268,13 @@ fn run_application(
             if shutdown.load(Ordering::Relaxed) { break; }
             thread::sleep(Duration::from_secs(1));
         }
+        if let Some(ref watcher) = progress {
+            watcher.progressed();
+        }
     }
+    // The watchdog uses the same shutdown token to avoid treating a normal
+    // service stop as a stall after the daemon has returned.
+    shutdown.store(true, Ordering::Release);
     Ok(())
 }
 
