@@ -147,3 +147,19 @@ O caminho `queue-encrypted.sqlite` **não deve existir**, nem ser um link para o
 Após sucesso, confira contagens e estado com `--storage-status` usando a nova base e a chave, compare IDs e registros isolados pela CLI, atualize `NEXA_COLLECTOR_DB` no Console e o caminho SQLite no comando/serviço do daemon, e só então inicie os serviços. **Não reative o writer do banco antigo** após a migração, pois o processo não replica leituras coletadas depois da cópia e não executa troca automática. Mantenha o banco original protegido até a conciliação/autorização de descarte, incluindo arquivos WAL/SHM e backups anteriores.
 
 A criação exclusiva do destino evita sobrescrever um arquivo existente. No Unix, o arquivo novo é criado com modo `0600`, sujeito também à segurança do diretório; no Windows dependemos da ACL do diretório/serviço, que deve ser configurada e testada. A proteção é **somente dos payloads**. Diagnósticos, UUIDs, datas e índices continuam em claro. Não há gerenciamento de chave por keychain, prova de parada do serviço OS, rotação, sincronização atômica com o processo, backup criptografado, quota física rígida nem testes de energia/disco cheio. NX-035 permanece parcial.
+
+## Rotação offline da chave AES-256-GCM — entrega 24
+
+Para gerar uma nova cópia cifrada com outra chave, pare completamente o daemon e o Console (sem outros writers SQLite). Faça e valide um backup consistente, mantenha a **chave anterior** disponível no cofre apenas pelo período de migração e gere uma **nova chave aleatória independente de 32 bytes**. As duas devem ser diferentes.
+
+As variáveis `NEXA_COLLECTOR_DB_KEY_HEX` (chave antiga) e `NEXA_COLLECTOR_NEW_DB_KEY_HEX` (nova chave) devem ser fornecidas por um gerenciador de segredos ou ambiente protegido — jamais por argumentos CLI, commit, README ou logs. Exemplo **sem valores de chaves**:
+
+```sh
+nexa-collector-daemon config.local.json fila-antiga.sqlite --rotate-encryption-to fila-rotacionada.sqlite
+```
+
+O comando autentica o marcador da fonte e cada JSON criptografado com a chave antiga; segura uma transação `BEGIN IMMEDIATE`, impede escritores enquanto lê e verifica `quick_check`. Depois cria exclusivamente um banco **novo** com arquivo marcado `migration_status=incomplete`, copia os registros pendentes, isolados e metadados operacionais, decifra cada payload somente em memória e recifra com a chave nova/nonce novo e AAD de UUID. Valida contagens e integridade antes de liberar o destino como `complete`. Uma falha deixa o arquivo incompleto indisponível para o daemon, e mantém a fonte original intacta.
+
+Para concluir, troque **simultaneamente** o caminho da fila no serviço daemon e `NEXA_COLLECTOR_DB` do Console, além de atualizar `NEXA_COLLECTOR_DB_KEY_HEX` para a chave nova; verifique `--storage-status`, quarentena e leitura de lote com o segredo novo antes de ativar operação. Não retome um escritor antigo apontando para a base original, sob risco de divergência posterior ao snapshot.
+
+**Limites:** este comando não apaga com segurança a origem ou seus backups, não faz cutover automático, não garante que o serviço parou, não instala cofres de segredos do OS, não recriptografa páginas/metadados fora dos payloads e não testa chaves em produção de campo. Retenção e descarte da fonte, WAL/SHM, snapshots e da chave antiga dependem de política e procedimento auditado. Nunca exclua arquivos originais antes da validação e reconciliação de leituras.
