@@ -10,6 +10,7 @@ use std::{
 use zeroize::Zeroizing;
 
 mod progress_watchdog;
+mod recovery_guard;
 
 #[cfg(windows)]
 mod windows_service_runtime;
@@ -42,12 +43,14 @@ fn run_application(
     let restore = args.len() == 5 && args[3] == "--restore-quarantined";
     let list_quarantine = args.len() == 4 && args[3] == "--list-quarantined";
     let storage_status = args.len() == 4 && args[3] == "--storage-status";
+    let watchdog_status = args.len() == 4 && args[3] == "--watchdog-status";
+    let watchdog_reset = args.len() == 4 && args[3] == "--reset-watchdog-circuit";
     let once = args.len() == 4 && args[3] == "--once";
-    if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || storage_status || restore || migrate || rotate)
+    if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || storage_status || watchdog_status || watchdog_reset || restore || migrate || rotate)
         || (windows_service_mode && args.len() != 3)
         || (macos_launchd_mode && args.len() != 3)
     {
-        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --storage-status | --restore-quarantined <sample-uuid> | --migrate-encrypted-to <new-queue.sqlite> | --rotate-encryption-to <new-queue.sqlite>]");
+        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --storage-status | --watchdog-status | --reset-watchdog-circuit | --restore-quarantined <sample-uuid> | --migrate-encrypted-to <new-queue.sqlite> | --rotate-encryption-to <new-queue.sqlite>]");
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
@@ -55,6 +58,37 @@ fn run_application(
     // Never fall back to inherited env variables if that directory is set.
     let has_systemd_credentials = env::var_os("CREDENTIALS_DIRECTORY").is_some();
     let supervised_mode = has_systemd_credentials || windows_service_mode || macos_launchd_mode;
+    let recovery_guard = recovery_guard::RecoveryGuard::for_queue(Path::new(&args[2]));
+    if watchdog_status {
+        let (recent, open, history) = recovery_guard.status(Utc::now())?;
+        println!(
+            "Watchdog: recent_incidents={} circuit_open={} retained_incidents={} threshold=3 window_minutes=30",
+            recent, open, history
+        );
+        return Ok(());
+    }
+    if watchdog_reset {
+        // Explicit human acknowledgement: inspect logs, SQLite health, and
+        // ensure the service is stopped before issuing this operator command.
+        recovery_guard.reset(Utc::now())?;
+        println!("Watchdog incident counter acknowledged; prior history retained; manually restart service after reviewing cause");
+        return Ok(());
+    }
+    if supervised_mode {
+        match recovery_guard.circuit_open(Utc::now()) {
+            Ok(true) => {
+                // A normal exit prevents launchd KeepAlive, systemd on-failure
+                // and SCM failure actions from creating an endless crash loop.
+                eprintln!("Collector watchdog circuit open: repeated worker stalls in 30 minutes; service stopped until operator review; outbox preserved");
+                return Ok(());
+            }
+            Err(error) => {
+                eprintln!("Collector watchdog journal cannot be trusted ({error}); service stopped for operator review; outbox preserved");
+                return Ok(());
+            }
+            Ok(false) => {}
+        }
+    }
     if rotate {
         // Rotation MUST never modify its source, discover the new key from an
         // isolated environment variable, or trigger any upload/heartbeat.
@@ -211,7 +245,7 @@ fn run_application(
     // Begin supervising both workers only after startup has completed.
     // The watcher cannot renew either worker's checkpoint itself.
     if let Some(ref monitor) = progress {
-        progress_watchdog::start_watchdog(Arc::clone(monitor));
+        progress_watchdog::start_watchdog(Arc::clone(monitor), recovery_guard.clone());
     }
 
     loop {
