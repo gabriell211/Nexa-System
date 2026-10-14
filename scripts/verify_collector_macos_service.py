@@ -53,7 +53,10 @@ assert "'-rw-r-----'" in activator
 assert "if ! /bin/launchctl bootstrap system" in activator
 assert "launchctl bootout system/com.nexa.collector" in activator
 assert "launchctl bootstrap" not in installer
-assert "/Library/LaunchDaemons/com.nexa.collector.plist" not in installer
+# Installer may check whether a LaunchDaemon already exists, but must never
+# install or bootstrap it as a side effect.
+assert 'install -o root -g wheel -m 0644 "$staged" "$installed"' not in installer
+assert 'launchctl bootstrap' not in installer
 assert "file -b" in installer
 
 for script in ("install.sh", "activate.sh"):
