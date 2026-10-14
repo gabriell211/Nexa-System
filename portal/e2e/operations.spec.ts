@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { runAlertWorkflow } from './helpers/alert-workflow';
 
 test('secure login, customers, tickets, stock and logout (real browser)', async ({page}) => {
   // Only one login per browser profile; production's 5/min/IP
@@ -57,6 +58,8 @@ test('secure login, customers, tickets, stock and logout (real browser)', async 
     await page.goto('/chamados');
     await expect(page.getByRole('heading',{name:'Chamados técnicos'})).toBeVisible();
   });
+
+  await runAlertWorkflow(page);
 
   await test.step('Invalidate server session and reject stale browser reload', async () => {
     const logout = page.getByRole('button',{name:'Encerrar sessão'});

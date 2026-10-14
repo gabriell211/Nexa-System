@@ -1,20 +1,11 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-test('operator registers, links and resolves a real printer incident', async ({page}) => {
+export async function runAlertWorkflow(page:Page): Promise<void> {
   const unique=Date.now().toString()+'-'+Math.floor(Math.random()*100_000);
   const customer='Alerta E2E Cliente '+unique;
   const model='Model E2E '+unique;
   const subject='Chamado E2E alerta '+unique;
   const alertTitle='Alerta de hardware E2E '+unique;
-
-  await test.step('Authenticate using a real browser session',async()=>{
-    await page.goto('/');
-    await page.getByLabel('Identificador da empresa').fill('nexa-demo');
-    await page.getByLabel('E-mail').fill('smoke-owner@example.test');
-    await page.getByLabel('Senha').fill('test-only-long-password-2026');
-    await page.getByRole('button',{name:/Entrar no painel/}).click();
-    await expect(page.getByRole('heading',{name:'Visão geral'})).toBeVisible();
-  });
 
   await test.step('Create customer and a printer with real database persistence',async()=>{
     await page.goto('/clientes');
@@ -77,13 +68,10 @@ test('operator registers, links and resolves a real printer incident', async ({p
     await detail.getByRole('button',{name:'Fechar alerta'}).click();
   });
 
-  await test.step('Status is persisted after reload and session is revoked on logout',async()=>{
+
+  await test.step('Persist linked/resolved incident across a real reload',async()=>{
     await page.reload();
     await page.getByLabel('Filtrar por estado').selectOption('resolved');
     await expect(page.getByText(alertTitle,{exact:true})).toBeVisible();
-    const logout=page.getByRole('button',{name:'Encerrar sessão'});
-    await expect(logout).toBeInViewport();
-    await logout.click();
-    await expect(page.getByRole('button',{name:/Entrar no painel/})).toBeVisible();
   });
-});
+}

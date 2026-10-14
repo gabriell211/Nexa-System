@@ -120,4 +120,4 @@ Pendentes no Help Desk: SLA por calendário, anexos, ordens de serviço, peças/
 
 A nova rota `/alertas` expõe **observações humanas**, com severidade, código, categoria, deduplicação, estado e vínculo ao chamado da mesma impressora. Um incidente com o mesmo código e origem ainda aberto retorna o registro existente, sem duplicidade. O backend rejeita vinculação entre empresas/clientes/impressoras distintos e audita cada mudança com autor e motivo. O formulário de `/chamados` agora também permite selecionar a impressora.
  
-O Playwright acrescenta um fluxo completo de cliente → impressora → chamado → alerta → vínculo → resolução → logout em Chromium desktop e mobile. Isso **não** equivale a geração automática de alertas por telemetria nem prova compatibilidade SNMP, regras preventivas, SLA ou notificações.
+Na mesma sessão autenticada por dispositivo, o Playwright acrescenta um fluxo completo de cliente → impressora → chamado → alerta → vínculo → resolução → logout em Chromium desktop e mobile. Isso **não** equivale a geração automática de alertas por telemetria nem prova compatibilidade SNMP, regras preventivas, SLA ou notificações.
