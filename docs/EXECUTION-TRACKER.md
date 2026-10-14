@@ -364,3 +364,15 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Política de retry ainda volátil, parser de Retry-After suporta apenas segundos, não HTTP-date. Com erro HTTP 422 de item antigo/sem permissão, a fila para naquele lote até intervenção; não há quarentena automática nem descarte.
 - A API Laravel limita leituras antigas a 14 dias. Faturamento nunca deve interpolar lacunas geradas por falhas de transporte.
 - Sem prometer integridade fim a fim até CI e testes de operação reais; `--once` só faz uma tentativa quando elegível.
+
+## Entrega 18 — telemetria local sanitizada e retomada de retentativas (14/10/2026)
+
+- JSON `delivery_diagnostics` na tabela SQLite de estado guarda somente última confirmação, falha, categoria genérica, prazo UTC de retry e contador de falhas. Não persiste token ou corpos HTTP.
+- No restart, o daemon reconstrói o deadline de backoff na monotonic clock usando o relógio UTC atual, até 6h; timestamp/estado inválido provocam erro explícito.
+- ACK válido atualiza sucesso; falhas atualizam estado antes do log. Console Tauri/React apresenta campos observáveis e quantidade de falhas, separando último upload de status físico SNMP.
+- Testes Rust de persistência entre reaberturas, restauração da janela e validação de timestamps; job TypeScript do console valida exibição tipada.
+
+### Limites
+- O diagnóstico não é healthcheck de rede ou prova de disponibilidade de equipamento. A data prevista pode variar conforme relógio do sistema, ciclos de 5s e duração de operações bloqueantes.
+- Não existe criptografia em repouso, bloqueio seguro de arquivos, watchdog instalado, upgrade nativo, proxy autenticado e instrumentação histórica server-side; NX-034/035/038/041 permanecem PARCIAIS.
+- Uma falha grave de persistência encerra o processo, necessitando supervisão nativa ainda não implementada.
