@@ -2,6 +2,7 @@ use nexa_collector_core::{
     collect_snmp_v2c, heartbeat_sleep_seconds, read_config, send_heartbeat, upload_pending,
     upload_error_kind, CollectorConfig, CollectorError, Outbox, UploadRetryPolicy,
 };
+use chrono::{Duration as ChronoDuration, Utc};
 use std::{env, error::Error, thread, time::{Duration, Instant}};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -43,6 +44,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut upload_retry = UploadRetryPolicy::default();
+    // Persisted wall-clock deadline survives restarts; the live timer remains monotonic.
+    let stored_retry = outbox.delivery_diagnostics()?;
+    let retry_seconds = stored_retry.seconds_until_retry(Utc::now())?;
+    upload_retry.restore(Instant::now(), retry_seconds, stored_retry.consecutive_failures);
     let mut next_poll = Instant::now();
 
     loop {
@@ -97,9 +102,22 @@ fn attempt_upload(
     }
     match upload_pending(cfg, token, outbox) {
         Ok(acked) => {
+            // Successful ACK or empty queue clears prior error diagnostics.
+            // A no-op does not fabricate an upload success timestamp.
+            let pending = outbox.pending()?;
+            if acked > 0 || pending == 0 {
+                let mut diagnostics = outbox.delivery_diagnostics()?;
+                if acked > 0 {
+                    diagnostics.last_success_at = Some(Utc::now().to_rfc3339());
+                }
+                diagnostics.last_error_kind = None;
+                diagnostics.next_attempt_at = None;
+                diagnostics.consecutive_failures = 0;
+                outbox.save_delivery_diagnostics(&diagnostics)?;
+            }
             policy.on_success(Instant::now());
             if acked > 0 {
-                println!("Confirmed {acked} queued samples; {} remaining", outbox.pending()?);
+                println!("Confirmed {acked} queued samples; {pending} remaining");
             }
         }
         Err(error) => {
@@ -112,6 +130,15 @@ fn attempt_upload(
                 return Err(error);
             }
             let delay = policy.on_failure(Instant::now(), cfg.collector_id, &error);
+            let mut diagnostics = outbox.delivery_diagnostics()?;
+            let now = Utc::now();
+            diagnostics.last_error_kind = Some(upload_error_kind(&error).to_owned());
+            diagnostics.last_failure_at = Some(now.to_rfc3339());
+            diagnostics.next_attempt_at = Some(
+                (now + ChronoDuration::seconds(delay as i64)).to_rfc3339()
+            );
+            diagnostics.consecutive_failures = policy.failures();
+            outbox.save_delivery_diagnostics(&diagnostics)?;
             eprintln!(
                 "Upload deferred: category={}, next attempt in approximately {} seconds; outbox preserved",
                 upload_error_kind(&error),
