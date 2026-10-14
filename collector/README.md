@@ -225,3 +225,18 @@ O daemon Rust pode rodar como **LaunchDaemon** por meio de `--launchd` (somente 
 A conta isolada possui permissão de escrita apenas nos dados e logs da aplicação; configurações e credenciais podem ser lidas, mas não alteradas, pela identidade de serviço. `Umask=63` (0077) torna privados os arquivos novos. A instalação não remove banco antigo, não altera serviço Windows/Linux nem gerencia automaticamente credenciais.
 
 **Pendências de produção:** nenhum ensaio de boot/energia/macOS físico, sem Keychain/secure enclave, sem assinatura/notarização Apple, sem pkg profissional, sem watchdog para deadlocks, sem rotação de logs implementada, sem controle atômico de espaço livre e sem homologação em equipamentos SNMP reais. `NX-035`, `NX-039` e `NX-041` continuam PARCIAIS. O CI apenas compila e testa, não ativa o serviço do sistema.
+
+## Watchdog de progresso e recuperação por supervisor — entrega 28
+
+Em **modo de serviço supervisionado** (systemd com `CREDENTIALS_DIRECTORY`, Windows SCM `--service` ou macOS launchd `--launchd`), o daemon ativa um observador em thread separada. Ele usa `std::time::Instant` monotônico para verificar se a thread principal completou etapas de coleta SNMP, enfileiramento, tentativa de transmissão ou o ciclo de espera. A thread de heartbeat HTTP é **independente** e não pode mascarar um loop principal travado. A detecção entra em condição de falha aos **180 segundos** sem progresso, verificados a cada **5 segundos**.
+
+Ao detectar o travamento, o watchdog registra apenas a categoria genérica e encerra o processo com status **70**. Isso é uma última defesa para que o supervisor existente possa aplicar sua política de reinício. O watchdog **não** apaga, modifica nem dá ACK a leituras. O SQLite WAL mantém as operações transacionais como mecanismo primário de recuperação, mas reinícios abruptos ainda precisam ser validados contra energia/disco cheio na instalação real.
+
+- No Linux: `Restart=on-failure`, `RestartSec=15s`, `StartLimitBurst=5`; sem `sd_notify`/`WatchdogSec` do systemd nesta entrega.
+- No Windows: o SCM usa ações de recuperação já configuradas (15 s, 60 s, depois sem novas tentativas naquele ciclo de política). O desligamento normal via Stop seta o sinal de parada e desarma o observador.
+- No macOS: `KeepAlive.SuccessfulExit=false` e `ThrottleInterval=30` do `launchd` permitem reinício limitado por atraso, mas não impedem uma sequência indefinida de falhas recorrentes. Política de circuito aberto ainda pendente.
+- Comandos manuais do Collector, `--once`, migração/rekey, status e consulta de quarentena **não** iniciam a thread watchdog.
+- O watchdog verifica **somente o loop de coleta e entrega**. Ele não detecta uma thread de heartbeat travada quando o loop principal continua saudável, não comprova conectividade SNMP nem define SLO de monitoramento remoto. Se um dispositivo ficar apenas offline, o timeout de SNMP continua curto e a coleta segue para o próximo, sem disparar esse watchdog.
+- Sob encerramento solicitado, o watchdog retorna sem provocar reinício anormal. Não existe ferramenta de recuperação automática que edite diretamente a SQLite.
+
+Testes Rust usam relógio sintético para verificar o limite exato, progresso e cancelamento por shutdown; checks de empacotamento do CI verificam a vinculação com as três plataformas. **Faltam testes em host real com falha induzida, reinício de serviço, falta de espaço, SQLite WAL sob interrupção elétrica e proteção contra sucessivas falhas repetidas**. NX-039 permanece PARCIAL.

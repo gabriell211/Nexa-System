@@ -39,6 +39,10 @@ assert "Ordering::SeqCst" in runtime
 assert "windows_service_mode && args.len() != 3" in daemon
 assert "load_secret(\"NEXA_COLLECTOR_DB_KEY_HEX\", windows_service_mode, macos_launchd_mode)" in daemon
 assert "shutdown.load(Ordering::Relaxed)" in daemon
+watchdog = (root / "collector/daemon/src/progress_watchdog.rs").read_text()
+assert "std::process::exit(WATCHDOG_EXIT_CODE)" in watchdog
+assert "supervised_mode && !once" in daemon
+assert "watcher.progressed()" in daemon
 assert "macos_launchd_mode: bool," in daemon
 assert 'windows-service = "=0.8.1"' in manifest
 print("Nexa Windows SCM packaging static checks passed (not a real service execution test)")

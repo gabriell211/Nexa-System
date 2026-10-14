@@ -17,6 +17,13 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Watchdog de progresso do Collector — incremento 28 (parcial)
+
+- O daemon Rust supervisionado por **systemd / Windows SCM / macOS launchd** agora ativa um watchdog independente do heartbeat HTTP. O relógio de progresso só é atualizado pelo **loop principal** após completar consultas SNMP, operações de coleta, tentativas de upload e ciclos de espera; a thread de heartbeat não consegue renovar o sinal.
+- Se o loop principal não apresentar progresso por **180 segundos** (relógio monotônico), o processo registra uma categoria de falha sem segredos e termina com código não zero **70**. O gerenciador de serviços já configurado pode reiniciar o processo conforme seus limites e políticas. Nenhuma operação de descarte ou limpeza da outbox é feita pelo watchdog.
+- Paradas solicitadas pelo SCM, `systemctl stop` ou `launchctl bootout` desativam a detecção antes da saída. Comandos manuais, manutenção offline e execução `--once` **não** armam o watchdog.
+- Testes Rust cobrem limiar, atualização de progresso e parada; CI valida a integração com serviços Linux, Windows e macOS. **Ainda não há ensaio de travamento real, reboot, ENOSPC ou validação de failover em estação física**. O watchdog verifica o loop principal, não garante que a thread de heartbeat ou cada periferia esteja saudável. `NX-039` continua **PARCIAL**.
+
 ### Serviço nativo macOS (launchd) — incremento 27, validação parcial
 
 - O Collector Rust passa a oferecer execução foreground sob **launchd LaunchDaemon** (`--launchd`), com caminhos fixos em `/Library/Application Support/NexaCollector`, conta sem login `_nexacollector` e fechamento cooperativo via `SIGTERM`/`SIGINT`.

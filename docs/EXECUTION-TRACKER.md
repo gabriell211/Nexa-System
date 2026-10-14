@@ -501,3 +501,16 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 ### Limites / ainda não aceito
 - Não há execução real em Mac físico/boot/energia, teste de recuperação de serviços que travam vivos, nem cofre Keychain/secure enclave, assinatura/notarização, instalação pkg, gestão/rotação de logs ou atualização automatizada. `launchd` reinicia falhas, mas não fornece watchdog de liveness desta aplicação.
 - NX-035/039/041 permanecem PARCIAIS. Não fechar 324 NX ou 62 QA sem cobertura funcional e homologação em campo.
+
+## Entrega 28 — watchdog monotônico do loop principal do Collector (14/10/2026)
+
+### Implementado e verificável pelo código
+- Módulo `collector/daemon/src/progress_watchdog.rs` separa o tempo de progresso do heartbeat HTTP, com verificação monotônica independente a cada 5 s e limite de 180 s.
+- O loop Rust principal confirma progresso após cada tentativa SNMP, coleta enfileirada, etapa de polling, tentativa de upload e espera. Thread secundária do heartbeat não renova o monitor; consultas offline/CLI e `--once` não criam observador.
+- Após ultrapassar limite, o observador relata apenas categoria genérica e usa `exit(70)`, delegando reinício à política existente de systemd/SCM/launchd. A outbox SQLite não é expurgada; WAL continua responsável pela consistência transacional.
+- Shutdown normal antes do encerramento desarma o watchdog. Testes Rust validam limiar, ticker e shutdown com relógio sintético. Validadores de empacotamento nas três plataformas conferem o código de saída não zero e vínculo exclusivo com modo supervisionado.
+
+### Limitações de aceitação
+- Não é watchdog nativo `sd_notify`/SCM heartbeat, e não detecta a thread de heartbeat travada isoladamente. Reinício abrupto pode ocorrer em host lento/sobrecarregado e requer validação dos limites em campo.
+- Não há teste E2E real de matar thread, recuperação física de energia, indisponibilidade SNMP massiva ou corrupção de WAL. macOS launchd ainda pode reiniciar continuamente, embora com throttling.
+- `NX-039` permanece PARCIAL, pois exige política de reinícios, liveness de todos os componentes, testes de boot e validação operacional. `NX-041` também permanece PARCIAL.

@@ -39,6 +39,12 @@ assert not re.search(r"^Environment=.*(KEY|TOKEN|COMMUNITY)", unit, re.M)
 assert "ExecStart=/usr/local/libexec/nexa-collector-daemon /etc/nexa-collector/config.json /var/lib/nexa-collector/queue.sqlite" in unit
 assert "ProtectSystem=strict" in unit
 assert "RestartSec=15s" in unit
+assert "StartLimitBurst=5" in unit
+watchdog = (root / "collector/daemon/src/progress_watchdog.rs").read_text()
+assert "STALL_TIMEOUT: Duration = Duration::from_secs(180)" in watchdog
+assert "std::process::exit(WATCHDOG_EXIT_CODE)" in watchdog
+assert "supervised_mode && !once" in daemon
+assert "watcher.progressed()" in daemon
 assert "StateDirectoryMode=0700" in unit
 assert "install -o root -g root -m 0644" in installer
 assert "install -d -o root -g root -m 0700 /etc/nexa-collector/credentials" in installer
