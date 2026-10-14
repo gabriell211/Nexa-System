@@ -17,6 +17,12 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Outbox SQLite com capacidade limitada — incremento em desenvolvimento
+
+- Novo limite `max_pending_samples` (padrão 50000; faixa 1..1000000) configura a capacidade de amostras pendentes do Collector. O daemon tenta transmitir antes de coletar e pausa novas consultas ao atingir o teto, sem apagar leituras anteriores.
+- Identificadores UUID repetidos com conteúdo distinto geram erro em vez de aceitação silenciosa; retransmissões idênticas permanecem idempotentes.
+- **Limite de quantidade não limita bytes em disco**, não substitui criptografia em repouso, backoff, retenção supervisionada nem homologação em campo. NX-035/NX-045 continuam parciais.
+
 ### Heartbeat independente por agente — entrega 14
 
 - Endpoint `POST /api/v1/collector/heartbeat` autenticado pelo mesmo token individual do coletor, com hora registrada exclusivamente pelo servidor. O relógio `heartbeat_at` é **independente** de `last_seen_at` (último upload de leituras).

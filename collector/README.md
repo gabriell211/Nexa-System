@@ -6,7 +6,7 @@ A **interface desktop usa Tauri 2.12 + React 19 + TypeScript**. A coleta roda no
 
 - Consulta SNMPv2c de um OID de páginas **explicitamente configurado e homologado** por impressora; apenas contador real é aceito (indisponível não é zero).
 - Configuração de equipamentos por IP, ID numérico atribuído pelo backend e rede/CIDR autorizada; não existe varredura automática nesta etapa.
-- Outbox persistente em SQLite com modo WAL, chave única por UUID, envio HTTPS e remoção apenas de amostras reconhecidas pelo backend.
+- Outbox persistente em SQLite com modo WAL, chave única por UUID, limite configurável de amostras pendentes (`max_pending_samples`, padrão 50000), envio HTTPS e remoção apenas de amostras reconhecidas pelo backend. Com fila cheia, a coleta pausa, tenta transmitir pendências e não descarta leituras anteriores. IDs repetidos com payload divergente são recusados.
 - API Laravel autentica coletor por token individual, aceita até 100 leituras, valida propriedade do equipamento e retorna ACK idempotente.
 - Heartbeat autenticado independente do upload (`heartbeat_interval_seconds`, padrão 60s), enviado pelo daemon em um worker próprio, com timeout e jitter para reduzir rajadas. O backend registra a data de recebimento em `collector_agents.heartbeat_at`, separada de `last_seen_at` das leituras.
 - Tela desktop local de visão geral, impressoras e configuração, alimentada por configuração e estado SQLite reais (não há dados simulados).
@@ -45,3 +45,9 @@ Requisitos: Rust 1.90+ (Tauri 2.12), Node.js 22.12+, PHP/Composer e PostgreSQL p
 O campo opcional `heartbeat_interval_seconds` de `config.local.json` (30..3600s) define a frequência de sinal da API, independentemente de `interval_seconds` usado no SNMP. Em caso de timeout, o processo registra aviso genérico e tenta somente no próximo ciclo, sem expor credenciais. Verifique `/agentes` no portal para último heartbeat e último upload, mantendo `NEXA_HEARTBEAT_MAX_SILENCE_SECONDS` maior que o intervalo mais jitter e tolerância operacional. O status `late` **não confirma** que o daemon esteja desligado: rede/proxy/API indisponíveis produzem o mesmo sintoma.
 
 O token continua vindo do ambiente do serviço e deve ser protegido pelo SO. O HTTPS obrigatório permanece, mas ainda não foi homologado com proxy autenticado, Windows Service, systemd e launchd nem hardware real.
+
+## Limite de fila (incremento experimental)
+
+Defina `max_pending_samples` de 1 a 1000000 em `config.local.json`. O padrão para arquivos antigos é 50000. O teto é por **quantidade de amostras**, não por bytes: **não** equivale a cota física de armazenamento. O daemon confere o limite antes de cada consulta SNMP, preserva pendências e retoma após ACK; se a internet cair por muito tempo, haverá lacuna de *novas coletas*, sem perda silenciosa dos registros já enfileirados. Em caso de erro de gravação, o processo falha explicitamente, sem publicar sucesso falso.
+
+Ainda faltam: limite real em bytes, criptografia em repouso, retenção autorizada, alerta observável de fila saturada, recuperação de disco cheio, backoff específico por código HTTP e testes de desligamento abrupto/hardware. Portanto NX-035 e NX-045 permanecem parciais.

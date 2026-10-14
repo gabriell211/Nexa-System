@@ -10,7 +10,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
-    let mut outbox = Outbox::open(&args[2])?;
+    let mut outbox = Outbox::open_bounded(&args[2], cfg.max_pending_samples)?;
     let once = args.get(3).is_some_and(|v| v == "--once");
 
     // Separate supervised communication loop: long SNMP scans, empty meter
@@ -42,11 +42,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     loop {
-        // Credentials are external to config and never written to the SQLite outbox.
-        if let Ok(community) = env::var("NEXA_SNMP_COMMUNITY") {
+        // Drain before polling to free capacity after a network outage.
+        // A full queue is never truncated or overwritten.
+        if let Some(ref secret) = token {
+            if upload_pending(&cfg, secret, &mut outbox).is_err() {
+                eprintln!("Upload unavailable; queued readings retained");
+            }
+        }
+
+        let pending = outbox.pending()?;
+        if pending >= cfg.max_pending_samples {
+            eprintln!("Collector outbox full; polling paused until acknowledged uploads free space");
+        } else if let Ok(community) = env::var("NEXA_SNMP_COMMUNITY") {
             for printer in &cfg.printers {
+                if outbox.pending()? >= cfg.max_pending_samples {
+                    eprintln!("Collector outbox full; remaining printers deferred");
+                    break;
+                }
                 match collect_snmp_v2c(printer, community.as_bytes()) {
-                    Ok(reading) => { outbox.enqueue(&reading)?; }
+                    Ok(reading) => {
+                        outbox.enqueue(&reading)?;
+                    }
                     Err(_) => eprintln!("SNMP unavailable for printer ID {}", printer.printer_id),
                 }
             }
@@ -55,8 +71,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         outbox.mark_run()?;
-        if let Some(ref token) = token {
-            if let Err(_) = upload_pending(&cfg, &token, &mut outbox) {
+        if let Some(ref secret) = token {
+            if upload_pending(&cfg, secret, &mut outbox).is_err() {
                 eprintln!("Upload unavailable; queued readings retained");
             }
         }

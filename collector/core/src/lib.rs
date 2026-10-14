@@ -26,6 +26,10 @@ pub enum CollectorError {
     Transport(#[from] reqwest::Error),
     #[error("SNMP read failed")]
     Snmp,
+    #[error("outbox reached configured sample limit ({limit}); pending readings are retained")]
+    OutboxFull { limit: u64 },
+    #[error("sample UUID reused with different reading content")]
+    SampleConflict,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,6 +42,9 @@ pub struct PrinterConfig {
 
 fn default_heartbeat_interval() -> u64 { 60 }
 
+const DEFAULT_MAX_PENDING_SAMPLES: u64 = 50_000;
+fn default_max_pending_samples() -> u64 { DEFAULT_MAX_PENDING_SAMPLES }
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CollectorConfig {
@@ -46,6 +53,8 @@ pub struct CollectorConfig {
     pub interval_seconds: u64,
     #[serde(default = "default_heartbeat_interval")]
     pub heartbeat_interval_seconds: u64,
+    #[serde(default = "default_max_pending_samples")]
+    pub max_pending_samples: u64,
     pub authorized_subnets: Vec<String>,
     pub printers: Vec<PrinterConfig>,
 }
@@ -57,6 +66,9 @@ impl CollectorConfig {
         }
         if !(30..=3600).contains(&self.heartbeat_interval_seconds) {
             return Err(CollectorError::Configuration("heartbeat_interval_seconds must be 30..3600".into()));
+        }
+        if !(1..=1_000_000).contains(&self.max_pending_samples) {
+            return Err(CollectorError::Configuration("max_pending_samples must be 1..1000000".into()));
         }
         if !self.api_url.starts_with("https://") {
             return Err(CollectorError::Configuration("api_url must use HTTPS".into()));
@@ -102,10 +114,23 @@ pub struct Reading {
 
 pub struct Outbox {
     connection: Connection,
+    max_pending_samples: u64,
 }
 
 impl Outbox {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, CollectorError> {
+        Self::open_bounded(path, DEFAULT_MAX_PENDING_SAMPLES)
+    }
+
+    pub fn open_bounded(
+        path: impl AsRef<Path>,
+        max_pending_samples: u64,
+    ) -> Result<Self, CollectorError> {
+        if !(1..=1_000_000).contains(&max_pending_samples) {
+            return Err(CollectorError::Configuration(
+                "max_pending_samples must be 1..1000000".into(),
+            ));
+        }
         let db = Connection::open(path)?;
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.pragma_update(None, "busy_timeout", 5000_i64)?;
@@ -120,15 +145,37 @@ impl Outbox {
                 value TEXT NOT NULL
             );"
         )?;
-        Ok(Self { connection: db })
+        Ok(Self { connection: db, max_pending_samples })
     }
 
     pub fn enqueue(&self, reading: &Reading) -> Result<bool, CollectorError> {
+        let sample_id = reading.sample_id.to_string();
+        let payload = serde_json::to_string(reading)?;
+
+        // The capacity condition and insertion form a single SQLite write.
+        // Never discard old samples to make room for new readings.
         let affected = self.connection.execute(
-            "INSERT OR IGNORE INTO outbox(sample_id, payload, queued_at) VALUES (?1, ?2, ?3)",
-            params![reading.sample_id.to_string(), serde_json::to_string(reading)?, Utc::now().to_rfc3339()],
+            "INSERT OR IGNORE INTO outbox(sample_id, payload, queued_at)
+             SELECT ?1, ?2, ?3
+             WHERE (SELECT COUNT(*) FROM outbox) < ?4",
+            params![sample_id, payload, Utc::now().to_rfc3339(), self.max_pending_samples],
         )?;
-        Ok(affected > 0)
+        if affected > 0 {
+            return Ok(true);
+        }
+
+        // Retry of an identical sample is idempotent even when the queue is full.
+        // A reused UUID with different content is never silently ignored.
+        let existing: Option<String> = self.connection.query_row(
+            "SELECT payload FROM outbox WHERE sample_id = ?1",
+            [&sample_id],
+            |row| row.get(0),
+        ).optional()?;
+        match existing {
+            Some(saved) if saved == payload => Ok(false),
+            Some(_) => Err(CollectorError::SampleConflict),
+            None => Err(CollectorError::OutboxFull { limit: self.max_pending_samples }),
+        }
     }
 
     pub fn pending(&self) -> Result<u64, CollectorError> {
@@ -297,11 +344,87 @@ mod tests {
         assert_eq!(reopened.pending().unwrap(), 0);
     }
 
+    fn sample_with_meter(meter: u64) -> Reading {
+        Reading {
+            sample_id: Uuid::new_v4(),
+            printer_id: 17,
+            collected_at: Utc::now(),
+            meter_total: Some(meter),
+            meter_mono: None,
+            meter_color: None,
+        }
+    }
+
+    #[test]
+    fn bounded_outbox_pauses_without_discarding_and_recovers_after_ack() {
+        let tmp = tempfile::tempdir().unwrap();
+        let path = tmp.path().join("queue.sqlite");
+        let first = sample_with_meter(10);
+        let second = sample_with_meter(11);
+        let third = sample_with_meter(12);
+        {
+            let outbox = Outbox::open_bounded(&path, 2).unwrap();
+            assert!(outbox.enqueue(&first).unwrap());
+            assert!(outbox.enqueue(&second).unwrap());
+            assert!(matches!(
+                outbox.enqueue(&third),
+                Err(CollectorError::OutboxFull { limit: 2 })
+            ));
+            assert_eq!(outbox.pending().unwrap(), 2);
+            assert_eq!(outbox.next_batch(100).unwrap().len(), 2);
+        }
+        let mut reopened = Outbox::open_bounded(&path, 2).unwrap();
+        assert_eq!(reopened.pending().unwrap(), 2);
+        assert!(!reopened.enqueue(&first).unwrap());
+        assert!(matches!(
+            reopened.enqueue(&third),
+            Err(CollectorError::OutboxFull { limit: 2 })
+        ));
+        reopened.acknowledge(&[first.sample_id]).unwrap();
+        assert_eq!(reopened.pending().unwrap(), 1);
+        assert!(reopened.enqueue(&third).unwrap());
+        assert_eq!(reopened.pending().unwrap(), 2);
+        let remaining = reopened.next_batch(10).unwrap();
+        assert_eq!(remaining[0].sample_id, second.sample_id);
+        assert_eq!(remaining[1].sample_id, third.sample_id);
+    }
+
+    #[test]
+    fn outbox_rejects_colliding_sample_uuid_even_when_full() {
+        let tmp = tempfile::tempdir().unwrap();
+        let outbox = Outbox::open_bounded(tmp.path().join("queue.sqlite"), 1).unwrap();
+        let saved = sample_with_meter(10);
+        let mut changed = saved.clone();
+        changed.meter_total = Some(999);
+        assert!(outbox.enqueue(&saved).unwrap());
+        assert!(matches!(outbox.enqueue(&changed), Err(CollectorError::SampleConflict)));
+        assert_eq!(outbox.pending().unwrap(), 1);
+        assert_eq!(outbox.next_batch(1).unwrap()[0].meter_total, Some(10));
+    }
+
+    #[test]
+    fn rejects_invalid_max_pending_configuration() {
+        let mut cfg = CollectorConfig {
+            collector_id: Uuid::new_v4(),
+            api_url: "https://nexa.example".into(),
+            interval_seconds: 300,
+            heartbeat_interval_seconds: 60,
+            max_pending_samples: 0,
+            authorized_subnets: vec!["192.0.2.0/24".into()],
+            printers: vec![],
+        };
+        assert!(cfg.validate().is_err());
+        cfg.max_pending_samples = 1_000_001;
+        assert!(cfg.validate().is_err());
+        cfg.max_pending_samples = 1;
+        assert!(cfg.validate().is_ok());
+    }
+
     #[test]
     fn disallows_outside_authorized_cidr() {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
-            interval_seconds: 300, heartbeat_interval_seconds: 60, authorized_subnets: vec!["192.168.1.0/24".into()],
+            interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000, authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![PrinterConfig {
                 printer_id: 1, ip: "10.1.1.10".parse().unwrap(),
                 marker_counter_oid: vec![1,3,6,1,2,1,43,10,2,1,4,1,1],
@@ -314,7 +437,7 @@ mod tests {
     fn validates_heartbeat_separately_from_meter_polling() {
         let mut cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
-            interval_seconds: 1800, heartbeat_interval_seconds: 60,
+            interval_seconds: 1800, heartbeat_interval_seconds: 60, max_pending_samples: 50_000,
             authorized_subnets: vec!["192.168.1.0/24".into()], printers: vec![],
         };
         assert!(cfg.validate().is_ok());
@@ -336,6 +459,7 @@ mod tests {
         });
         let cfg: CollectorConfig = serde_json::from_value(raw).unwrap();
         assert_eq!(cfg.heartbeat_interval_seconds, 60);
+        assert_eq!(cfg.max_pending_samples, DEFAULT_MAX_PENDING_SAMPLES);
         assert!(cfg.validate().is_ok());
         let pause = heartbeat_sleep_seconds(60, id);
         assert!((60..=66).contains(&pause));
@@ -345,7 +469,8 @@ mod tests {
     fn rejects_insecure_server_endpoint() {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "http://example.test".into(),
-            interval_seconds: 300, heartbeat_interval_seconds: 60, authorized_subnets: vec!["192.168.1.0/24".into()],
+            interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000,
+            authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![],
         };
         assert!(cfg.validate().is_err());

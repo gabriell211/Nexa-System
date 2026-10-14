@@ -329,3 +329,16 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - O heartbeat não é armazenamento persistente/offline: perda de rede não gera heartbeat até restabelecer conexão. O upload de leituras mantém sua própria fila.
 - As configurações de limiar devem refletir jitter, intervalo de heartbeat e atraso tolerado; o painel não faz afirmação absoluta sobre queda de conexão.
 - `NX-034/041/255` permanecem PARCIAIS; nenhuma nova homologação de dispositivo foi reivindicada.
+
+## Entrega 15 — limite de amostras na outbox e backpressure (14/10/2026)
+
+### Código incluído, ainda sem aceite final
+- `max_pending_samples` opcional (padrão 50000, faixa 1..1000000) e `Outbox::open_bounded` limitam quantidade de UUIDs pendentes na tabela SQLite. Versões anteriores da configuração continuam válidas por default.
+- Inserção condicionada ao total pendente no mesmo comando SQLite, rejeita o excesso com erro tipado e **não descarta amostras antigas**. UUID idêntico/payload idêntico continua idempotente mesmo com a fila cheia; UUID reaproveitado com payload divergente falha explicitamente.
+- O daemon faz tentativa de envio antes da varredura SNMP e, com fila cheia, não solicita mais leituras. Ao receber ACK válido, consegue retomar a coleta. Nenhum status falso de impressora é inferido.
+- Novos testes unitários cobrem capacidade, preservação após reabrir o SQLite, desbloqueio por ACK, ordenação, colisões de UUID e validação do limite.
+
+### Pendências/alertas
+- **NX-035 e NX-045 continuam PARCIAIS:** limite por amostras não garante cota em bytes, criptografia, política de expurgo, retenção legal, monitoramento de saturação, backoff por status HTTP, testes de 48 horas sem rede, falha de disco/energia ou homologação Windows/Linux/macOS.
+- Este incremento pausa a coleta sob saturação, produzindo lacunas de observação em campo até liberar espaço. Essas lacunas não devem ser interpoladas/faturadas como leituras reais.
+- Evidência de testes somente após CI Rust e jobs de validação aprovados; não assumir aprovação a partir do commit.

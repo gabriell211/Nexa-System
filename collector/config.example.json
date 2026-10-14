@@ -3,6 +3,7 @@
   "api_url": "https://nexa.example.com",
   "interval_seconds": 1800,
   "heartbeat_interval_seconds": 60,
+  "max_pending_samples": 50000,
   "authorized_subnets": [
     "192.0.2.0/24"
   ],
