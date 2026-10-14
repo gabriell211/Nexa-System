@@ -317,13 +317,20 @@ fn read_secret_file(path: &Path) -> Result<Zeroizing<String>, Box<dyn Error>> {
     if fs::metadata(path)?.len() > MAX_CREDENTIAL_BYTES {
         return Err("credential exceeds maximum accepted size".into());
     }
-    let raw = fs::read(path)?;
-    let secret = Zeroizing::new(String::from_utf8(raw).map_err(|_| "credential is not UTF-8")?);
-    let trimmed = secret.trim_end_matches(&['\r', '\n'][..]);
-    if trimmed.is_empty() || trimmed.contains('\r') || trimmed.contains('\n') || trimmed.contains('\0') {
+    // Own the original allocation so it is zeroized on every return path.
+    // Do not create a second unprotected String containing a secret.
+    let mut secret = Zeroizing::new(
+        String::from_utf8(fs::read(path)?).map_err(|_| "credential is not UTF-8")?
+    );
+    let trimmed_len = secret.trim_end_matches(&['\r', '\n'][..]).len();
+    let text = &secret[..trimmed_len];
+    if text.is_empty() || text.starts_with('\u{feff}')
+        || text.contains('\r') || text.contains('\n') || text.contains('\0')
+    {
         return Err("credential is empty or contains an invalid separator".into());
     }
-    Ok(Zeroizing::new(trimmed.to_string()))
+    secret.truncate(trimmed_len);
+    Ok(secret)
 }
 
 /// In systemd mode missing credential files are fatal, NEVER silently
