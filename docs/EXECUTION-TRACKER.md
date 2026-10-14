@@ -488,3 +488,16 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - CI não executa `Start-Service` em máquina implantada. Falta teste operacional de boot, interrupção elétrica, permissões pós-instalação, comportamento de WAL e recuperação efetiva do SCM.
 - Ainda sem DPAPI/cofre nativo, watchdog heartbeat interno para hang e proteção de credenciais além de ACLs; não existe MSI assinado ou autoatualização. macOS launchd pendente.
 - NX-035, NX-039 e NX-041 continuam PARCIAIS; 324 NX e 62 QA não foram declarados completos.
+
+## Entrega 27 — serviço macOS launchd com ativação manual e credenciais protegidas (14/10/2026)
+
+### Incremento
+- Novo módulo macOS `macos_launchd_runtime` com tratamento cooperativo de SIGTERM/SIGINT; chama o mesmo daemon/SQLite da CLI em modo supervisionado e com caminhos fixos. Verifica sinal de parada antes/entre consultas e no loop de espera, sem exclusão de leituras.
+- `load_secret` exige arquivos sob `/Library/Application Support/NexaCollector/credentials` em modo launchd, sem fallback para env. Chave AES é obrigatória em modo supervisionado para não criar SQLite plaintext.
+- `collector/macos/com.nexa.collector.plist`: conta dedicada, umask 0077, autoload após ativação explícita, reinício somente por exit não bem sucedido e throttling de 30s. Logs/dados separados com permissões restritas.
+- `install.sh` cria conta dedicada e prepara diretórios e unidade em staging. `activate.sh` valida credenciais/permissões, instala LaunchDaemon e chama `launchctl bootstrap system` explicitamente. Não ativa sem ação administrativa.
+- Job CI `macOS Collector native launchd build and tests` executa Rust nativo, bash -n, plutil -lint e checks estáticos do plist/credenciais.
+
+### Limites / ainda não aceito
+- Não há execução real em Mac físico/boot/energia, teste de recuperação de serviços que travam vivos, nem cofre Keychain/secure enclave, assinatura/notarização, instalação pkg, gestão/rotação de logs ou atualização automatizada. `launchd` reinicia falhas, mas não fornece watchdog de liveness desta aplicação.
+- NX-035/039/041 permanecem PARCIAIS. Não fechar 324 NX ou 62 QA sem cobertura funcional e homologação em campo.
