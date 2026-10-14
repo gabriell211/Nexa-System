@@ -32,6 +32,8 @@ pub enum CollectorError {
     Snmp,
     #[error("outbox reached configured sample limit ({limit}); pending readings are retained")]
     OutboxFull { limit: u64 },
+    #[error("outbox retained payload byte budget exceeded ({limit} bytes); pending and quarantined readings are preserved")]
+    OutboxBytesFull { limit: u64 },
     #[error("sample UUID reused with different reading content")]
     SampleConflict,
 }
@@ -161,6 +163,8 @@ fn default_heartbeat_interval() -> u64 { 60 }
 
 const DEFAULT_MAX_PENDING_SAMPLES: u64 = 50_000;
 fn default_max_pending_samples() -> u64 { DEFAULT_MAX_PENDING_SAMPLES }
+const DEFAULT_MAX_PENDING_PAYLOAD_BYTES: u64 = 64 * 1024 * 1024;
+fn default_max_pending_payload_bytes() -> u64 { DEFAULT_MAX_PENDING_PAYLOAD_BYTES }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -172,6 +176,8 @@ pub struct CollectorConfig {
     pub heartbeat_interval_seconds: u64,
     #[serde(default = "default_max_pending_samples")]
     pub max_pending_samples: u64,
+    #[serde(default = "default_max_pending_payload_bytes")]
+    pub max_pending_payload_bytes: u64,
     pub authorized_subnets: Vec<String>,
     pub printers: Vec<PrinterConfig>,
 }
@@ -186,6 +192,11 @@ impl CollectorConfig {
         }
         if !(1..=1_000_000).contains(&self.max_pending_samples) {
             return Err(CollectorError::Configuration("max_pending_samples must be 1..1000000".into()));
+        }
+        if !(1..=1_073_741_824).contains(&self.max_pending_payload_bytes) {
+            return Err(CollectorError::Configuration(
+                "max_pending_payload_bytes must be 1..1073741824".into(),
+            ));
         }
         if !self.api_url.starts_with("https://") {
             return Err(CollectorError::Configuration("api_url must use HTTPS".into()));
@@ -241,20 +252,36 @@ pub struct QuarantinedReading {
 pub struct Outbox {
     connection: Connection,
     max_pending_samples: u64,
+    max_pending_payload_bytes: u64,
 }
 
 impl Outbox {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, CollectorError> {
-        Self::open_bounded(path, DEFAULT_MAX_PENDING_SAMPLES)
+        Self::open_with_limits(path, DEFAULT_MAX_PENDING_SAMPLES, DEFAULT_MAX_PENDING_PAYLOAD_BYTES)
     }
 
     pub fn open_bounded(
         path: impl AsRef<Path>,
         max_pending_samples: u64,
     ) -> Result<Self, CollectorError> {
+        Self::open_with_limits(path, max_pending_samples, DEFAULT_MAX_PENDING_PAYLOAD_BYTES)
+    }
+
+    /// Limits count and serialized payload bytes across both outbox and quarantine.
+    /// This is NOT a hard SQLite database/WAL/filesystem byte quota.
+    pub fn open_with_limits(
+        path: impl AsRef<Path>,
+        max_pending_samples: u64,
+        max_pending_payload_bytes: u64,
+    ) -> Result<Self, CollectorError> {
         if !(1..=1_000_000).contains(&max_pending_samples) {
             return Err(CollectorError::Configuration(
                 "max_pending_samples must be 1..1000000".into(),
+            ));
+        }
+        if !(1..=1_073_741_824).contains(&max_pending_payload_bytes) {
+            return Err(CollectorError::Configuration(
+                "max_pending_payload_bytes must be 1..1073741824".into(),
             ));
         }
         let db = Connection::open(path)?;
@@ -278,7 +305,7 @@ impl Outbox {
                 reason TEXT NOT NULL
             );"
         )?;
-        Ok(Self { connection: db, max_pending_samples })
+        Ok(Self { connection: db, max_pending_samples, max_pending_payload_bytes })
     }
 
     pub fn enqueue(&self, reading: &Reading) -> Result<bool, CollectorError> {
@@ -293,8 +320,14 @@ impl Outbox {
              WHERE NOT EXISTS (
                  SELECT 1 FROM quarantined_readings WHERE sample_id = ?1
              ) AND (SELECT COUNT(*) FROM outbox)
-                 + (SELECT COUNT(*) FROM quarantined_readings) < ?4",
-            params![sample_id, payload, Utc::now().to_rfc3339(), self.max_pending_samples],
+                 + (SELECT COUNT(*) FROM quarantined_readings) < ?4
+               AND (SELECT COALESCE(SUM(LENGTH(CAST(payload AS BLOB))), 0) FROM outbox)
+                 + (SELECT COALESCE(SUM(LENGTH(CAST(payload AS BLOB))), 0) FROM quarantined_readings)
+                 + LENGTH(CAST(?2 AS BLOB)) <= ?5",
+            params![
+                sample_id, payload, Utc::now().to_rfc3339(), 
+                self.max_pending_samples, self.max_pending_payload_bytes
+            ],
         )?;
         if affected > 0 {
             return Ok(true);
@@ -318,7 +351,13 @@ impl Outbox {
                 if quarantined {
                     Err(CollectorError::SampleConflict)
                 } else {
-                    Err(CollectorError::OutboxFull { limit: self.max_pending_samples })
+                    if self.retained()? >= self.max_pending_samples {
+                        Err(CollectorError::OutboxFull { limit: self.max_pending_samples })
+                    } else {
+                        Err(CollectorError::OutboxBytesFull {
+                            limit: self.max_pending_payload_bytes
+                        })
+                    }
                 }
             },
         }
@@ -326,6 +365,24 @@ impl Outbox {
 
     pub fn pending(&self) -> Result<u64, CollectorError> {
         Ok(self.connection.query_row("SELECT COUNT(*) FROM outbox", [], |row| row.get::<_,u64>(0))?)
+    }
+
+    /// Byte sum of serialized payload columns, including quarantined readings.
+    /// Excludes SQLite page/index metadata, free pages, WAL and SHM sizes.
+    pub fn retained_payload_bytes(&self) -> Result<u64, CollectorError> {
+        Ok(self.connection.query_row(
+            "SELECT
+               (SELECT COALESCE(SUM(LENGTH(CAST(payload AS BLOB))), 0) FROM outbox)
+             + (SELECT COALESCE(SUM(LENGTH(CAST(payload AS BLOB))), 0) FROM quarantined_readings)",
+            [], |row| row.get::<_, u64>(0)
+        )?)
+    }
+
+    pub fn at_capacity(&self) -> Result<bool, CollectorError> {
+        Ok(
+            self.retained()? >= self.max_pending_samples
+            || self.retained_payload_bytes()? >= self.max_pending_payload_bytes
+        )
     }
 
     /// All retained records consume the same capacity; isolation never frees
@@ -690,6 +747,77 @@ mod tests {
     }
 
     #[test]
+    fn retained_payload_bytes_limit_prevents_silent_growth_and_recovers_after_ack() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = temp.path().join("queue.sqlite");
+        let first = sample_with_meter(10);
+        let second = sample_with_meter(11);
+        let third = sample_with_meter(12);
+        let each = serde_json::to_string(&first).unwrap().len() as u64;
+        assert_eq!(serde_json::to_string(&second).unwrap().len() as u64, each);
+        let mut outbox = Outbox::open_with_limits(&db, 4, each * 2 - 1).unwrap();
+        assert!(outbox.enqueue(&first).unwrap());
+        assert!(matches!(
+            outbox.enqueue(&second), Err(CollectorError::OutboxBytesFull { .. })
+        ));
+        assert_eq!(outbox.retained_payload_bytes().unwrap(), each);
+        assert_eq!(outbox.pending().unwrap(), 1);
+        assert!(!outbox.enqueue(&first).unwrap());
+        outbox.quarantine(first.sample_id, "individually-rejected-422").unwrap();
+        assert_eq!(outbox.retained_payload_bytes().unwrap(), each);
+        assert!(matches!(
+            outbox.enqueue(&third), Err(CollectorError::OutboxBytesFull { .. })
+        ));
+        assert!(outbox.restore_quarantined(first.sample_id).unwrap());
+        assert_eq!(outbox.retained_payload_bytes().unwrap(), each);
+        drop(outbox);
+        let mut outbox = Outbox::open_with_limits(&db, 4, each * 2 - 1).unwrap();
+        assert_eq!(outbox.retained_payload_bytes().unwrap(), each);
+        outbox.acknowledge(&[first.sample_id]).unwrap();
+        assert_eq!(outbox.retained_payload_bytes().unwrap(), 0);
+        assert!(outbox.enqueue(&second).unwrap());
+    }
+
+    #[test]
+    fn payload_quota_can_be_lower_than_legacy_retained_data_without_purging_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = temp.path().join("queue.sqlite");
+        let first = sample_with_meter(10);
+        let second = sample_with_meter(11);
+        {
+            let outbox = Outbox::open_bounded(&db, 5).unwrap();
+            outbox.enqueue(&first).unwrap();
+            outbox.enqueue(&second).unwrap();
+        }
+        let mut reopened = Outbox::open_with_limits(&db, 5, 1).unwrap();
+        assert!(reopened.at_capacity().unwrap());
+        assert_eq!(reopened.pending().unwrap(), 2);
+        assert!(matches!(reopened.enqueue(&sample_with_meter(12)), Err(CollectorError::OutboxBytesFull { .. })));
+        reopened.acknowledge(&[first.sample_id]).unwrap();
+        assert_eq!(reopened.pending().unwrap(), 1);
+        reopened.acknowledge(&[second.sample_id]).unwrap();
+        assert_eq!(reopened.retained_payload_bytes().unwrap(), 0);
+    }
+
+    #[test]
+    fn rejects_invalid_payload_budget_while_legacy_json_receives_default() {
+        let mut cfg: CollectorConfig = serde_json::from_value(serde_json::json!({
+            "collector_id": Uuid::new_v4(),
+            "api_url": "https://nexa.example",
+            "interval_seconds": 300,
+            "authorized_subnets": ["192.0.2.0/24"],
+            "printers": []
+        })).unwrap();
+        assert_eq!(cfg.max_pending_payload_bytes, 64 * 1024 * 1024);
+        cfg.max_pending_payload_bytes = 0;
+        assert!(cfg.validate().is_err());
+        cfg.max_pending_payload_bytes = 1_073_741_825;
+        assert!(cfg.validate().is_err());
+        cfg.max_pending_payload_bytes = 1;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
     fn bounded_outbox_pauses_without_discarding_and_recovers_after_ack() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("queue.sqlite");
@@ -744,6 +872,7 @@ mod tests {
             interval_seconds: 300,
             heartbeat_interval_seconds: 60,
             max_pending_samples: 0,
+            max_pending_payload_bytes: 64 * 1024 * 1024,
             authorized_subnets: vec!["192.0.2.0/24".into()],
             printers: vec![],
         };
@@ -758,7 +887,7 @@ mod tests {
     fn disallows_outside_authorized_cidr() {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
-            interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000, authorized_subnets: vec!["192.168.1.0/24".into()],
+            interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000, max_pending_payload_bytes: 64 * 1024 * 1024, authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![PrinterConfig {
                 printer_id: 1, ip: "10.1.1.10".parse().unwrap(),
                 marker_counter_oid: vec![1,3,6,1,2,1,43,10,2,1,4,1,1],
@@ -772,6 +901,7 @@ mod tests {
         let mut cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
             interval_seconds: 1800, heartbeat_interval_seconds: 60, max_pending_samples: 50_000,
+            max_pending_payload_bytes: 64 * 1024 * 1024,
             authorized_subnets: vec!["192.168.1.0/24".into()], printers: vec![],
         };
         assert!(cfg.validate().is_ok());
@@ -794,6 +924,7 @@ mod tests {
         let cfg: CollectorConfig = serde_json::from_value(raw).unwrap();
         assert_eq!(cfg.heartbeat_interval_seconds, 60);
         assert_eq!(cfg.max_pending_samples, DEFAULT_MAX_PENDING_SAMPLES);
+        assert_eq!(cfg.max_pending_payload_bytes, DEFAULT_MAX_PENDING_PAYLOAD_BYTES);
         assert!(cfg.validate().is_ok());
         let pause = heartbeat_sleep_seconds(60, id);
         assert!((60..=66).contains(&pause));
@@ -1029,6 +1160,7 @@ mod tests {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "http://example.test".into(),
             interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000,
+            max_pending_payload_bytes: 64 * 1024 * 1024,
             authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![],
         };
