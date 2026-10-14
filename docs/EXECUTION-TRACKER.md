@@ -342,3 +342,10 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - **NX-035 e NX-045 continuam PARCIAIS:** limite por amostras não garante cota em bytes, criptografia, política de expurgo, retenção legal, monitoramento de saturação, backoff por status HTTP, testes de 48 horas sem rede, falha de disco/energia ou homologação Windows/Linux/macOS.
 - Este incremento pausa a coleta sob saturação, produzindo lacunas de observação em campo até liberar espaço. Essas lacunas não devem ser interpoladas/faturadas como leituras reais.
 - Evidência de testes somente após CI Rust e jobs de validação aprovados; não assumir aprovação a partir do commit.
+
+## Entrega 16 — diagnóstico de saturação no Collector Console (14/10/2026)
+
+- Tauri expõe somente a capacidade de amostras configurada, além do total real de leituras pendentes na outbox SQLite. Corrigida conversão do OID `Vec<u64>` na interface de integração nativa.
+- React apresenta ocupação percentual, quantidade e limite; aviso acessível quando ≥80% e mensagem contextual ao atingir 100%, sem declarar falha ou disponibilidade física de impressoras.
+- Job CI `Collector console TypeScript build` executa instalação e build da UI desktop com TypeScript estrito, separadamente do portal principal.
+- **Ainda parcial:** sem build/instalador Tauri nativo, sem verificação de execução do serviço local, sem telemetria em tempo real do daemon, sem teste de UX automatizado, sem limite de bytes ou criptografia. NX-035, NX-038, NX-041 e NX-045 não aceitos integralmente.
