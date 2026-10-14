@@ -98,6 +98,11 @@ impl RecoveryGuard {
 
     pub(super) fn status(&self, now: DateTime<Utc>) -> Result<(usize, bool, usize), RecoveryError> {
         let journal = self.load()?;
+        // Clock rollback or tampered future dates must never bypass the
+        // circuit; refuse startup until the operator reviews the journal.
+        if journal.events.iter().any(|event| event.at > now + ChronoDuration::minutes(5)) {
+            return Err(RecoveryError::Invalid("incident timestamp lies in the future"));
+        }
         let recent = Self::count_recent(&journal, now);
         Ok((recent, recent >= MAX_STALLS, journal.events.len()))
     }
@@ -131,10 +136,12 @@ impl RecoveryGuard {
     fn write(&self, journal: &Journal) -> Result<(), RecoveryError> {
         // Regular file only; an invalid/symlinked journal must never be
         // silently replaced. The containing OS service directory is private.
-        if let Ok(meta) = fs::symlink_metadata(&self.file) {
-            if !meta.file_type().is_file() || meta.file_type().is_symlink() {
-                return Err(RecoveryError::Invalid("not a regular file"));
-            }
+        match fs::symlink_metadata(&self.file) {
+            Ok(meta) if !meta.file_type().is_file() || meta.file_type().is_symlink() =>
+                return Err(RecoveryError::Invalid("not a regular file")),
+            Ok(_) => {},
+            Err(error) if error.kind() == ErrorKind::NotFound => {},
+            Err(error) => return Err(error.into()),
         }
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
@@ -190,6 +197,15 @@ mod tests {
         fs::write(&guard.file, b"{invalid").unwrap();
         assert!(matches!(guard.circuit_open(Utc::now()), Err(RecoveryError::Json(_))));
         assert!(guard.reset(Utc::now()).is_err());
+    }
+
+    #[test]
+    fn future_incident_timestamps_fail_closed_on_clock_rollback() {
+        let tmp = tempfile::tempdir().unwrap();
+        let guard = RecoveryGuard::for_queue(&tmp.path().join("queue.sqlite"));
+        let now = Utc::now();
+        guard.record("main-loop", now + ChronoDuration::minutes(20)).unwrap();
+        assert!(matches!(guard.circuit_open(now), Err(RecoveryError::Invalid(_))));
     }
 
     #[test]
