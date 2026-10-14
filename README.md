@@ -17,6 +17,13 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Proteção preventiva do tamanho físico SQLite — incremento 21 (parcial)
+
+- O Collector passou a observar os tamanhos reais de `queue.sqlite`, `queue.sqlite-wal` e `queue.sqlite-shm`, incluindo bytes não representados pelo conteúdo JSON. A opção `max_sqlite_files_bytes` tem padrão de **512 MiB** (limite permitido de 1 byte a 64 GiB, inclusive para testar bloqueio sob limite reduzido).
+- Antes de criar novas leituras, o daemon confere o limite físico preventivo e **suspende novas coletas** se atingido; os uploads, ACKs e a restauração manual da quarentena continuam permitidos. O código de inserção também faz uma checagem antes do INSERT e nunca descarta leituras antigas para liberar espaço.
+- O comando `--storage-status` exibe tamanhos DB/WAL/SHM, capacidade de JSON e totais pendentes/quarentenados sem iniciar a coleta ou fazer requisições à API; o Console Tauri/React exibe os três tamanhos e sinaliza pressão.
+- **É um guard preventivo, não uma quota física rígida.** Um único INSERT, checkpoints, concorrência entre processos, WAL, backups, outros diretórios e operações de manutenção ainda podem aumentar o consumo; ACK de amostras não garante redução imediata do tamanho físico do SQLite. Criptografia local, reserva mínima do filesystem, serviço supervisionado e testes reais de disco cheio continuam pendentes. `NX-035/045` permanecem **PARCIAIS**.
+
 ### Limite do payload serializado retido — incremento 20 (parcial)
 
 - O Collector agora aplica `max_pending_payload_bytes` (padrão 67.108.864 bytes = 64 MiB) juntamente com `max_pending_samples`. A verificação acontece dentro do mesmo `INSERT` SQLite; mede bytes UTF-8 da coluna JSON armazenada em outbox **e** quarentena.

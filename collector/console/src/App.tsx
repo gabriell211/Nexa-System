@@ -20,6 +20,14 @@ type QuarantinedReading = {
   quarantined_at: string;
   reason: string;
 };
+type SqliteFootprint = {
+  database_bytes: number;
+  wal_bytes: number;
+  shm_bytes: number;
+  total_bytes: number;
+  soft_limit_bytes: number;
+  soft_limit_reached: boolean;
+};
 type CollectorSnapshot = {
   configured: boolean;
   collector_id: string | null;
@@ -32,6 +40,7 @@ type CollectorSnapshot = {
   queue_capacity: number | null;
   payload_bytes_retained: number | null;
   payload_bytes_limit: number | null;
+  sqlite_footprint: SqliteFootprint | null;
   delivery: DeliveryDiagnostics | null;
   last_run: string | null;
   error: string | null;
@@ -78,8 +87,15 @@ export default function App() {
   const bytePercent = bytesObserved ? Math.min(100, Math.round(retainedBytes / byteLimit * 100)) : null;
   const byteFull = bytesObserved && retainedBytes >= byteLimit;
   const byteWarning = bytesObserved && retainedBytes >= byteLimit * 0.8;
-  const queueFull = (queueObserved && retainedCount >= queueCapacity) || byteFull;
-  const queueWarning = (queueObserved && retainedCount >= queueCapacity * 0.8) || byteWarning;
+  const footprint = snapshot?.sqlite_footprint ?? null;
+  const physicalLimit = footprint?.soft_limit_bytes ?? 0;
+  const physicalUsed = footprint?.total_bytes ?? 0;
+  const physicalObserved = footprint !== null && physicalLimit > 0;
+  const physicalPercent = physicalObserved ? Math.min(100, Math.round(physicalUsed / physicalLimit * 100)) : null;
+  const physicalFull = physicalObserved && footprint.soft_limit_reached;
+  const physicalWarning = physicalObserved && physicalUsed >= physicalLimit * 0.8;
+  const queueFull = (queueObserved && retainedCount >= queueCapacity) || byteFull || physicalFull;
+  const queueWarning = (queueObserved && retainedCount >= queueCapacity * 0.8) || byteWarning || physicalWarning;
 
   const menu: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
     { id: "overview", label: "Visão geral", icon: LayoutDashboard },
@@ -170,14 +186,30 @@ export default function App() {
                         <p>{retainedBytes.toLocaleString("pt-BR")} / {byteLimit.toLocaleString("pt-BR")} bytes de payload JSON retido.</p>
                       </>
                     )}
+                    {physicalObserved && (
+                      <>
+                        <div className="queue-track" role="progressbar" aria-label="Uso observado dos arquivos SQLite, WAL e SHM"
+                          aria-valuemin={0} aria-valuemax={physicalLimit} aria-valuenow={Math.min(physicalUsed, physicalLimit)}
+                          style={{ marginTop: 18 }}>
+                          <div className={physicalFull ? "queue-fill full" : physicalWarning ? "queue-fill warning" : "queue-fill"}
+                            style={{ width: `${physicalPercent}%` }} />
+                        </div>
+                        <p>SQLite físico: {physicalUsed.toLocaleString("pt-BR")} / {physicalLimit.toLocaleString("pt-BR")} bytes
+                        (DB: {footprint.database_bytes.toLocaleString("pt-BR")}, WAL: {footprint.wal_bytes.toLocaleString("pt-BR")},
+                        SHM: {footprint.shm_bytes.toLocaleString("pt-BR")}).</p>
+                        <p>Limite preventivo, não uma cota rígida de filesystem. Uma transação pode ultrapassar o limite.</p>
+                      </>
+                    )}
                   </div>
                 </section>
               )}
               {queueWarning && (
                 <div className="notice warning" role="status">
-                  {queueFull
-                    ? "A fila atingiu o limite de amostras ou payload em bytes. Novas coletas serão suspensas até que confirmações liberem espaço."
-                    : "A fila está próxima de um limite. Verifique a conectividade e as confirmações de upload."}
+                  {physicalFull
+                    ? "O tamanho físico observado do SQLite atingiu o limite preventivo. Novas coletas são pausadas; uploads e ACKs permanecem permitidos. A liberação física pode exigir manutenção supervisionada."
+                    : queueFull
+                      ? "A fila atingiu um limite de quantidade ou payload. Novas coletas ficam suspensas até liberar capacidade."
+                      : "A fila está próxima de um limite. Verifique o armazenamento local e as confirmações de upload."}
                   {" "}O console mostra apenas o estado persistido; não comprova a conectividade do equipamento.
                 </div>
               )}
@@ -274,6 +306,7 @@ export default function App() {
                 <Info icon={Activity} label="Intervalo de coleta" value={snapshot?.interval_seconds ? snapshot.interval_seconds + " segundos" : "Não configurado"} />
                 <Info icon={Database} label="Capacidade da fila" value={snapshot?.queue_capacity ? `${snapshot.queue_capacity.toLocaleString("pt-BR")} amostras` : "Não configurado"} />
                 <Info icon={HardDrive} label="Orçamento JSON armazenado" value={snapshot?.payload_bytes_limit ? `${snapshot.payload_bytes_limit.toLocaleString("pt-BR")} bytes` : "Não configurado"} />
+                <Info icon={HardDrive} label="Limite preventivo DB + WAL + SHM" value={snapshot?.sqlite_footprint ? `${snapshot.sqlite_footprint.soft_limit_bytes.toLocaleString("pt-BR")} bytes` : "Não verificado"} />
                 <Info icon={ShieldCheck} label="Identificador do coletor" value={snapshot?.collector_id ?? "Não configurado"} />
               </div>
               <div className="notice">Tokens de acesso e comunidades SNMP nunca são carregados ou exibidos nesta interface.</div>

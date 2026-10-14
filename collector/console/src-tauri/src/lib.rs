@@ -1,4 +1,4 @@
-use nexa_collector_core::{read_config, DeliveryDiagnostics, Outbox, QuarantinedReading};
+use nexa_collector_core::{read_config, DeliveryDiagnostics, Outbox, QuarantinedReading, SqliteFootprint};
 use serde::Serialize;
 use std::env;
 
@@ -22,6 +22,7 @@ struct CollectorSnapshot {
     queue_capacity: Option<u64>,
     payload_bytes_retained: Option<u64>,
     payload_bytes_limit: Option<u64>,
+    sqlite_footprint: Option<SqliteFootprint>,
     delivery: Option<DeliveryDiagnostics>,
     last_run: Option<String>,
     error: Option<String>,
@@ -41,11 +42,13 @@ fn get_snapshot() -> CollectorSnapshot {
         queue_capacity: None,
         payload_bytes_retained: None,
         payload_bytes_limit: None,
+        sqlite_footprint: None,
         delivery: None,
         last_run: None,
         error: None,
     };
 
+    let mut capacity_limits = None;
     match env::var("NEXA_COLLECTOR_CONFIG") {
         Ok(path) => match read_config(path) {
             Ok(config) => {
@@ -55,6 +58,7 @@ fn get_snapshot() -> CollectorSnapshot {
                 snapshot.interval_seconds = Some(config.interval_seconds);
                 snapshot.queue_capacity = Some(config.max_pending_samples);
                 snapshot.payload_bytes_limit = Some(config.max_pending_payload_bytes);
+                capacity_limits = Some((config.max_pending_samples, config.max_pending_payload_bytes, config.max_sqlite_files_bytes));
                 snapshot.printers = config.printers.into_iter().map(|p| PrinterInfo {
                     printer_id: p.printer_id,
                     ip: p.ip.to_string(),
@@ -69,9 +73,18 @@ fn get_snapshot() -> CollectorSnapshot {
     if let Ok(path) = env::var("NEXA_COLLECTOR_DB") {
         // Read-only dashboard; no daemon lifecycle commands or credential exposure.
         if std::path::Path::new(&path).exists() {
-            match Outbox::open(path) {
+            let opened = if let Some((samples, payload_bytes, file_bytes)) = capacity_limits {
+                Outbox::open_with_disk_guard(&path, samples, payload_bytes, file_bytes)
+            } else {
+                Outbox::open(&path)
+            };
+            match opened {
                 Ok(outbox) => {
                     snapshot.queue_pending = outbox.pending().ok();
+                    match outbox.sqlite_footprint() {
+                        Ok(footprint) => snapshot.sqlite_footprint = Some(footprint),
+                        Err(_) => snapshot.error = Some("Não foi possível verificar o espaço físico do SQLite.".into()),
+                    }
                     snapshot.payload_bytes_retained = outbox.retained_payload_bytes().ok();
                     snapshot.quarantine_count = outbox.quarantined_count().ok();
                     match outbox.quarantined_readings(25) {

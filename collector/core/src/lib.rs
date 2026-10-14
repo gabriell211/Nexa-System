@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs,
     net::{IpAddr, SocketAddr},
-    path::Path,
+    path::{Path, PathBuf},
     str::FromStr,
     time::{Duration, Instant},
 };
@@ -34,6 +34,8 @@ pub enum CollectorError {
     OutboxFull { limit: u64 },
     #[error("outbox retained payload byte budget exceeded ({limit} bytes); pending and quarantined readings are preserved")]
     OutboxBytesFull { limit: u64 },
+    #[error("local SQLite file footprint has reached its configured soft limit ({limit} bytes); existing readings are preserved")]
+    SqliteSoftLimit { limit: u64 },
     #[error("sample UUID reused with different reading content")]
     SampleConflict,
 }
@@ -165,6 +167,8 @@ const DEFAULT_MAX_PENDING_SAMPLES: u64 = 50_000;
 fn default_max_pending_samples() -> u64 { DEFAULT_MAX_PENDING_SAMPLES }
 const DEFAULT_MAX_PENDING_PAYLOAD_BYTES: u64 = 64 * 1024 * 1024;
 fn default_max_pending_payload_bytes() -> u64 { DEFAULT_MAX_PENDING_PAYLOAD_BYTES }
+const DEFAULT_MAX_SQLITE_FILES_BYTES: u64 = 512 * 1024 * 1024;
+fn default_max_sqlite_files_bytes() -> u64 { DEFAULT_MAX_SQLITE_FILES_BYTES }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -178,6 +182,8 @@ pub struct CollectorConfig {
     pub max_pending_samples: u64,
     #[serde(default = "default_max_pending_payload_bytes")]
     pub max_pending_payload_bytes: u64,
+    #[serde(default = "default_max_sqlite_files_bytes")]
+    pub max_sqlite_files_bytes: u64,
     pub authorized_subnets: Vec<String>,
     pub printers: Vec<PrinterConfig>,
 }
@@ -196,6 +202,11 @@ impl CollectorConfig {
         if !(1..=1_073_741_824).contains(&self.max_pending_payload_bytes) {
             return Err(CollectorError::Configuration(
                 "max_pending_payload_bytes must be 1..1073741824".into(),
+            ));
+        }
+        if !(1..=68_719_476_736).contains(&self.max_sqlite_files_bytes) {
+            return Err(CollectorError::Configuration(
+                "max_sqlite_files_bytes must be 1..68719476736".into(),
             ));
         }
         if !self.api_url.starts_with("https://") {
@@ -249,10 +260,23 @@ pub struct QuarantinedReading {
     pub reason: String,
 }
 
+/// File sizes are observational and may change across SQLite connections.
+#[derive(Clone, Debug, Serialize)]
+pub struct SqliteFootprint {
+    pub database_bytes: u64,
+    pub wal_bytes: u64,
+    pub shm_bytes: u64,
+    pub total_bytes: u64,
+    pub soft_limit_bytes: u64,
+    pub soft_limit_reached: bool,
+}
+
 pub struct Outbox {
     connection: Connection,
+    database_path: PathBuf,
     max_pending_samples: u64,
     max_pending_payload_bytes: u64,
+    max_sqlite_files_bytes: u64,
 }
 
 impl Outbox {
@@ -274,6 +298,20 @@ impl Outbox {
         max_pending_samples: u64,
         max_pending_payload_bytes: u64,
     ) -> Result<Self, CollectorError> {
+        Self::open_with_disk_guard(
+            path, max_pending_samples, max_pending_payload_bytes,
+            DEFAULT_MAX_SQLITE_FILES_BYTES,
+        )
+    }
+
+    /// Soft safety guard only: never promises a filesystem hard quota.
+    /// SQLite indexes, WAL and SHM are observed, but not atomically reserved.
+    pub fn open_with_disk_guard(
+        path: impl AsRef<Path>,
+        max_pending_samples: u64,
+        max_pending_payload_bytes: u64,
+        max_sqlite_files_bytes: u64,
+    ) -> Result<Self, CollectorError> {
         if !(1..=1_000_000).contains(&max_pending_samples) {
             return Err(CollectorError::Configuration(
                 "max_pending_samples must be 1..1000000".into(),
@@ -284,7 +322,13 @@ impl Outbox {
                 "max_pending_payload_bytes must be 1..1073741824".into(),
             ));
         }
-        let db = Connection::open(path)?;
+        if !(1..=68_719_476_736).contains(&max_sqlite_files_bytes) {
+            return Err(CollectorError::Configuration(
+                "max_sqlite_files_bytes must be 1..68719476736".into(),
+            ));
+        }
+        let database_path = path.as_ref().to_path_buf();
+        let db = Connection::open(&database_path)?;
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.pragma_update(None, "busy_timeout", 5000_i64)?;
         db.execute_batch(
@@ -305,16 +349,53 @@ impl Outbox {
                 reason TEXT NOT NULL
             );"
         )?;
-        Ok(Self { connection: db, max_pending_samples, max_pending_payload_bytes })
+        Ok(Self {
+            connection: db, database_path, max_pending_samples,
+            max_pending_payload_bytes, max_sqlite_files_bytes,
+        })
+    }
+
+    /// Measures current on-disk files used by the SQLite WAL database.
+    /// WAL/SHM legitimately disappear when other connections close.
+    /// This is a soft preflight, not an atomic filesystem reservation.
+    pub fn sqlite_footprint(&self) -> Result<SqliteFootprint, CollectorError> {
+        let bytes = |path: &Path| -> Result<u64, CollectorError> {
+            match fs::metadata(path) {
+                Ok(metadata) => Ok(metadata.len()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+                Err(error) => Err(error.into()),
+            }
+        };
+        let sidecar = |suffix: &str| {
+            let mut pathname = self.database_path.as_os_str().to_os_string();
+            pathname.push(suffix);
+            PathBuf::from(pathname)
+        };
+        let database_bytes = fs::metadata(&self.database_path)?.len();
+        let wal_bytes = bytes(&sidecar("-wal"))?;
+        let shm_bytes = bytes(&sidecar("-shm"))?;
+        let total_bytes = database_bytes.saturating_add(wal_bytes).saturating_add(shm_bytes);
+        Ok(SqliteFootprint {
+            database_bytes, wal_bytes, shm_bytes, total_bytes,
+            soft_limit_bytes: self.max_sqlite_files_bytes,
+            soft_limit_reached: total_bytes >= self.max_sqlite_files_bytes,
+        })
+    }
+
+    pub fn disk_soft_limit_reached(&self) -> Result<bool, CollectorError> {
+        Ok(self.sqlite_footprint()?.soft_limit_reached)
     }
 
     pub fn enqueue(&self, reading: &Reading) -> Result<bool, CollectorError> {
         let sample_id = reading.sample_id.to_string();
         let payload = serde_json::to_string(reading)?;
 
-        // The capacity condition and insertion form a single SQLite write.
-        // Never discard old samples to make room for new readings.
-        let affected = self.connection.execute(
+        // Conservative preflight for the physical database/WAL footprint.
+        // Existing UUIDs are still checked below for idempotency. This cannot
+        // bound the bytes generated by an individual SQLite transaction.
+        let disk_limited = self.disk_soft_limit_reached()?;
+        // The count and payload constraints share a single SQLite statement.
+        let affected = if disk_limited { 0 } else { self.connection.execute(
             "INSERT OR IGNORE INTO outbox(sample_id, payload, queued_at)
              SELECT ?1, ?2, ?3
              WHERE NOT EXISTS (
@@ -328,7 +409,7 @@ impl Outbox {
                 sample_id, payload, Utc::now().to_rfc3339(), 
                 self.max_pending_samples, self.max_pending_payload_bytes
             ],
-        )?;
+        )? };
         if affected > 0 {
             return Ok(true);
         }
@@ -351,7 +432,11 @@ impl Outbox {
                 if quarantined {
                     Err(CollectorError::SampleConflict)
                 } else {
-                    if self.retained()? >= self.max_pending_samples {
+                    if disk_limited {
+                        Err(CollectorError::SqliteSoftLimit {
+                            limit: self.max_sqlite_files_bytes,
+                        })
+                    } else if self.retained()? >= self.max_pending_samples {
                         Err(CollectorError::OutboxFull { limit: self.max_pending_samples })
                     } else {
                         Err(CollectorError::OutboxBytesFull {
@@ -382,6 +467,7 @@ impl Outbox {
         Ok(
             self.retained()? >= self.max_pending_samples
             || self.retained_payload_bytes()? >= self.max_pending_payload_bytes
+            || self.disk_soft_limit_reached()?
         )
     }
 
@@ -747,6 +833,68 @@ mod tests {
     }
 
     #[test]
+    fn physical_sqlite_footprint_sums_database_and_existing_wal_sidecars() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("queue.sqlite");
+        let outbox = Outbox::open_with_disk_guard(&path, 10, 4096, 512 * 1024 * 1024).unwrap();
+        outbox.enqueue(&sample_with_meter(19)).unwrap();
+        let footprint = outbox.sqlite_footprint().unwrap();
+        let db_size = std::fs::metadata(&path).unwrap().len();
+        assert_eq!(footprint.database_bytes, db_size);
+        let sidecar_size = |suffix: &str| -> u64 {
+            let mut name = path.as_os_str().to_os_string();
+            name.push(suffix);
+            std::fs::metadata(PathBuf::from(name)).map(|m| m.len()).unwrap_or(0)
+        };
+        assert_eq!(footprint.wal_bytes, sidecar_size("-wal"));
+        assert_eq!(footprint.shm_bytes, sidecar_size("-shm"));
+        assert_eq!(footprint.total_bytes, db_size + footprint.wal_bytes + footprint.shm_bytes);
+        assert!(!footprint.soft_limit_reached);
+    }
+
+    #[test]
+    fn disk_soft_limit_blocks_new_readings_but_allows_ack_and_quarantine_recovery() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("queue.sqlite");
+        let first = sample_with_meter(11);
+        let second = sample_with_meter(12);
+        {
+            let outbox = Outbox::open(&path).unwrap();
+            outbox.enqueue(&first).unwrap();
+        }
+        let mut outbox = Outbox::open_with_disk_guard(&path, 10, 4096, 1).unwrap();
+        assert!(outbox.disk_soft_limit_reached().unwrap());
+        assert!(outbox.at_capacity().unwrap());
+        assert!(!outbox.enqueue(&first).unwrap());
+        assert!(matches!(outbox.enqueue(&second), Err(CollectorError::SqliteSoftLimit { limit: 1 })));
+        assert_eq!(outbox.pending().unwrap(), 1);
+        outbox.quarantine(first.sample_id, "individually-rejected-422").unwrap();
+        assert_eq!(outbox.quarantined_count().unwrap(), 1);
+        assert!(outbox.restore_quarantined(first.sample_id).unwrap());
+        assert_eq!(outbox.next_batch(10).unwrap()[0].sample_id, first.sample_id);
+        outbox.acknowledge(&[first.sample_id]).unwrap();
+        assert_eq!(outbox.pending().unwrap(), 0);
+    }
+
+    #[test]
+    fn legacy_config_accepts_default_soft_limit_and_rejects_invalid_values() {
+        let mut cfg: CollectorConfig = serde_json::from_value(serde_json::json!({
+            "collector_id": Uuid::new_v4(),
+            "api_url": "https://nexa.example",
+            "interval_seconds": 600,
+            "authorized_subnets": ["192.0.2.0/24"],
+            "printers": []
+        })).unwrap();
+        assert_eq!(cfg.max_sqlite_files_bytes, 512 * 1024 * 1024);
+        cfg.max_sqlite_files_bytes = 0;
+        assert!(cfg.validate().is_err());
+        cfg.max_sqlite_files_bytes = 68_719_476_737;
+        assert!(cfg.validate().is_err());
+        cfg.max_sqlite_files_bytes = 1;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
     fn retained_payload_bytes_limit_prevents_silent_growth_and_recovers_after_ack() {
         let temp = tempfile::tempdir().unwrap();
         let db = temp.path().join("queue.sqlite");
@@ -873,6 +1021,7 @@ mod tests {
             heartbeat_interval_seconds: 60,
             max_pending_samples: 0,
             max_pending_payload_bytes: 64 * 1024 * 1024,
+            max_sqlite_files_bytes: 512 * 1024 * 1024,
             authorized_subnets: vec!["192.0.2.0/24".into()],
             printers: vec![],
         };
@@ -887,7 +1036,7 @@ mod tests {
     fn disallows_outside_authorized_cidr() {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
-            interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000, max_pending_payload_bytes: 64 * 1024 * 1024, authorized_subnets: vec!["192.168.1.0/24".into()],
+            interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000, max_pending_payload_bytes: 64 * 1024 * 1024, max_sqlite_files_bytes: 512 * 1024 * 1024, authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![PrinterConfig {
                 printer_id: 1, ip: "10.1.1.10".parse().unwrap(),
                 marker_counter_oid: vec![1,3,6,1,2,1,43,10,2,1,4,1,1],
@@ -902,6 +1051,7 @@ mod tests {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
             interval_seconds: 1800, heartbeat_interval_seconds: 60, max_pending_samples: 50_000,
             max_pending_payload_bytes: 64 * 1024 * 1024,
+            max_sqlite_files_bytes: 512 * 1024 * 1024,
             authorized_subnets: vec!["192.168.1.0/24".into()], printers: vec![],
         };
         assert!(cfg.validate().is_ok());
@@ -925,6 +1075,7 @@ mod tests {
         assert_eq!(cfg.heartbeat_interval_seconds, 60);
         assert_eq!(cfg.max_pending_samples, DEFAULT_MAX_PENDING_SAMPLES);
         assert_eq!(cfg.max_pending_payload_bytes, DEFAULT_MAX_PENDING_PAYLOAD_BYTES);
+        assert_eq!(cfg.max_sqlite_files_bytes, DEFAULT_MAX_SQLITE_FILES_BYTES);
         assert!(cfg.validate().is_ok());
         let pause = heartbeat_sleep_seconds(60, id);
         assert!((60..=66).contains(&pause));
@@ -1161,6 +1312,7 @@ mod tests {
             collector_id: Uuid::new_v4(), api_url: "http://example.test".into(),
             interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000,
             max_pending_payload_bytes: 64 * 1024 * 1024,
+            max_sqlite_files_bytes: 512 * 1024 * 1024,
             authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![],
         };
