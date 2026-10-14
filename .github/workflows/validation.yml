@@ -265,6 +265,30 @@ jobs:
           sed 's#^ExecStart=.*#ExecStart=/bin/true#' collector/linux/nexa-collector.service > /tmp/nexa-systemd-verify/nexa-collector.service
           systemd-analyze verify /tmp/nexa-systemd-verify/nexa-collector.service
 
+  collector-windows-service:
+    name: Windows Collector native SCM build and tests
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: collector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile and execute Windows Collector core/daemon tests
+        run: cargo test -p nexa-collector-core -p nexa-collector-daemon
+      - name: Validate Windows PowerShell installer syntax and service safety
+        shell: pwsh
+        working-directory: .
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'collector/windows/install.ps1').Path,
+            [ref]$tokens, [ref]$errors
+          )
+          if ($errors.Count -ne 0) { throw ($errors | Out-String) }
+          python scripts/verify_collector_windows_service.py
+
   collector:
     name: Rust collector core tests
     runs-on: ubuntu-latest
