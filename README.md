@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Migração offline de outbox legada para payload criptografado — incremento 23 (parcial)
+
+- Novo comando **offline** do daemon: `nexa-collector-daemon config.local.json antiga.sqlite --migrate-encrypted-to nova.sqlite`. Requer `NEXA_COLLECTOR_DB_KEY_HEX`, serviço parado e caminho de destino **inexistente**. Não inicia SNMP, heartbeat nem upload e não substitui o caminho de operação automaticamente.
+- Bloqueia escritores no banco antigo durante a leitura, valida `PRAGMA quick_check`, copia **todas as amostras pendentes, quarentena, UUIDs, datas e estado de transmissão**, criptografando apenas os payloads com AES-256-GCM e autenticando cada UUID.
+- O destino é criado de forma exclusiva; nunca sobrescreve o original. Até a cópia e as verificações de integridade terminarem, `migration_status=incomplete` impede que o daemon use um destino parcial. Falhas deixam origem intacta e exigem revisão/remoção manual do destino incompleto após análise.
+- **A troca de caminho é deliberadamente manual.** Desligar serviços que escrevem no banco antigo, conservar backup consistente, migrar, validar novo banco e chave, apontar daemon/console para o novo caminho e só então reiniciar. A fonte plaintext e seus backups/WAL continuam sensíveis e não são apagados automaticamente.
+- Esta migração **não é criptografia integral SQLCipher**: estado/metadata/indexação continuam legíveis, e não há rotação de chaves/secret store nativo. Nenhuma garantia de integridade se um serviço voltar a escrever no banco original *depois* da cópia. `NX-035` ainda **PARCIAL**.
+
 ### Criptografia autenticada de payload local — incremento 22 (parcial)
 
 - Implementado modo **opt-in para banco novo**: `NEXA_COLLECTOR_DB_KEY_HEX` com 64 caracteres hexadecimais (chave aleatória de 32 bytes), fora do arquivo JSON e do Git. Quando configurada, o Collector cria um SQLite novo com payload de leituras em **AES-256-GCM** e nonce aleatório por gravação; o UUID é autenticado como contexto (AAD). A quarentena e a restauração preservam o ciphertext.

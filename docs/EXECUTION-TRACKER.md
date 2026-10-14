@@ -434,3 +434,17 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - **Somente payload de leituras cifrado; não equivale a SQLCipher ou cifragem do arquivo inteiro.** Metadata, horários, índices, estado de retry e payload histórico de bancos antigos permanecem expostos.
 - Migração segura para arquivo novo com auditoria, rotação de chave, distribuição em OS keychain/secret store, permissões nos arquivos e zeroização integral de segredos em runtime ainda pendentes.
 - Faltam testes E2E nativos Tauri, instaladores Windows/Linux/macOS, retomada após interrupção elétrica, hardware SNMP e auditoria fiscal de leituras antigas. `NX-035` continua PARCIAL, sem homologação de produção.
+
+## Entrega 23 — migração offline de payload plaintext para banco novo cifrado (14/10/2026)
+
+### Incremento
+- Nova API `Outbox::migrate_plaintext_to_encrypted` e comando `--migrate-encrypted-to <new-db>` sem rede/SNMP. Exige `NEXA_COLLECTOR_DB_KEY_HEX` e destino inexistente.
+- Fonte aberta com `BEGIN IMMEDIATE` para impedir alteração concomitante durante o snapshot; checagem inicial `PRAGMA quick_check` e rejeição de origem já cifrada. Destino criado exclusivamente, com modo `0600` no Unix, e marcador `migration_status=incomplete` gravado atomicamente junto ao modo AES.
+- Cada leitura de outbox/quarentena tem UUID validado contra JSON, ciphertext autenticado com AAD do UUID e checagem de roundtrip. Conservados timestamps, motivo de isolamento, contador, estado de upload e demais registros `state` não reservados.
+- Contagens e `quick_check` validados antes de mudar marcador para `complete`. Abertura normal com chave recusa destino incompleto. Falhas preservam fonte, não removem destino automaticamente, e impedem reuso acidental do nome.
+- Testes Rust para migração/recuperação, metadados e quarentena, impossibilidade de sobrescrever destino ou fonte, rejeição de JSON legado corrompido, recusa de origem cifrada e de chave inválida.
+
+### Limitações
+- A prova de desligamento do serviço OS e a troca de caminho são procedimentos manuais. Embora a fonte esteja travada durante a cópia, escritores reativados **depois** da transação ainda podem divergir; não há cutover automático/replicação.
+- Não migra o banco em uso, não remove texto claro de source/WAL/backups, não criptografa metadados e não implementa rotação de chaves, secret store, cota física ou garantia de ENOSPC.
+- Sem aceitação de instalação nativa no Windows/Linux/macOS e sem teste de energia/hardware real. `NX-035` continua **PARCIAL**.
