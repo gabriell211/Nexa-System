@@ -250,3 +250,20 @@ Uma tentativa de heartbeat, inclusive quando o servidor está indisponível e o 
 O observador é inicializado depois de o daemon reportar startup pronto; ambos os checkpoints são armados nesse instante. O monitor não é iniciado em comandos de manutenção, diagnóstico ou `--once`; Stop/SIGTERM/SIGINT normais bloqueiam a ação de recuperação forçada.
 
 **Limitações:** esse watchdog não verifica que o servidor recebeu um ACK de heartbeat, nem que cada impressora produziu leitura válida. Rede inoperante com requisições que retornam erro ainda conta como thread viva. O processo pode continuar vivo com um bug que atualize seu próprio checkpoint sem realizar trabalho útil. Sem ensaio real de simulação de deadlock, política anti-loop específica do launchd, diagnósticos remotos e teste em computadores físicos. Requisitos NX-039 e NX-041 permanecem **PARCIAIS**.
+
+## Incidentes do watchdog e circuito de reinicializações — entrega 30
+
+Um watchdog que força `exit(70)` registra primeiro um incidente pequeno em `queue.sqlite.watchdog.json` (ao lado da base configurada), com horário UTC e causa `main-loop` ou `heartbeat-worker`. O histórico retém até 32 ocorrências, sem payloads/segredos. **Ao acumular 3 incidentes do watchdog em 30 minutos**, a próxima inicialização supervisionada reporta o circuito aberto e termina **com sucesso**, preservando o banco. Isso desarma os reinícios automáticos de `systemd` com `Restart=on-failure`, de `launchd` com `SuccessfulExit=false` e das ações de erro do SCM. O operador deve analisar e iniciar manualmente após corrigir a causa.
+
+Para consultar e liberar manualmente (sem SNMP, heartbeat ou upload), **pare o serviço**, use a configuração e caminho SQLite correspondentes e execute:
+
+```sh
+nexa-collector-daemon config.local.json queue.sqlite --watchdog-status
+nexa-collector-daemon config.local.json queue.sqlite --reset-watchdog-circuit
+```
+
+O reset mantém as ocorrências no histórico e marca um reconhecimento temporal; **não** reconhece nenhuma leitura da fila e não reinicia automaticamente o serviço. Faça backup/inspeção do diário antes de intervir. Se o JSON estiver danificado ou ilegível, o serviço supervisionado também para com saída normal, sem recomeçar um loop; a inspeção e eventual arquivamento/substituição do arquivo requerem ação administrativa, pois um reset de arquivo inválido é rejeitado.
+
+Testes de regressão executam um **subprocesso Rust isolado** em que o watchdog detecta o avanço interrompido, o termina efetivamente com status 70, persiste o motivo e abre o circuito após três execuções. O teste também confirma que o arquivo simulando a fila permanece intocado. Unit tests exercitam expiração da janela, histórico retido, reset e corrupção. A alteração inclui verificações de empacotamento Linux, Windows e macOS no GitHub Actions.
+
+**Limitações importantes:** a proteção conta somente exits originados pelo próprio watchdog; falhas de energia, abortos externos e reinícios de outras causas continuam sujeitos às políticas de restart do serviço. O diário é gravado e sincronizado fora do banco SQLite; se faltar espaço no disco, a gravação pode falhar (o watchdog ainda sai com 70). Uma falha de energia durante a escrita pode deixar JSON incompleto, que por segurança bloqueia novos starts até a revisão manual. Não executa `fsync` do diretório pai, não fornece limite físico rígido de disco e ainda não existe homologação de restart real após deadlock do serviço em hosts de produção. `NX-039` permanece PARCIAL.
