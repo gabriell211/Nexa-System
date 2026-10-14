@@ -7,13 +7,35 @@ use std::{env, error::Error, thread, time::{Duration, Instant}};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 3 || args.len() > 4 {
-        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once]");
+    let restore = args.len() == 5 && args[3] == "--restore-quarantined";
+    let list_quarantine = args.len() == 4 && args[3] == "--list-quarantined";
+    let once = args.len() == 4 && args[3] == "--once";
+    if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || restore) {
+        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --restore-quarantined <sample-uuid>]");
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
     let mut outbox = Outbox::open_bounded(&args[2], cfg.max_pending_samples)?;
-    let once = args.get(3).is_some_and(|v| v == "--once");
+    // Operator-only commands do not start SNMP polling or heartbeat workers.
+    if list_quarantine {
+        for item in outbox.quarantined_readings(100)? {
+            println!(
+                "UUID={} printer={} collected={} isolated={} reason={}",
+                item.sample_id, item.printer_id, item.collected_at,
+                item.quarantined_at, item.reason,
+            );
+        }
+        println!("Quarantined: {}", outbox.quarantined_count()?);
+        return Ok(());
+    }
+    if restore {
+        let id = uuid::Uuid::parse_str(&args[4])?;
+        if !outbox.restore_quarantined(id)? {
+            return Err("Sample not found in local quarantine".into());
+        }
+        println!("Sample restored into pending outbox for explicit retry");
+        return Ok(());
+    }
 
     // Separate supervised communication loop: long SNMP scans, empty meter
     // batches and backlogged uploads must not delay agent health checks.
@@ -52,11 +74,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         if Instant::now() >= next_poll {
-            if outbox.pending()? >= cfg.max_pending_samples {
+            if outbox.retained()? >= cfg.max_pending_samples {
                 eprintln!("Outbox saturated; new SNMP samples deferred until confirmed uploads release space");
             } else if let Ok(community) = env::var("NEXA_SNMP_COMMUNITY") {
                 for printer in &cfg.printers {
-                    if outbox.pending()? >= cfg.max_pending_samples {
+                    if outbox.retained()? >= cfg.max_pending_samples {
                         eprintln!("Outbox full; remaining printers deferred");
                         break;
                     }
@@ -81,7 +103,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if once {
-            println!("Outbox pending: {}", outbox.pending()?);
+            println!("Outbox pending: {}, quarantined: {}", outbox.pending()?, outbox.quarantined_count()?);
             break;
         }
         // Upload retry scheduling runs independently of the (possibly 24-hour)
@@ -100,8 +122,15 @@ fn attempt_upload(
     if !policy.ready(Instant::now()) {
         return Ok(());
     }
+    let quarantined_before = outbox.quarantined_count()?;
     match upload_pending(cfg, token, outbox) {
         Ok(acked) => {
+            let quarantined_after = outbox.quarantined_count()?;
+            if quarantined_after > quarantined_before {
+                eprintln!(
+                    "One reading isolated after individual HTTP 422; review local quarantine before retrying"
+                );
+            }
             // Successful ACK or empty queue clears prior error diagnostics.
             // A no-op does not fabricate an upload success timestamp.
             let pending = outbox.pending()?;
