@@ -542,3 +542,16 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - O diário não recebe transação SQLite ou gravação atômica em todas as plataformas; JSON parcialmente gravado é bloqueado e exige operador. Não existe telemetria remota de incidentes nem garantia de durabilidade de `fsync` em diretório; proteção de dados em repouso cobre payloads e não o diário.
 - O teste em subprocesso confirma o exit local, **não** comprova o efetivo reinício/stop pelo systemd, SCM ou launchd sob sistema real. Necessária homologação de serviço no host e testes com impressoras reais.
 - `NX-039` permanece PARCIAL; o conjunto de 324 NX e 62 QA ainda não foi homologado.
+
+## Entrega 31 — incidentes locais no Tauri e relatório agregado no painel administrativo (14/10/2026)
+
+### Incremento implementado
+- Parser e controlador do diário do watchdog centralizados no `nexa-collector-core::recovery_guard` para evitar divergência: histórico sanitizado `WatchdogSnapshot` com estado, limiar, últimos 32 incidentes, timestamp UTC e último reset. Daemon passa a reutilizar o mesmo módulo, mantendo a semântica de fail-closed.
+- Console Tauri expõe snapshot de watchdog e erro independente de SQLite; aba Recuperação apresenta histórico, bloqueios e orientações operacionais, sem mutação local nem exibição de credenciais.
+- Heartbeat do daemon ganha objeto opcional `watchdog` com `recent_incidents` e `circuit_open` (somente diagnóstico agregado), enviado com a mesma autenticação bearer. JSON inválido omite apenas essa telemetria, sem fingir estado normal.
+- Nova migração Laravel adiciona `watchdog_recent_incidents`, `watchdog_circuit_open_reported` e `watchdog_reported_at`. Timestamp é originado no servidor; payloads estritamente validados, sem campos extras. Listagem administrativa continua limitada por tenant e carteira e identifica o relato como histórico, não condição atual.
+- Testes Rust de projeção, corrupção e payload sem dados sensíveis; Laravel de autenticação, limites, compatibilidade de agentes antigos e timestamp. Builds TypeScript e E2E existentes continuam mandatórios no CI.
+
+### Pendências de aceite
+- O Collector não consegue informar abertura do circuito enquanto está desligado; telemetria remota é **último relato**, não monitoramento contínuo. Falta mecanismo de alerta assíncrono quando heartbeat atrasa e política central de notificação.
+- Sem teste E2E nativo com Tauri aberto e serviço real, alerta recebido sob interrupção de rede, redelivery de status e equipamentos físicos. `NX-039/041` continuam PARCIAIS, assim como o escopo NX/QA integral.
