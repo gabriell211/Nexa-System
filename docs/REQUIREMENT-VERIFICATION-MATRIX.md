@@ -153,14 +153,14 @@
 | NX-124 | Alertas e manutenções preventivas | NÃO COMPROVADO | Estados de alertas vinculados a chamados e regra de encerramento coerente. |
 | NX-125 | Alertas e manutenções preventivas | NÃO COMPROVADO | Notificações por e-mail/eventos com preferências por destinatário, cliente, tipo e criticidade. |
 | NX-126 | Alertas e manutenções preventivas | NÃO COMPROVADO | Histórico de ações em alertas com autor e visibilidade para auditoria. |
-| NX-127 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Chamados abertos pelo cliente ou pelo provedor, vinculados opcionalmente a impressora(s), dispositivo(s) e alerta(s). |
-| NX-128 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Permitir chamado interno sem cliente/equipamento para tarefas administrativas. |
+| NX-127 | Chamados, técnicos, atendimento e SLA | PARCIAL — API/portal inicial; QA E2E limitado | Chamados abertos pelo cliente ou pelo provedor, vinculados opcionalmente a impressora(s), dispositivo(s) e alerta(s). |
+| NX-128 | Chamados, técnicos, atendimento e SLA | PARCIAL — API/portal inicial; QA E2E limitado | Permitir chamado interno sem cliente/equipamento para tarefas administrativas. |
 | NX-129 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Tipos de chamados configuráveis com opção de visibilidade para o portal cliente. |
 | NX-130 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Abertura com descrição, categoria, criticidade, prioridade, anexos e registro de origem. |
-| NX-131 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Fila sem responsável, quadro de chamados ativos e lista de finalizados/encerrados. |
-| NX-132 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Estados de triagem, aguardando atribuição, atendimento pendente, em atendimento, atendimento finalizado e encerrado. |
-| NX-133 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Responsável técnico, equipe, transferência, reabertura e histórico de alterações. |
-| NX-134 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Comentários internos e comentários públicos para cliente com autorização correta. |
+| NX-131 | Chamados, técnicos, atendimento e SLA | PARCIAL — API/portal inicial; QA E2E limitado | Fila sem responsável, quadro de chamados ativos e lista de finalizados/encerrados. |
+| NX-132 | Chamados, técnicos, atendimento e SLA | PARCIAL — API/portal inicial; QA E2E limitado | Estados de triagem, aguardando atribuição, atendimento pendente, em atendimento, atendimento finalizado e encerrado. |
+| NX-133 | Chamados, técnicos, atendimento e SLA | PARCIAL — API/portal inicial; QA E2E limitado | Responsável técnico, equipe, transferência, reabertura e histórico de alterações. |
+| NX-134 | Chamados, técnicos, atendimento e SLA | PARCIAL — API/portal inicial; QA E2E limitado | Comentários internos e comentários públicos para cliente com autorização correta. |
 | NX-135 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Serviços prestados catalogados, valor por serviço, peças de estoque utilizadas e custos adicionais. |
 | NX-136 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Destino de peça usada: cliente (estoque) ou instalação na impressora, conforme natureza do atendimento. |
 | NX-137 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Cálculo de valor total do serviço, desconto, pagamento confirmado e conferência antes do encerramento. |
@@ -322,8 +322,8 @@
 | NX-293 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Alertas preventivos com reinício em data real da manutenção, impedindo mudança retroativa injustificada de política. |
 | NX-294 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Regras de preventiva aplicam-se também a novas impressoras incluídas posteriormente no conjunto de filtros. |
 | NX-295 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Catálogos de erros de rede/USB com criticidade configurável e desabilitação explícita de ocorrência inútil. |
-| NX-296 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Abertura pelo equipamento ou lista geral; cliente pode selecionar impressora e/ou dispositivo e colaborador abrir tarefa interna. |
-| NX-297 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Fila sem responsável e quadro ativo com três estados: atendimento pendente, em atendimento e atendimento finalizado. |
+| NX-296 | Operação da plataforma, SaaS e cobrança do provedor | PARCIAL — API/portal inicial; QA E2E limitado | Abertura pelo equipamento ou lista geral; cliente pode selecionar impressora e/ou dispositivo e colaborador abrir tarefa interna. |
+| NX-297 | Operação da plataforma, SaaS e cobrança do provedor | PARCIAL — API/portal inicial; QA E2E limitado | Fila sem responsável e quadro ativo com três estados: atendimento pendente, em atendimento e atendimento finalizado. |
 | NX-298 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Item usado em chamado exige origem (provedor/técnico), destino (cliente/impressora) e opção de cobrança. |
 | NX-299 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Encerramento exige confirmação dos materiais usados, eventuais pagamentos, descontos e custos adicionais. |
 | NX-300 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Impressão da ordem de serviço com quantidade configurável de linhas em branco para escrita em campo. |
@@ -463,3 +463,10 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 - Remessas mantêm vínculo contábil dos lotes enviados, recebidos e perdidos. Atribuição parcial por FEFO é uma **inferência operacional** até existir leitura física do lote.
 - Saldos `available_quantity` excluem estoque conhecido vencido, sem diminuir o saldo físico; `expired_quantity` é apresentado separadamente.
 - `NX-099/102/103`: avanço técnico PARCIAL. Aceite exige reconciliação físico-contábil, reserva por lote, confirmação de picking/recebimento e homologação operacional em campo.
+
+## Chamados e testes em navegador real (13/10/2026)
+
+- `NX-127/128/131/132/133/134/296/297`: implementação inicial de abertura backoffice, tarefa interna, fila, estados, atribuição, comentários e auditoria, todos **PARCIAIS**. Não há portal do cliente, anexos, serviços, SLA completo nem ligações a alertas/dispositivos.
+- A matriz mantém `QA-17` como não comprovado: comentários internos são persistidos para operadores, mas ainda não há portal de cliente para testar a restrição externa de ponta a ponta.
+- Playwright real (Chromium desktop e mobile) foi acrescentado ao GitHub Actions; prova apenas a jornada implementada, distinta de homologação de produção ou dos 62 cenários completos.
+- Corrigidas incompatibilidades de busca com `q=` e `active_only=true` e adicionada regressão para ambos os endpoints. Isso foi descoberto pela navegação E2E, não por mocks.

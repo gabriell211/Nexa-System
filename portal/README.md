@@ -107,3 +107,11 @@ A aba **Lotes** em `/estoque` exibe SKU, lote, local, quantidade conhecida, vali
 A coluna **Vencido** em saldos separa o estoque físico expirado conhecido do saldo disponível. Reservas recusam quantidades que só possam ser atendidas por lotes vencidos. Estoque legado sem lote continua disponível, mas sem proveniência falsamente atribuída.
 
 **Atenção:** FEFO é uma regra contábil automática e pressupõe que o operador selecione fisicamente o lote correspondente. A confirmação efetiva do número de lote no picking e recebimento ainda não existe; recebimentos parciais não provam qual lote chegou sem conferência. Não declarar rastreabilidade física certificada ou FIFO/FEFO homologado em campo.
+
+## Chamados técnicos e browser E2E (entrega 11)
+
+`/chamados` expõe fila e filtros, cadastro de chamados internos e de cliente, atualização de estado e comentários internos/públicos, integrados à API Laravel. O backend verifica tenant, carteira de clientes, vínculos de impressora e autorizações de reabertura, com auditoria persistente.
+
+`npm run test:e2e` usa **Playwright Chromium real** com perfis desktop e viewport mobile; no CI, ele executa contra o Laravel e o portal Vite iniciados para o teste (SQLite isolado e proprietário temporário). A suite não falsifica respostas da API, preserva o limite real de login e executa uma jornada por perfil para evitar atingir o throttle global. Os artefatos de falha contêm screenshots, vídeo, traces e estado acessível da página. O teste E2E não equivale a validação dos 324 requisitos nem à homologação no parque de impressoras.
+
+Pendentes no Help Desk: SLA por calendário, anexos, ordens de serviço, peças/cobrança, notificações, portal cliente, vínculo de alertas/preventivas e métricas históricas por equipe.

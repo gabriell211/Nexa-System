@@ -258,3 +258,24 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Estoque vencido permanece no saldo físico até ajuste/retirada autorizado. A API não deve fingir que sumiu.
 - O controle de reserva ainda é por SKU/local, e não por lote escolhido pelo operador; é seguro no agregado, mas não garante a seleção física antecipada do lote.
 - `NX-099`, `NX-102` e `NX-103` permanecem **PARCIAIS** até os testes de campo, reconciliação e aceite de processos reais.
+
+## Entrega 11 — chamados internos e por cliente + browser E2E (2026-10-13)
+
+### Implementado (parcial em relação ao README)
+- `service_tickets` e `service_ticket_comments` com FKs escopadas por tenant/cliente, estado, prioridade, categoria, impressora opcional, responsável, cronologia e corpo de comentário interno/público.
+- Form Requests e recursos explícitos; serviços transacionais para abertura, comentários e alteração de estado, com trilha de auditoria sem duplicar o conteúdo privado nas entradas de auditoria.
+- Chamados internos sem cliente; tickets de cliente só admitem equipamentos ativos pertencentes ao mesmo cliente/tenant.
+- `triage`, `unassigned`, `pending`, `in_progress`, `resolved`, `closed`: transições permitidas explicitamente; reabertura de encerrados só por supervisão, atendimento em progresso exige responsável.
+- Escopo de carteira aplicado na listagem e no acesso por ID; teste de bloqueio de tentativa cross-tenant e carteira restrita.
+- `/chamados` no React com fila, filtro por estado, abertura, visualização, comentário interno/público e transição; rotas reais, sem fixtures inventados.
+- Corrigida integração dos filtros `q=` e `active_only=true` nas listagens existentes de clientes e impressoras, após descoberta por testes E2E.
+- Correção do cache de sessão React Query: preservar o observador de autenticação entre login/logout sem expor tokens ao JavaScript.
+- Adicionado `portal/e2e/operations.spec.ts` em Playwright com Chromium real em dois perfis (desktop e viewport móvel), Laravel real, Vite real e SQLite isolado; valida login, clientes, ticket, comentário, mudança de estado, estoque e logout. Job CI não utiliza mocks de API.
+- 7 novos testes PHPUnit de Help Desk e uma regressão para filtros de URL; executados em SQLite e PostgreSQL no GitHub Actions.
+
+### Limitações / não declarar aceite 100%
+- Abertura externa pelo cliente ainda não existe: `NX-127` só é parcial, pois falta portal do cliente e vínculo de alertas/dispositivos.
+- Não há calendário de SLA, prazos úteis, escalonamento, ordem de serviço, anexo, impressão, custo por atendimento, notificação, vínculo de peças, alerta ou faturamento.
+- A coluna `internal=false` identifica comentário destinado ao cliente, mas **não existe endpoint de visualização por cliente**; `QA-17` não pode ser aceito sem autorização comprovada em portal real.
+- A UI inicial não suporta seleção múltipla de impressoras/dispositivos, campo de equipe, troca direta de responsável sem transição, nem paginação remota nos seletores com mais de 100 registros.
+- Teste Playwright cobre uma jornada específica, não os 62 QA integrais. Teste emulando viewport mobile não é ensaio em dispositivo físico. Homologação de produção permanece pendente.

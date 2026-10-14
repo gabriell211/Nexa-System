@@ -68,4 +68,21 @@ final class AdministrativeSearchTest extends TestCase
             ->getJson('/api/v1/printers?per_page=1000')
             ->assertUnprocessable();
     }
+
+    public function test_empty_browser_search_parameters_show_default_lists_without_validation_errors(): void
+    {
+        $tenant = Tenant::create(['name' => 'Empty Search Provider', 'slug' => 'empty-search']);
+        $customer = $tenant->customers()->create(['name' => 'Visible customer']);
+        $tenant->printers()->create([
+            'customer_id' => $customer->id,
+            'manufacturer' => 'Kyocera', 'model' => 'E2E printer',
+        ]);
+        $this->withToken($this->tokenFor($tenant))
+            ->getJson('/api/v1/customers?page=1&q=&active_only=true')
+            ->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.name', 'Visible customer');
+        $this->getJson('/api/v1/printers?page=1&q=&active_only=true')
+            ->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.model', 'E2E printer');
+    }
 }

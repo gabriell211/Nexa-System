@@ -1,0 +1,33 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Http\Resources;
+
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\JsonResource;
+
+final class ServiceTicketResource extends JsonResource
+{
+    public function toArray(Request $request): array
+    {
+        return [
+            'id'=>$this->id,'customer_id'=>$this->customer_id,'printer_id'=>$this->printer_id,
+            'assigned_user_id'=>$this->assigned_user_id,'subject'=>$this->subject,
+            'description'=>$this->description,'category'=>$this->category,
+            'priority'=>$this->priority,'status'=>$this->status,'origin'=>$this->origin,
+            'created_at'=>$this->created_at,'updated_at'=>$this->updated_at,
+            'first_responded_at'=>$this->first_responded_at,'resolved_at'=>$this->resolved_at,
+            'closed_at'=>$this->closed_at,
+            'customer'=>$this->whenLoaded('customer', fn () => $this->customer?->only(['id','name'])),
+            'printer'=>$this->whenLoaded('printer', fn () => $this->printer?->only(['id','manufacturer','model'])),
+            'assignee'=>$this->whenLoaded('assignee', fn () => $this->assignee?->only(['id','name'])),
+            'comments'=>$this->whenLoaded('comments', fn () => $this->comments->map(
+                static fn ($comment): array => [
+                    'id'=>$comment->id,'body'=>$comment->body,'internal'=>(bool)$comment->internal,
+                    'created_at'=>$comment->created_at,
+                    'author'=>$comment->relationLoaded('author') ? $comment->author?->only(['id','name']) : null,
+                ],
+            )),
+        ];
+    }
+}

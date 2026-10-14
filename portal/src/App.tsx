@@ -2,7 +2,7 @@ import { useDeferredValue, useState, type FormEvent, type ReactNode } from 'reac
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
-  Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList,
+  Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList, ClipboardCheck,
   Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon,
   Search, ShieldCheck, Trash2, Users, X, MapPin, UserRoundCog,
 } from 'lucide-react';
@@ -12,6 +12,7 @@ import { StaffPage } from './pages/StaffPage';
 import { InventoryPage } from './pages/InventoryPage';
 import { ShipmentsPage } from './pages/ShipmentsPage';
 import { SuppliesPage } from './pages/SuppliesPage';
+import { TicketsPage } from './pages/TicketsPage';
 import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
 import type {
   AuditEntry, Credentials, CurrentUser, Customer, CustomerPayload, Dashboard,
@@ -148,6 +149,10 @@ function Shell({ token, identity, onLogout }: {
         <NavLink to="/dashboard" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><LayoutDashboard size={19}/> Visão geral</NavLink>
         <NavLink to="/clientes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Users size={19}/> Clientes</NavLink>
         <NavLink to="/parque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><PrinterIcon size={19}/> Parque de impressoras</NavLink>
+        {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
+          <NavLink to="/chamados" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
+            <ClipboardCheck size={19}/> Chamados
+          </NavLink>}
         {canStock && <NavLink to="/estoque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Database size={19}/> Estoque</NavLink>}
         {canStock && <NavLink to="/reposicoes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ArrowRight size={19}/> Remessas</NavLink>}
         {canStock && <NavLink to="/suprimentos" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ClipboardList size={19}/> Suprimentos</NavLink>}
@@ -158,15 +163,18 @@ function Shell({ token, identity, onLogout }: {
       <div className="sidebar-footer">
         <div className="profile-circle">{identity.user.name.slice(0, 1).toUpperCase()}</div>
         <div className="profile-text"><strong>{identity.user.name}</strong><small>{identity.role}</small></div>
-        <button type="button" className="icon-button transparent" onClick={() => void onLogout()} title="Encerrar sessão" aria-label="Encerrar sessão">
-          <LogOut size={19} aria-hidden="true" />
-        </button>
+
       </div>
     </aside>
     <div className="content-area">
       <header className="topbar">
         <span className="topbar-breadcrumb">Nexa <span>/</span> Painel administrativo</span>
-        <span className="system-status"><span className="status-dot" /> Dados da API</span>
+        <div className="topbar-actions">
+          <span className="system-status"><span className="status-dot" /> Dados da API</span>
+          <button type="button" className="button ghost topbar-logout" onClick={() => void onLogout()} aria-label="Encerrar sessão" title="Encerrar sessão">
+            <LogOut size={17} aria-hidden="true" /> Sair
+          </button>
+        </div>
       </header>
       <main className="main-content">
         <Routes>
@@ -174,6 +182,8 @@ function Shell({ token, identity, onLogout }: {
           <Route path="/clientes" element={<CustomersPage token={token} canWrite={canWrite} />} />
           <Route path="/clientes/:id/unidades" element={<CustomerOrganizationPage token={token} canWrite={canWrite} />} />
           <Route path="/parque" element={<PrintersPage token={token} canWrite={canWrite} />} />
+          {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
+            <Route path="/chamados" element={<TicketsPage canReopen={canWrite||identity.role==='supervisor'} />} />}
           {canStock && <Route path="/estoque" element={<InventoryPage token={token} />} />}
           {canStock && <Route path="/reposicoes" element={<ShipmentsPage token={token} canClose={canWrite} />} />}
           {canStock && <Route path="/suprimentos" element={<SuppliesPage token={token} canRemove={canWrite} />} />}
@@ -528,7 +538,10 @@ export function App() {
     });
     // Server regenerates session and CSRF on login. Never reuse the old token.
     resetCsrf();
-    qc.clear();
+    // Removing the observed browser-session query detaches its React Query
+    // observer and can leave the login screen rendered after a 200 response.
+    // Clear only tenant-scoped operational data and update the observed query.
+    qc.removeQueries({ predicate: q => q.queryKey[0] !== 'browser-session' });
     qc.setQueryData(['browser-session'], result);
     setLogoutError(null);
   }
@@ -537,7 +550,7 @@ export function App() {
     try {
       await api<{ message: string }>('/auth/logout', null, { method: 'POST' });
       resetCsrf();
-      qc.clear();
+      qc.removeQueries({ predicate: q => q.queryKey[0] !== 'browser-session' });
       qc.setQueryData(['browser-session'], null);
       setLogoutError(null);
     } catch (error) {

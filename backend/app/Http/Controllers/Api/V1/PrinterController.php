@@ -22,10 +22,10 @@ final class PrinterController extends Controller
     {
         $tenant = $request->attributes->get('nexa_tenant');
         $filters = $request->validate([
-            'q' => ['sometimes', 'string', 'max:100'],
+            'q' => ['sometimes', 'nullable', 'string', 'max:100'],
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
-            'active_only' => ['sometimes', 'boolean'],
+            'active_only' => ['sometimes', 'in:0,1,true,false'],
         ]);
         $term = mb_strtolower(trim($filters['q'] ?? ''));
 
