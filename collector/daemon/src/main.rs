@@ -106,7 +106,7 @@ fn attempt_upload(
             // A local SQLite or persisted payload failure needs explicit service
             // supervision, not endless network retries masking corrupted storage.
             if matches!(
-                error,
+                &error,
                 CollectorError::Storage(_) | CollectorError::Io(_) | CollectorError::Json(_)
             ) {
                 return Err(error);
