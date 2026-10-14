@@ -7,7 +7,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     path::Path,
     str::FromStr,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use thiserror::Error;
 use uuid::Uuid;
@@ -22,14 +22,95 @@ pub enum CollectorError {
     Io(#[from] std::io::Error),
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
-    #[error("transport failed: {0}")]
+    #[error("transport request or response failed")]
     Transport(#[from] reqwest::Error),
+    #[error("server rejected upload with HTTP {status}")]
+    HttpStatus { status: u16, retry_after_seconds: Option<u64> },
+    #[error("server acknowledgement is invalid")]
+    InvalidAcknowledgement,
     #[error("SNMP read failed")]
     Snmp,
     #[error("outbox reached configured sample limit ({limit}); pending readings are retained")]
     OutboxFull { limit: u64 },
     #[error("sample UUID reused with different reading content")]
     SampleConflict,
+}
+
+/// Typed delivery state controls retries independently from the SNMP polling interval.
+/// The queue itself is never deleted or mutated by this policy.
+#[derive(Debug, Default)]
+pub struct UploadRetryPolicy {
+    failures: u32,
+    next_attempt: Option<Instant>,
+}
+
+impl UploadRetryPolicy {
+    pub fn ready(&self, now: Instant) -> bool {
+        self.next_attempt.is_none_or(|deadline| now >= deadline)
+    }
+
+    /// Avoid flooding the API while still promptly draining batches after ACK.
+    pub fn on_success(&mut self, now: Instant) {
+        self.failures = 0;
+        self.next_attempt = Some(now + Duration::from_secs(10));
+    }
+
+    /// Exponential delays (15s..1h), deterministic 10% jitter, with server
+    /// Retry-After respected up to 6 hours for HTTP 429/503 only.
+    /// Invalid payload/identity responses are throttled to allow operator action.
+    pub fn on_failure(&mut self, now: Instant, collector_id: Uuid, error: &CollectorError) -> u64 {
+        self.failures = self.failures.saturating_add(1);
+        let exponent = self.failures.saturating_sub(1).min(8);
+        let base = 15_u64.saturating_mul(1_u64 << exponent).min(3600);
+        let spread = (base / 10).max(1);
+        let jitter = ((collector_id.as_u128() as u64) ^ self.failures as u64) % (spread + 1);
+        let mut delay = base + jitter;
+
+        match error {
+            CollectorError::HttpStatus { status, retry_after_seconds } => {
+                if matches!(*status, 429 | 503) {
+                    if let Some(after) = retry_after_seconds {
+                        delay = delay.max((*after).min(21_600));
+                    }
+                }
+                if (400..500).contains(status) && !matches!(*status, 408 | 425 | 429) {
+                    delay = delay.max(900);
+                }
+            }
+            CollectorError::InvalidAcknowledgement => delay = delay.max(900),
+            _ => {}
+        }
+        self.next_attempt = Some(now + Duration::from_secs(delay));
+        delay
+    }
+
+    pub fn failures(&self) -> u32 { self.failures }
+}
+
+/// Never include request bodies, authentication tokens, or server error bodies in logs.
+pub fn upload_error_kind(error: &CollectorError) -> &'static str {
+    match error {
+        CollectorError::HttpStatus { status: 401 | 403, .. } => "authorization",
+        CollectorError::HttpStatus { status: 408 | 425 | 429, .. } => "retryable-http",
+        CollectorError::HttpStatus { status: 500..=599, .. } => "server-unavailable",
+        CollectorError::HttpStatus { .. } => "http-rejected",
+        CollectorError::Transport(_) => "transport",
+        CollectorError::InvalidAcknowledgement => "invalid-ack",
+        CollectorError::Storage(_) | CollectorError::Io(_) | CollectorError::Json(_) => "local-storage",
+        _ => "configuration",
+    }
+}
+
+/// Retry-After delta seconds: malformed values (including HTTP dates) do not
+/// bypass the exponential fallback. Absolute-date support remains pending.
+fn retry_after_delta(value: Option<&reqwest::header::HeaderValue>) -> Option<u64> {
+    value?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(|seconds| seconds.min(21_600))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -310,12 +391,22 @@ pub fn upload_pending(
         .post(format!("{}/api/v1/collector/ingest", cfg.api_url.trim_end_matches('/')))
         .bearer_auth(token)
         .json(&IngestBody { collector_id: cfg.collector_id, samples: &samples })
-        .send()?
-        .error_for_status()?;
+        .send()?;
+    if !response.status().is_success() {
+        return Err(CollectorError::HttpStatus {
+            status: response.status().as_u16(),
+            retry_after_seconds: retry_after_delta(
+                response.headers().get(reqwest::header::RETRY_AFTER)
+            ),
+        });
+    }
     let ack: IngestAck = response.json()?;
+    if ack.acknowledged.is_empty() {
+        return Err(CollectorError::InvalidAcknowledgement);
+    }
     let sent_ids: std::collections::HashSet<Uuid> = samples.iter().map(|s| s.sample_id).collect();
     if ack.acknowledged.iter().any(|id| !sent_ids.contains(id)) {
-        return Err(CollectorError::Configuration("invalid server acknowledgement".into()));
+        return Err(CollectorError::InvalidAcknowledgement);
     }
     outbox.acknowledge(&ack.acknowledged)?;
     Ok(ack.acknowledged.len())
@@ -463,6 +554,84 @@ mod tests {
         assert!(cfg.validate().is_ok());
         let pause = heartbeat_sleep_seconds(60, id);
         assert!((60..=66).contains(&pause));
+    }
+
+    #[test]
+    fn exponential_retry_tracks_network_failures_without_mutating_queue() {
+        let id = Uuid::nil();
+        let start = Instant::now();
+        let mut retry = UploadRetryPolicy::default();
+        assert!(retry.ready(start));
+        let delay1 = retry.on_failure(start, id, &CollectorError::Snmp);
+        assert!((15..=16).contains(&delay1));
+        assert!(!retry.ready(start + Duration::from_secs(delay1 - 1)));
+        assert!(retry.ready(start + Duration::from_secs(delay1)));
+        let delay2 = retry.on_failure(start, id, &CollectorError::Snmp);
+        assert!((30..=33).contains(&delay2));
+        for _ in 0..15 {
+            retry.on_failure(start, id, &CollectorError::Snmp);
+        }
+        assert_eq!(retry.failures(), 17);
+        let max_delay = retry.on_failure(start, id, &CollectorError::Snmp);
+        assert!((3600..=3960).contains(&max_delay));
+        retry.on_success(start);
+        assert_eq!(retry.failures(), 0);
+        assert!(!retry.ready(start + Duration::from_secs(9)));
+        assert!(retry.ready(start + Duration::from_secs(10)));
+    }
+
+    #[test]
+    fn honors_rate_limits_and_fails_closed_for_auth_or_bad_ack() {
+        let start = Instant::now();
+        let id = Uuid::nil();
+        let mut retry = UploadRetryPolicy::default();
+        let delay = retry.on_failure(start, id, &CollectorError::HttpStatus {
+            status: 429,
+            retry_after_seconds: Some(2400),
+        });
+        assert_eq!(delay, 2400);
+        assert!(!retry.ready(start + Duration::from_secs(2399)));
+        assert!(retry.ready(start + Duration::from_secs(2400)));
+
+        retry.on_success(start);
+        let auth = retry.on_failure(start, id, &CollectorError::HttpStatus {
+            status: 401,
+            retry_after_seconds: None,
+        });
+        assert!(auth >= 900);
+        retry.on_success(start);
+        let bad_ack = retry.on_failure(start, id, &CollectorError::InvalidAcknowledgement);
+        assert!(bad_ack >= 900);
+    }
+
+    #[test]
+    fn ignores_malformed_or_untrusted_retry_after_values() {
+        use reqwest::header::HeaderValue;
+        assert_eq!(retry_after_delta(Some(&HeaderValue::from_static("23"))), Some(23));
+        assert_eq!(retry_after_delta(Some(&HeaderValue::from_static("99999999"))), Some(21600));
+        assert_eq!(retry_after_delta(Some(&HeaderValue::from_static("Wed, 21 Oct 2030 07:28:00 GMT"))), None);
+        assert_eq!(retry_after_delta(Some(&HeaderValue::from_static("bad"))), None);
+        assert_eq!(retry_after_delta(None), None);
+    }
+
+    #[test]
+    fn queue_survives_a_failed_upload_retry_without_ack() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("queue.sqlite");
+        let sample = sample_with_meter(93);
+        {
+            let outbox = Outbox::open_bounded(&path, 1).unwrap();
+            outbox.enqueue(&sample).unwrap();
+            let mut retry = UploadRetryPolicy::default();
+            retry.on_failure(Instant::now(), Uuid::nil(), &CollectorError::HttpStatus {
+                status: 503,
+                retry_after_seconds: Some(200),
+            });
+            assert_eq!(outbox.pending().unwrap(), 1);
+        }
+        let reopened = Outbox::open_bounded(path, 1).unwrap();
+        assert_eq!(reopened.pending().unwrap(), 1);
+        assert_eq!(reopened.next_batch(1).unwrap()[0].sample_id, sample.sample_id);
     }
 
     #[test]
