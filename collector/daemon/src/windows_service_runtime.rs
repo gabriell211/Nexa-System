@@ -102,3 +102,24 @@ fn run_service() -> windows_service::Result<()> {
     handle.set_service_status(status(ServiceState::Stopped, succeeded))?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn service_only_accepts_stop_after_running() {
+        let pending = status(ServiceState::StartPending, true);
+        assert!(pending.controls_accepted.is_empty());
+        assert_eq!(pending.checkpoint, 1);
+        assert_eq!(pending.wait_hint, Duration::from_secs(60));
+
+        let running = status(ServiceState::Running, true);
+        assert!(running.controls_accepted.contains(ServiceControlAccept::STOP));
+        assert_eq!(running.exit_code, ServiceExitCode::Win32(0));
+
+        let stopped = status(ServiceState::Stopped, false);
+        assert!(stopped.controls_accepted.is_empty());
+        assert_eq!(stopped.exit_code, ServiceExitCode::Win32(1));
+    }
+}
