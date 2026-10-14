@@ -17,6 +17,13 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Serviço nativo Windows (SCM) — incremento 26, validação parcial
+
+- Novo modo `--service` para o daemon Rust no Windows: registra no **Service Control Manager** o estado *StartPending → Running → Stopped*, recebe `SERVICE_CONTROL_STOP` e solicita parada cooperativa. O ciclo principal verifica o sinal de parada inclusive entre as consultas SNMP; a fila SQLite continua intacta.
+- Novo instalador administrativo `collector/windows/install.ps1`: registra **NexaCollector** com conta `LocalService` (não LocalSystem), inicialização manual e ações de recuperação em falha. O script recusa instalações existentes e não inicia o serviço antes da configuração.
+- Credenciais fornecidas por arquivos protegidos por ACL sob `%ProgramData%\\NexaCollector\\credentials`. No modo SCM, `NEXA_COLLECTOR_TOKEN`, `NEXA_COLLECTOR_DB_KEY_HEX` e `NEXA_SNMP_COMMUNITY` **não vêm de variáveis de ambiente**; ausência de credenciais não permite abrir banco plaintext. Configuração e fila ficam sob `%ProgramData%\\NexaCollector`, em diretórios com permissões de `SYSTEM`, administradores e `LocalService`.
+- CI Windows com `cargo test` nativo, validação de sintaxe PowerShell, contrato de inicialização manual, ACL e estados SCM. **Não equivale a testar o serviço instalado em máquina física, boot, falha de energia ou travamento interno.** NX-039 e NX-035 continuam parciais; macOS launchd ainda não implementado.
+
 ### Serviço nativo Linux com credenciais isoladas — incremento 25 (parcial)
 
 - Novo arquivo `collector/linux/nexa-collector.service` com processo independente `systemd`, identidade `nexa-collector`, diretório persistente privado via `StateDirectory`, reinício em falha limitado por `StartLimitBurst`, máscara `UMask=0077` e hardening de filesystem/processo.

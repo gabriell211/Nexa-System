@@ -11,3 +11,6 @@ nexa-collector-core = { path = "../core" }
 
 [dev-dependencies]
 tempfile = "3"
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "=0.8.1"

@@ -178,3 +178,33 @@ Agora há uma unidade `collector/linux/nexa-collector.service` e instalador `col
 O serviço restringe permissões de kernel/filesystem e reinicia em falhas de processo com atraso; a configuração **não** tem `WatchdogSec=` nem protocolo `sd_notify`, portanto não detecta deadlocks ou loops que mantêm o processo vivo. Serviços Windows/macOS, supervisionamento da UI, integração com keychain, instaladores assinados, atualização automática, compatibilidade SNMPv3 e ensaios reais de boot/energia/rede continuam pendentes. A chave permanece em arquivo root-only na origem de `LoadCredential`, não num cofre criptografado nativo; systemd apenas fornece uma cópia protegida ao processo.
 
 **CI:** `scripts/verify_collector_linux_service.py` verifica estruturalmente o unit, hardening, sintaxe Bash e ausência de auto-start; testes Rust exercitam leitura de credenciais com limites, conteúdo vazio e multilinha. Isso NÃO valida execução real do serviço na estação.
+
+## Serviço nativo Windows — entrega 26
+
+O Collector agora oferece integração inicial com o **Windows Service Control Manager** via crate `windows-service` (somente na compilação Windows). O comando `--service` é reservado à execução pelo SCM e recebe `Stop` para encerrar cooperativamente entre operações. Como consultas SNMP e chamadas HTTPS são bloqueantes, a parada pode levar até o timeout dessas operações; **não** há watchdog do loop ainda.
+
+### Instalação administrativa (não inicia automaticamente)
+
+Compile `nexa-collector-daemon.exe` para Windows, abra PowerShell elevado e execute:
+
+```powershell
+.\collector\windows\install.ps1 -DaemonExe "C:\caminho\absoluto\nexa-collector-daemon.exe"
+```
+
+O instalador registra `NexaCollector` com conta `NT AUTHORITY\LocalService`, início **manual** e recuperação em caso de falha reconhecida pelo SCM. Recusa um serviço ou diretório de dados existente: atualizações exigem procedimento de manutenção revisado. A instalação não contém senhas/chaves em argumentos, PowerShell ou registro do serviço.
+
+Edite `%ProgramData%\NexaCollector\config.json` com os identificadores reais, URL HTTPS e impressoras permitidas. Provisione os arquivos UTF-8 (sem BOM) em `%ProgramData%\NexaCollector\credentials`: `NEXA_COLLECTOR_TOKEN` (64 caracteres hex), `NEXA_COLLECTOR_DB_KEY_HEX` (64 caracteres hex aleatórios independentes), e `NEXA_SNMP_COMMUNITY` se houver impressoras configuradas. Os diretórios recebem ACL para SYSTEM, Administradores e LocalService; confirme as ACLs dos próprios arquivos antes de iniciar, principalmente se copiados de outras pastas. **Não** use um `.env` do sistema, nem distribua segredos em scripts, logs ou documentação.
+
+A base criptografada nova é criada sob `%ProgramData%\NexaCollector\data\queue.sqlite`. Bancos existentes plaintext precisam passar antes pela migração auditada e explicitamente apontada pelo operador.
+
+Só depois de verificar a configuração e o provisionamento, inicie manualmente:
+
+```powershell
+Start-Service -Name NexaCollector
+Get-Service -Name NexaCollector
+Stop-Service -Name NexaCollector
+```
+
+O SCM mostra estados StartPending/Running/Stopped. A parada solicita interrupção do loop e deixa o SQLite ser fechado pelo processo. Falha de inicialização reporta saída com erro; as ações configuradas de recuperação não substituem supervisão de processos travados que permanecem vivos.
+
+**Limites:** não foi executado em estação Windows física, ainda não há política de atualização assinada, instalador MSI, DPAPI/Credential Manager, watchdog de deadlock, comunicação IPC autenticada com Tauri nem testes de falha de rede/energia. O estado Running indica inicialização do daemon, não disponibilidade das impressoras. NX-035, NX-039 e NX-041 permanecem parciais.

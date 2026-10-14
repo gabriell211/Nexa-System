@@ -32,7 +32,7 @@ for key, filename in {
 }.items():
     directive = f"LoadCredential={key}:/etc/nexa-collector/credentials/{filename}"
     assert directive in unit, directive
-    assert f'load_secret("{key}")' in daemon, key
+    assert f'load_secret("{key}", windows_service_mode)' in daemon, key
 
 assert "CREDENTIALS_DIRECTORY" in daemon
 assert not re.search(r"^Environment=.*(KEY|TOKEN|COMMUNITY)", unit, re.M)

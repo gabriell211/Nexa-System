@@ -474,3 +474,17 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Não foi executado o serviço em host real; `systemd-analyze verify` não comprova boot, reinício real, permissões montadas, conectividade SNMP ou escrita da outbox.
 - Não existe `sd_notify`/watchdog para processo travado que não encerra; reinício é apenas em falha, com limite de tentativas. `NX-039` permanece PARCIAL.
 - Não existe serviço nativo Windows ou launchd macOS, Tauri nativo validado, armazenamento de segredos em TPM/DPAPI/keychain, SNMPv3, instalador assinado ou homologação de dispositivos; `NX-035`, `NX-039`, `NX-041` continuam parciais.
+
+## Entrega 26 — integração inicial com Windows Service Control Manager (14/10/2026)
+
+### Implementado para validação
+- Rust `windows_service_runtime` com `define_windows_service!`, handler SCM para Stop/Interrogate e transições explícitas StartPending/Running/Stopped. `--service` usa caminhos fixos sob ProgramData e chama o mesmo núcleo da CLI, com flag de parada cooperativa entre verificações/consultas.
+- `run_application` aceita sinal de shutdown; heartbeat sai quando solicitado, loop principal cessa e o SQLite permanece intacto. Operações SNMP/HTTPS em andamento podem atrasar o stop até o respectivo timeout, sem garantia de shutdown instantâneo.
+- No serviço Windows, segredos só são carregados de arquivos em `%ProgramData%\NexaCollector\credentials`. Inexistência de chave DB impede criar plaintext; não cai para variáveis herdadas do ambiente. Arquivos precisam de ACL restrita; modo CLI continua compatível.
+- Instalador `collector/windows/install.ps1` registra SCM com `LocalService`, configura ações de recuperação, diretórios/ACLs com SIDs conhecidos, não sobrescreve instalações existentes e não ativa automaticamente.
+- CI adicional Windows executa testes core/daemon nativos e valida parsing do PowerShell, contratos SCM, ausência de auto-start, configuração de ACL. Teste Windows de estados aceita Stop somente em Running e reporta falha na parada.
+
+### Limites
+- CI não executa `Start-Service` em máquina implantada. Falta teste operacional de boot, interrupção elétrica, permissões pós-instalação, comportamento de WAL e recuperação efetiva do SCM.
+- Ainda sem DPAPI/cofre nativo, watchdog heartbeat interno para hang e proteção de credenciais além de ACLs; não existe MSI assinado ou autoatualização. macOS launchd pendente.
+- NX-035, NX-039 e NX-041 continuam PARCIAIS; 324 NX e 62 QA não foram declarados completos.
