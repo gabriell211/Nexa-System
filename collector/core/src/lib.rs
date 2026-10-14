@@ -36,12 +36,16 @@ pub struct PrinterConfig {
     pub marker_counter_oid: Vec<u64>,
 }
 
+fn default_heartbeat_interval() -> u64 { 60 }
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CollectorConfig {
     pub collector_id: Uuid,
     pub api_url: String,
     pub interval_seconds: u64,
+    #[serde(default = "default_heartbeat_interval")]
+    pub heartbeat_interval_seconds: u64,
     pub authorized_subnets: Vec<String>,
     pub printers: Vec<PrinterConfig>,
 }
@@ -50,6 +54,9 @@ impl CollectorConfig {
     pub fn validate(&self) -> Result<(), CollectorError> {
         if self.interval_seconds < 60 || self.interval_seconds > 86400 {
             return Err(CollectorError::Configuration("interval must be 60..86400 seconds".into()));
+        }
+        if !(30..=3600).contains(&self.heartbeat_interval_seconds) {
+            return Err(CollectorError::Configuration("heartbeat_interval_seconds must be 30..3600".into()));
         }
         if !self.api_url.starts_with("https://") {
             return Err(CollectorError::Configuration("api_url must use HTTPS".into()));
@@ -200,6 +207,44 @@ struct IngestAck {
     acknowledged: Vec<Uuid>,
 }
 
+#[derive(Serialize)]
+struct HeartbeatBody {
+    collector_id: Uuid,
+}
+#[derive(Deserialize)]
+struct HeartbeatAck {
+    acknowledged: bool,
+    collector_id: Uuid,
+}
+
+/// A successful HTTP POST is not enough: verify the bound identity and ACK.
+/// No meter or device state is uploaded as part of this heartbeat.
+pub fn send_heartbeat(cfg: &CollectorConfig, token: &str) -> Result<(), CollectorError> {
+    if token.len() != 64 || !token.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
+        return Err(CollectorError::Configuration("collector token must be 64 hex characters".into()));
+    }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?;
+    let ack: HeartbeatAck = client
+        .post(format!("{}/api/v1/collector/heartbeat", cfg.api_url.trim_end_matches('/')))
+        .bearer_auth(token)
+        .json(&HeartbeatBody { collector_id: cfg.collector_id })
+        .send()?.error_for_status()?.json()?;
+    if !ack.acknowledged || ack.collector_id != cfg.collector_id {
+        return Err(CollectorError::Configuration("heartbeat ACK identity mismatch".into()));
+    }
+    Ok(())
+}
+
+/// Deterministic up-to-10% jitter spreads restarts across collectors without
+/// causing frequent retries during connectivity failures.
+pub fn heartbeat_sleep_seconds(seconds: u64, collector_id: Uuid) -> u64 {
+    let spread = (seconds / 10).max(1);
+    seconds + (collector_id.as_u128() as u64 % (spread + 1))
+}
+
 pub fn upload_pending(
     cfg: &CollectorConfig,
     token: &str,
@@ -256,7 +301,7 @@ mod tests {
     fn disallows_outside_authorized_cidr() {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
-            interval_seconds: 300, authorized_subnets: vec!["192.168.1.0/24".into()],
+            interval_seconds: 300, heartbeat_interval_seconds: 60, authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![PrinterConfig {
                 printer_id: 1, ip: "10.1.1.10".parse().unwrap(),
                 marker_counter_oid: vec![1,3,6,1,2,1,43,10,2,1,4,1,1],
@@ -266,10 +311,41 @@ mod tests {
     }
 
     #[test]
+    fn validates_heartbeat_separately_from_meter_polling() {
+        let mut cfg = CollectorConfig {
+            collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
+            interval_seconds: 1800, heartbeat_interval_seconds: 60,
+            authorized_subnets: vec!["192.168.1.0/24".into()], printers: vec![],
+        };
+        assert!(cfg.validate().is_ok());
+        cfg.heartbeat_interval_seconds = 0;
+        assert!(cfg.validate().is_err());
+        cfg.heartbeat_interval_seconds = 3601;
+        assert!(cfg.validate().is_err());
+        cfg.heartbeat_interval_seconds = 30;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn legacy_configs_default_to_60_second_heartbeats() {
+        let id = Uuid::new_v4();
+        let raw = serde_json::json!({
+            "collector_id": id, "api_url": "https://nexa.example",
+            "interval_seconds": 1800,
+            "authorized_subnets": ["192.168.1.0/24"], "printers": []
+        });
+        let cfg: CollectorConfig = serde_json::from_value(raw).unwrap();
+        assert_eq!(cfg.heartbeat_interval_seconds, 60);
+        assert!(cfg.validate().is_ok());
+        let pause = heartbeat_sleep_seconds(60, id);
+        assert!((60..=66).contains(&pause));
+    }
+
+    #[test]
     fn rejects_insecure_server_endpoint() {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "http://example.test".into(),
-            interval_seconds: 300, authorized_subnets: vec!["192.168.1.0/24".into()],
+            interval_seconds: 300, heartbeat_interval_seconds: 60, authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![],
         };
         assert!(cfg.validate().is_err());
