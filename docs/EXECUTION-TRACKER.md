@@ -296,3 +296,20 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Não há fechamento automático do alerta ao resolver chamado, porque o status de um ticket não prova recuperação da impressora. Requer regra explícita e validação de origem.
 - Seletores da UI limitados aos primeiros 100 equipamentos/chamados autorizados; precisa busca paginada, escopo por unidade e melhorias de escala.
 - Relatórios, notificações e aceite físico permanecem pendentes. Nenhum requisito NX é marcado integralmente.
+
+## Entrega 13 — avaliação agendada da ausência de leituras (14/10/2026)
+
+### Funcionalidade em validação
+- Comando Artisan `nexa:alerts:check-telemetry` agendado a cada cinco minutos; execução desabilitada por padrão e sem notificações externas.
+- Regras `NEXA_TELEMETRY_GAP_ENABLED`, `NEXA_TELEMETRY_GAP_MINUTES` (60 inicialmente) e `NEXA_TELEMETRY_RECOVERY_MINUTES` (10 inicialmente), com limites validados e recuperação menor que tolerância.
+- Busca agregada de última coleta, processada em blocos de 100; verifica tenants, clientes e impressoras ativos e utiliza transação/lock por impressora para evitar duplicação sob concorrência.
+- Incidentes com `origin=telemetry`, `code=TELEMETRY_GAP` e `telemetry_anchor_id` persistente, identificando a leitura que iniciou o episódio. Ignorar/resolver não causa abertura repetida sobre a mesma leitura-base.
+- Auditoria do processo com ator nulo, origem `scheduled-telemetry-check` e timestamp/código observados: nenhum funcionário/collector fictício é atribuído.
+- Confirmação de recuperação requer duas leituras realmente posteriores ao alerta, separadas por intervalo configurado e com última leitura fresca. Chamados associados bloqueiam o fechamento automático.
+- A lista de alertas distingue explicitamente origem por operador e ausência detectada pela avaliação agendada.
+- `TelemetryGapMonitorTest` cobre ausência de base, limiar, dedup, recuperação, status terminal, tenant inativo, amostras atrasadas, vínculos, disabled por padrão, configuração inválida.
+
+### Não implementado
+- Status físico online/offline, heartbeat separado da coleta, perda de comunicação agente-servidor, leitura SNMP de estados, geração de alerta por toner/peças, supressão por janela e regras avançadas por equipamento.
+- Operação depende de scheduler de Laravel realmente ativo na infraestrutura. A opção fica desligada até definir política por cliente, intervalo de coleta e comportamento de suporte.
+- Ativar este monitor não substitui monitoramento de rede nem garante detecção de falha de impressão; métricas representam somente ausência observada de leituras.
