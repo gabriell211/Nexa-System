@@ -31,7 +31,7 @@ script_dir="$(cd -- "$(dirname -- "$0")" && pwd)"
 uid_list="$(dscl . -list /Users UniqueID | /usr/bin/awk '{print $2}')"
 gid_list="$(dscl . -list /Groups PrimaryGroupID | /usr/bin/awk '{print $2}')"
 selected=''
-for candidate in $(/usr/bin/seq 430 499); do
+for candidate in {430..499}; do
     if ! printf '%s\n' "$uid_list" | /usr/bin/grep -qx "$candidate" &&
        ! printf '%s\n' "$gid_list" | /usr/bin/grep -qx "$candidate"; then
         selected="$candidate"
