@@ -6,6 +6,13 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 type PrinterInfo = { printer_id: number; ip: string; oid: string };
+type DeliveryDiagnostics = {
+  last_success_at: string | null;
+  last_failure_at: string | null;
+  last_error_kind: string | null;
+  next_attempt_at: string | null;
+  consecutive_failures: number;
+};
 type CollectorSnapshot = {
   configured: boolean;
   collector_id: string | null;
@@ -14,6 +21,7 @@ type CollectorSnapshot = {
   printers: PrinterInfo[];
   queue_pending: number | null;
   queue_capacity: number | null;
+  delivery: DeliveryDiagnostics | null;
   last_run: string | null;
   error: string | null;
 };
@@ -151,7 +159,22 @@ export default function App() {
                   <Info icon={CircleHelp} label="Serviço do sistema" value="Estado não verificado pela interface" />
                 </div>
               </section>
-              <div className="notice">O serviço Rust é independente da janela. Este console ainda não controla instalação, reinicialização ou atualizações do serviço.</div>
+              <section className="panel">
+                <div className="panel-title"><h2>Diagnóstico de transmissão</h2><span>Histórico local da outbox</span></div>
+                <div className="detail-grid">
+                  <Info icon={CheckCircle2} label="Último ACK de upload"
+                    value={snapshot?.delivery?.last_success_at ? formatDate(snapshot.delivery.last_success_at) : "Sem confirmação registrada"} />
+                  <Info icon={Activity} label="Última falha"
+                    value={snapshot?.delivery?.last_failure_at ? formatDate(snapshot.delivery.last_failure_at) : "Sem falha registrada"} />
+                  <Info icon={CircleHelp} label="Categoria da falha"
+                    value={snapshot?.delivery?.last_error_kind ?? "Nenhuma falha pendente"} />
+                  <Info icon={RefreshCcw} label="Próxima tentativa (estimada)"
+                    value={snapshot?.delivery?.next_attempt_at ? formatDate(snapshot.delivery.next_attempt_at) : "Sem bloqueio de retry registrado"} />
+                  <Info icon={Network} label="Falhas consecutivas"
+                    value={String(snapshot?.delivery?.consecutive_failures ?? 0)} />
+                </div>
+              </section>
+              <div className="notice">O diagnóstico é persistido localmente pelo daemon e não comprova conectividade com impressoras. O serviço Rust é independente da janela. Este console ainda não controla instalação, reinicialização ou atualizações do serviço.</div>
             </>
           )}
 
