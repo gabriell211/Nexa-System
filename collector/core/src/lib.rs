@@ -6,10 +6,10 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
 use zeroize::Zeroizing;
 use ipnet::IpNet;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
+    fs::{self, OpenOptions},
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     str::FromStr,
@@ -50,6 +50,8 @@ pub enum CollectorError {
     EncryptionMigrationRequired,
     #[error("collector payload encryption or authentication failed")]
     Crypto,
+    #[error("encrypted destination has an incomplete or invalid migration marker")]
+    MigrationIncomplete,
 }
 
 /// Non-sensitive local transfer history. Stored as a single JSON document in SQLite.
@@ -150,7 +152,7 @@ pub fn upload_error_kind(error: &CollectorError) -> &'static str {
         CollectorError::InvalidAcknowledgement => "invalid-ack",
         CollectorError::Storage(_) | CollectorError::Io(_) | CollectorError::Json(_)
         | CollectorError::Crypto | CollectorError::EncryptionRequired
-        | CollectorError::EncryptionMigrationRequired => "local-storage",
+        | CollectorError::EncryptionMigrationRequired | CollectorError::MigrationIncomplete => "local-storage",
         _ => "configuration",
     }
 }
@@ -336,6 +338,13 @@ impl PayloadCipher {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct MigrationReport {
+    pub pending: u64,
+    pub quarantined: u64,
+    pub state_entries: u64,
+}
+
 pub struct Outbox {
     connection: Connection,
     cipher: Option<PayloadCipher>,
@@ -378,7 +387,7 @@ impl Outbox {
         max_pending_payload_bytes: u64,
         max_sqlite_files_bytes: u64,
     ) -> Result<Self, CollectorError> {
-        Self::open_database(path, max_pending_samples, max_pending_payload_bytes, max_sqlite_files_bytes, None)
+        Self::open_database(path, max_pending_samples, max_pending_payload_bytes, max_sqlite_files_bytes, None, false)
     }
 
     /// Opt-in for new, empty databases. Existing plaintext databases with
@@ -393,7 +402,7 @@ impl Outbox {
         let cipher = PayloadCipher::from_hex(hex_key)?;
         Self::open_database(
             path, max_pending_samples, max_pending_payload_bytes,
-            max_sqlite_files_bytes, Some(cipher),
+            max_sqlite_files_bytes, Some(cipher), false,
         )
     }
 
@@ -403,6 +412,7 @@ impl Outbox {
         max_pending_payload_bytes: u64,
         max_sqlite_files_bytes: u64,
         cipher: Option<PayloadCipher>,
+        fresh_migration: bool,
     ) -> Result<Self, CollectorError> {
         if !(1..=1_000_000).contains(&max_pending_samples) {
             return Err(CollectorError::Configuration(
@@ -461,9 +471,18 @@ impl Outbox {
                 if cipher.open(&check, KEY_CHECK_ID)? != KEY_CHECK_PLAINTEXT {
                     return Err(CollectorError::Crypto);
                 }
+                // A crash mid-copy must never expose a partial outbox to the
+                // daemon, including when the encryption key is valid.
+                let migration: Option<String> = db.query_row(
+                    "SELECT value FROM state WHERE key = 'migration_status'",
+                    [], |row| row.get(0),
+                ).optional()?;
+                if migration.as_deref().is_some_and(|v| v != "complete") {
+                    return Err(CollectorError::MigrationIncomplete);
+                }
             }
             (None, Some(cipher)) => {
-                if previously_existing {
+                if previously_existing && !fresh_migration {
                     return Err(CollectorError::EncryptionMigrationRequired);
                 }
                 let retained: u64 = db.query_row(
@@ -484,6 +503,12 @@ impl Outbox {
                     "INSERT INTO state(key, value) VALUES ('payload_encryption_mode', ?1)",
                     [ENCRYPTION_MODE],
                 )?;
+                if fresh_migration {
+                    transaction.execute(
+                        "INSERT INTO state(key, value) VALUES ('migration_status', 'incomplete')",
+                        [],
+                    )?;
+                }
                 transaction.commit()?;
             }
             _ => return Err(CollectorError::Crypto),
@@ -492,6 +517,176 @@ impl Outbox {
             connection: db, cipher, database_path, max_pending_samples,
             max_pending_payload_bytes, max_sqlite_files_bytes,
         })
+    }
+
+    /// Offline migration. The source stays intact and locked against writes
+    /// for the duration of the verified copy. The destination MUST NOT exist.
+    ///
+    /// This function does not switch a running daemon or delete plaintext data.
+    /// Operators must stop the service and explicitly change its DB path.
+    pub fn migrate_plaintext_to_encrypted(
+        source_path: impl AsRef<Path>,
+        destination_path: impl AsRef<Path>,
+        max_pending_samples: u64,
+        max_pending_payload_bytes: u64,
+        max_sqlite_files_bytes: u64,
+        hex_key: &str,
+    ) -> Result<MigrationReport, CollectorError> {
+        let cipher = PayloadCipher::from_hex(hex_key)?;
+        let source_path = source_path.as_ref();
+        let destination_path = destination_path.as_ref();
+        let source_canonical = fs::canonicalize(source_path)?;
+        let parent = destination_path.parent().filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let destination_dir = fs::canonicalize(parent)?;
+        let destination_name = destination_path.file_name().ok_or_else(|| {
+            CollectorError::Configuration("destination must be a new SQLite filename".into())
+        })?;
+        if destination_dir.join(destination_name) == source_canonical {
+            return Err(CollectorError::Configuration(
+                "source and destination paths must differ".into()
+            ));
+        }
+
+        let mut source = Connection::open_with_flags(
+            &source_canonical, OpenFlags::SQLITE_OPEN_READ_WRITE,
+        )?;
+        source.busy_timeout(Duration::from_secs(5))?;
+        // BEGIN IMMEDIATE ensures no concurrent writer changes the original
+        // snapshot before the copy/verification finishes.
+        let source_lock = source.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let source_mode: Option<String> = source_lock.query_row(
+            "SELECT value FROM state WHERE key = 'payload_encryption_mode'",
+            [], |row| row.get(0),
+        ).optional()?;
+        if source_mode.is_some() {
+            return Err(CollectorError::EncryptionMigrationRequired);
+        }
+        let check: String = source_lock.query_row(
+            "PRAGMA quick_check(1)", [], |row| row.get(0),
+        )?;
+        if check != "ok" {
+            return Err(CollectorError::Configuration("source SQLite integrity check failed".into()));
+        }
+
+        // Exclusive creation prevents accidental overwrite of any existing
+        // file/symlink. An unsuccessful copy leaves a marked incomplete DB.
+        let mut new_file = OpenOptions::new();
+        new_file.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            new_file.mode(0o600);
+        }
+        let handle = new_file.open(destination_path)?;
+        drop(handle);
+        let mut destination = Self::open_database(
+            destination_path, max_pending_samples, max_pending_payload_bytes,
+            max_sqlite_files_bytes, Some(cipher), true,
+        )?;
+        destination.connection.pragma_update(None, "synchronous", "FULL")?;
+        let cipher = destination.cipher.as_ref().ok_or(CollectorError::Crypto)?;
+        let copy = destination.connection.transaction()?;
+        let mut report = MigrationReport { pending: 0, quarantined: 0, state_entries: 0 };
+
+        {
+            let mut stmt = source_lock.prepare(
+                "SELECT sample_id, payload, queued_at FROM outbox ORDER BY queued_at, sample_id"
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?))
+            })?;
+            for row in rows {
+                let (id, raw, queued_at) = row?;
+                let plaintext = Zeroizing::new(raw);
+                let reading: Reading = serde_json::from_str(&plaintext)?;
+                if reading.sample_id.to_string() != id {
+                    return Err(CollectorError::SampleConflict);
+                }
+                let encrypted = cipher.seal(&plaintext, &id)?;
+                if cipher.open(&encrypted, &id)? != *plaintext {
+                    return Err(CollectorError::Crypto);
+                }
+                copy.execute(
+                    "INSERT INTO outbox(sample_id, payload, queued_at) VALUES (?1, ?2, ?3)",
+                    params![id, encrypted, queued_at],
+                )?;
+                report.pending += 1;
+            }
+        }
+        {
+            let mut stmt = source_lock.prepare(
+                "SELECT sample_id, payload, queued_at, quarantined_at, reason
+                 FROM quarantined_readings ORDER BY queued_at, sample_id"
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?, row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?, row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            })?;
+            for row in rows {
+                let (id, raw, queued_at, quarantined_at, reason) = row?;
+                let plaintext = Zeroizing::new(raw);
+                let reading: Reading = serde_json::from_str(&plaintext)?;
+                if reading.sample_id.to_string() != id {
+                    return Err(CollectorError::SampleConflict);
+                }
+                let encrypted = cipher.seal(&plaintext, &id)?;
+                if cipher.open(&encrypted, &id)? != *plaintext {
+                    return Err(CollectorError::Crypto);
+                }
+                copy.execute(
+                    "INSERT INTO quarantined_readings(sample_id, payload, queued_at, quarantined_at, reason)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![id, encrypted, queued_at, quarantined_at, reason],
+                )?;
+                report.quarantined += 1;
+            }
+        }
+        {
+            let mut stmt = source_lock.prepare(
+                "SELECT key, value FROM state
+                 WHERE key NOT IN ('payload_encryption_mode', 'payload_encryption_check', 'migration_status')
+                 ORDER BY key"
+            )?;
+            let rows = stmt.query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (key, value) = row?;
+                copy.execute("INSERT INTO state(key, value) VALUES (?1, ?2)", params![key, value])?;
+                report.state_entries += 1;
+            }
+        }
+        for (table, expected) in [
+            ("outbox", report.pending),
+            ("quarantined_readings", report.quarantined),
+        ] {
+            // Identifiers are hard-coded, never derived from user input.
+            let actual: u64 = copy.query_row(
+                &format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0),
+            )?;
+            if actual != expected {
+                return Err(CollectorError::Configuration("migration row count mismatch".into()));
+            }
+        }
+        copy.execute(
+            "UPDATE state SET value = 'complete'
+             WHERE key = 'migration_status' AND value = 'incomplete'", [],
+        )?;
+        copy.commit()?;
+        let destination_check: String = destination.connection.query_row(
+            "PRAGMA quick_check(1)", [], |row| row.get(0),
+        )?;
+        if destination_check != "ok" {
+            return Err(CollectorError::Configuration(
+                "encrypted destination integrity check failed".into()
+            ));
+        }
+        source_lock.commit()?;
+        Ok(report)
     }
 
     /// Measures current on-disk files used by the SQLite WAL database.
