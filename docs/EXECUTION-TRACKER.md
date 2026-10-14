@@ -390,3 +390,17 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - `NX-035/038/045` são PARCIAIS: criptografia local, quota por bytes, recuperação em disco cheio, auditoria de decisões sobre descarte, gestão de retenção e testes reais de interrupção elétrica são pendentes.
 - A interface de desktop lê até 25 metadados isolados por vez, sem paginação; a CLI lista até 100 por execução. Reprocessamento de milhares de registros requer ferramenta e regras específicas ainda não implementadas.
 - Homologação de serviço nativo e impressão em hardware real ainda pendente. Não declarar 62 QA ou 324 NX concluídos.
+
+## Entrega 20 — orçamento SQLite de bytes de payload retido (14/10/2026)
+
+### Implementado para validação
+- `CollectorConfig.max_pending_payload_bytes` opcional com default 64 MiB; validação estrita 1..1 GiB e compatibilidade com configurações legadas.
+- `Outbox::open_with_limits` impõe dois limites simultâneos (contagem e JSON bytes) via inserção condicional no SQLite. A soma de bytes inclui `outbox` e `quarantined_readings`, evitando liberar espaço contábil ao isolar amostras HTTP 422.
+- Outbox reaberta com limite menor conserva todos os dados legados. ACK legítimo reduz a ocupação, sem exclusão forçada, e permite novas inserções.
+- Daemon verifica capacidade antes do SNMP e trata limite atingido durante a consulta sem fingir amostra persistida. Console apresenta ocupação de payload em bytes e alerta de saturação separadamente do limite em quantidade.
+- Testes Rust adicionais cobrem saturação, idempotência no limite, quarentena, restauração, recuperação por ACK, mudança de configuração e preservação de dados antigos.
+
+### Pendências obrigatórias
+- **Este NÃO é um limite do tamanho físico em disco**. Páginas/indexação SQLite, WAL, SHM, arquivos temporários, fragmentação, backups e registros auxiliares continuam fora da cota. Um limite físico rígido requer provisionamento/quotas de filesystem e política testada de checkpoint/recuperação.
+- Faltam criptografia da outbox, proteção OS contra cópias não autorizadas, janela de retenção auditada, simulação de 48h sem rede e recuperação de falta de espaço/energia.
+- NX-035 e NX-045 permanecem **PARCIAIS** até testes E2E e homologação de produção.
