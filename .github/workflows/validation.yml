@@ -265,6 +265,20 @@ jobs:
           sed 's#^ExecStart=.*#ExecStart=/bin/true#' collector/linux/nexa-collector.service > /tmp/nexa-systemd-verify/nexa-collector.service
           systemd-analyze verify /tmp/nexa-systemd-verify/nexa-collector.service
 
+  collector-macos-launchd:
+    name: macOS Collector native launchd build and tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate launchd packaging and shell scripts
+        run: |
+          python3 scripts/verify_collector_macos_service.py
+          plutil -lint collector/macos/com.nexa.collector.plist
+      - name: Run native macOS Collector core and daemon unit tests
+        working-directory: collector
+        run: cargo test -p nexa-collector-core -p nexa-collector-daemon
+
   collector-windows-service:
     name: Windows Collector native SCM build and tests
     runs-on: windows-latest
