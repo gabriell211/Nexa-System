@@ -168,6 +168,74 @@ final class TelemetryGapMonitorTest extends TestCase
         $this->assertDatabaseHas('printer_alerts',['printer_id'=>$printer->id,'status'=>'linked']);
     }
 
+    public function test_real_collector_ingest_command_and_http_alert_api_share_persisted_state(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14T12:00:00Z'));
+        $printer=$this->printer('collector-to-api');
+        $tenant=$printer->tenant;
+        $owner=\App\Models\User::query()->create([
+            'name'=>'Nexa Owner','email'=>'telemetry-owner@example.test',
+            'password'=>'test-long-enough-credential',
+        ]);
+        $tenant->users()->attach($owner->id,['role'=>'owner']);
+        $apiToken=$owner->createToken('api',['api','tenant:'.$tenant->id])->plainTextToken;
+        $collectorToken=bin2hex(random_bytes(32));
+        $collectorId=(string)Str::uuid();
+        \App\Models\CollectorAgent::query()->create([
+            'tenant_id'=>$tenant->id,'customer_id'=>$printer->customer_id,
+            'collector_id'=>$collectorId,'token_hash'=>hash('sha256',$collectorToken),
+        ]);
+
+        $postReading=function (CarbonImmutable $timestamp) use (
+            $collectorId,$collectorToken,$printer
+        ): array {
+            $data=[
+                'collector_id'=>$collectorId,
+                'samples'=>[[
+                    'sample_id'=>(string)Str::uuid(),
+                    'printer_id'=>$printer->id,
+                    'collected_at'=>$timestamp->toIso8601String(),
+                    'meter_total'=>123,'meter_mono'=>null,'meter_color'=>null,
+                ]],
+            ];
+            $this->withToken($collectorToken)
+                ->postJson('/api/v1/collector/ingest',$data)->assertOk();
+            return $data;
+        };
+
+        $backlog=$postReading(CarbonImmutable::now('UTC')->subHours(3));
+        config()->set('nexa.telemetry_gap.enabled',true);
+        config()->set('nexa.telemetry_gap.threshold_minutes',60);
+        config()->set('nexa.telemetry_gap.recovery_minutes',10);
+        $this->artisan('nexa:alerts:check-telemetry')->assertSuccessful();
+        $this->assertDatabaseHas('printer_alerts',[
+            'printer_id'=>$printer->id,'origin'=>'telemetry','status'=>'active',
+            'created_by_user_id'=>null,
+        ]);
+        \Illuminate\Support\Facades\Auth::forgetGuards();
+        $this->withToken($apiToken)->getJson('/api/v1/alerts')
+            ->assertOk()->assertJsonCount(1,'data')
+            ->assertJsonPath('data.0.origin','telemetry')
+            ->assertJsonPath('data.0.code','TELEMETRY_GAP');
+
+        // Retried sample ACK must not generate another alert.
+        \Illuminate\Support\Facades\Auth::forgetGuards();
+        $this->withToken($collectorToken)
+            ->postJson('/api/v1/collector/ingest',$backlog)->assertOk();
+        $this->artisan('nexa:alerts:check-telemetry')->assertSuccessful();
+        $this->assertDatabaseCount('printer_alerts',1);
+
+        $this->travel(2)->minutes();
+        $postReading(CarbonImmutable::now('UTC'));
+        $this->travel(12)->minutes();
+        $postReading(CarbonImmutable::now('UTC'));
+        $this->artisan('nexa:alerts:check-telemetry')->assertSuccessful();
+        \Illuminate\Support\Facades\Auth::forgetGuards();
+        $this->withToken($apiToken)->getJson('/api/v1/alerts?status=resolved')
+            ->assertOk()->assertJsonCount(1,'data')
+            ->assertJsonPath('data.0.status','resolved');
+    }
+
     public function test_disabled_command_and_invalid_thresholds_fail_closed(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-10-14T12:00:00Z'));
