@@ -9,6 +9,9 @@ interface Collector {
   id:number;collector_id:string;customer_id:number;active:boolean;
   heartbeat_at:string|null;last_upload_at:string|null;
   heartbeat_state:State;heartbeat_tolerance_seconds:number;
+  watchdog_recent_incidents:number|null;
+  watchdog_circuit_open_reported:boolean|null;
+  watchdog_reported_at:string|null;
   customer:{id:number;name:string}|null;
 }
 const states:Record<State,string> = {
@@ -43,13 +46,14 @@ export function CollectorsPage() {
       <p className="stock-footnote">
         Um heartbeat recente comprova somente que o serviço conseguiu se autenticar na API.
         Não comprova que a impressora esteja ligada, que SNMP funcione nem que existam novos contadores.
+        O watchdog mostra somente o último relatório autenticado recebido, não o estado atual do serviço.
       </p>
       {listing.isPending?<p role="status">Carregando agentes...</p>:listing.error?
         <p role="alert" className="notice error">{readableError(listing.error)}</p>:
         listing.data.data.length===0?<p>Nenhum agente registrado nesta carteira.</p>:
         <div className="table-wrap"><table><thead><tr>
           <th>Agente</th><th>Cliente</th><th>Estado do heartbeat</th>
-          <th>Último heartbeat</th><th>Último upload</th><th>Tolerância</th>
+          <th>Último heartbeat</th><th>Último upload</th><th>Watchdog (último relatório)</th><th>Tolerância</th>
         </tr></thead><tbody>
           {listing.data.data.map(a=><tr key={a.id}>
             <td><strong>#{a.id}</strong><small>{a.collector_id}</small></td>
@@ -57,6 +61,17 @@ export function CollectorsPage() {
             <td><span className="inline"><Activity size={15} aria-hidden="true"/> {states[a.heartbeat_state]}</span></td>
             <td>{dateOrUnknown(a.heartbeat_at)}</td>
             <td>{dateOrUnknown(a.last_upload_at)}</td>
+            <td>{a.watchdog_reported_at
+              ? <span className="inline">
+                  {a.watchdog_circuit_open_reported
+                    ? 'Circuito aberto reportado'
+                    : (a.watchdog_recent_incidents ?? 0) > 0
+                      ? `${a.watchdog_recent_incidents} incidente(s) recente(s) reportado(s)`
+                      : 'Sem incidentes reportados'}
+                  <small> · {dateOrUnknown(a.watchdog_reported_at)}</small>
+                </span>
+              : 'Nunca reportado'}
+            </td>
             <td>{a.heartbeat_tolerance_seconds} segundos</td>
           </tr>)}
         </tbody></table></div>}

@@ -13,6 +13,9 @@ final class CollectorAgent extends Model
     public function customer(): BelongsTo { return $this->belongsTo(Customer::class); }
     protected function casts(): array
     {
-        return ['active' => 'boolean', 'last_seen_at' => 'immutable_datetime', 'heartbeat_at' => 'immutable_datetime'];
+        return ['active' => 'boolean', 'last_seen_at' => 'immutable_datetime', 'heartbeat_at' => 'immutable_datetime',
+            'watchdog_recent_incidents' => 'integer',
+            'watchdog_circuit_open_reported' => 'boolean',
+            'watchdog_reported_at' => 'immutable_datetime'];
     }
 }

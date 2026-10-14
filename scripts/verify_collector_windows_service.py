@@ -47,8 +47,8 @@ assert "monitor.heartbeat_progressed()" in daemon
 assert "ProgressState::HeartbeatStalled" in watchdog
 assert "ProgressState::MainStalled" in watchdog
 assert "progress_watchdog::start_watchdog(Arc::clone(monitor), recovery_guard.clone())" in daemon
-guard = (root / "collector/daemon/src/recovery_guard.rs").read_text()
-assert "pub(super) const MAX_STALLS: usize = 3" in guard
+guard = (root / "collector/core/src/recovery_guard.rs").read_text()
+assert "pub const MAX_STALLS: usize = 3" in guard
 assert "const WINDOW_MINUTES: i64 = 30" in guard
 assert 'journal.events.push(StallEvent' in guard
 assert 'std::process::exit(WATCHDOG_EXIT_CODE)' in watchdog
@@ -57,6 +57,7 @@ assert '--watchdog-status' in daemon
 assert '--reset-watchdog-circuit' in daemon
 assert 'if supervised_mode && args.len() == 3 {' in daemon
 assert 'recovery_guard.circuit_open(Utc::now())' in daemon
+assert 'pub mod recovery_guard;' in (root / 'collector/core/src/lib.rs').read_text()
 assert "macos_launchd_mode: bool," in daemon
 assert 'windows-service = "=0.8.1"' in manifest
 print("Nexa Windows SCM packaging static checks passed (not a real service execution test)")

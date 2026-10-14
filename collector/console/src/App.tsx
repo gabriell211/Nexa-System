@@ -28,6 +28,15 @@ type SqliteFootprint = {
   soft_limit_bytes: number;
   soft_limit_reached: boolean;
 };
+type WatchdogSnapshot = {
+  recent_incidents: number;
+  circuit_open: boolean;
+  retained_incidents: number;
+  threshold: number;
+  window_minutes: number;
+  last_reset_at: string | null;
+  incidents: { at: string; worker: "main-loop" | "heartbeat-worker" }[];
+};
 type CollectorSnapshot = {
   configured: boolean;
   collector_id: string | null;
@@ -43,10 +52,12 @@ type CollectorSnapshot = {
   payload_bytes_limit: number | null;
   sqlite_footprint: SqliteFootprint | null;
   delivery: DeliveryDiagnostics | null;
+  watchdog: WatchdogSnapshot | null;
+  watchdog_error: string | null;
   last_run: string | null;
   error: string | null;
 };
-type Tab = "overview" | "printers" | "quarantine" | "settings";
+type Tab = "overview" | "printers" | "quarantine" | "watchdog" | "settings";
 
 function formatDate(value: string | null): string {
   if (!value) return "Nenhuma execução registrada";
@@ -95,6 +106,8 @@ export default function App() {
   const physicalPercent = physicalObserved ? Math.min(100, Math.round(physicalUsed / physicalLimit * 100)) : null;
   const physicalFull = physicalObserved && footprint.soft_limit_reached;
   const physicalWarning = physicalObserved && physicalUsed >= physicalLimit * 0.8;
+  const watchdog = snapshot?.watchdog ?? null;
+  const watchdogUnhealthy = Boolean(snapshot?.watchdog_error) || watchdog?.circuit_open === true;
   const queueFull = (queueObserved && retainedCount >= queueCapacity) || byteFull || physicalFull;
   const queueWarning = (queueObserved && retainedCount >= queueCapacity * 0.8) || byteWarning || physicalWarning;
 
@@ -102,6 +115,7 @@ export default function App() {
     { id: "overview", label: "Visão geral", icon: LayoutDashboard },
     { id: "printers", label: "Impressoras", icon: Printer },
     { id: "quarantine", label: "Quarentena", icon: AlertTriangle },
+    { id: "watchdog", label: "Recuperação", icon: Activity },
     { id: "settings", label: "Configuração", icon: Settings2 },
   ];
 
@@ -137,7 +151,7 @@ export default function App() {
           <div className="heading">
             <div>
               <p className="eyebrow">CONTROLE DA ESTAÇÃO</p>
-              <h1>{tab === "overview" ? "Visão geral" : tab === "printers" ? "Impressoras" : tab === "quarantine" ? "Quarentena" : "Configurações"}</h1>
+              <h1>{tab === "overview" ? "Visão geral" : tab === "printers" ? "Impressoras" : tab === "quarantine" ? "Quarentena" : tab === "watchdog" ? "Recuperação" : "Configurações"}</h1>
               <p>Informações lidas do arquivo de configuração e da fila local do Nexa Collector.</p>
             </div>
             <button type="button" className="primary-button" onClick={() => void refresh()} disabled={loading}>
@@ -214,6 +228,19 @@ export default function App() {
                   {" "}O console mostra apenas o estado persistido; não comprova a conectividade do equipamento.
                 </div>
               )}
+              {watchdogUnhealthy && (
+                <div className="notice error" role="alert">
+                  {snapshot?.watchdog_error
+                    ? snapshot.watchdog_error
+                    : "Circuito de proteção aberto: o Collector registrou reinicializações por travamento em excesso. Inspecione a aba Recuperação."}
+                </div>
+              )}
+              {watchdog && watchdog.recent_incidents > 0 && !watchdog.circuit_open && (
+                <div className="notice warning" role="status">
+                  {watchdog.recent_incidents} incidente(s) de watchdog nos últimos {watchdog.window_minutes} minutos.
+                  Consulte a aba Recuperação antes de considerar a estação saudável.
+                </div>
+              )}
               {quarantineCount > 0 && (
                 <div className="notice warning" role="status">
                   {quarantineCount.toLocaleString("pt-BR")} leitura(s) isolada(s) após rejeição individual HTTP 422.
@@ -228,7 +255,9 @@ export default function App() {
                   <Info icon={ShieldCheck} label="Payload das leituras em repouso"
                     value={snapshot?.payload_encryption_enabled === true ? "AES-256-GCM habilitado" : snapshot?.payload_encryption_enabled === false ? "Sem criptografia de payload" : "Não verificado"} />
                   <Info icon={ArrowDownUp} label="Transmissão" value="Verificar logs do serviço" />
-                  <Info icon={CircleHelp} label="Serviço do sistema" value="Estado não verificado pela interface" />
+                  <Info icon={CircleHelp} label="Serviço do sistema" value="Processo não inspecionado pelo console" />
+                  <Info icon={Activity} label="Circuito do watchdog" value={snapshot?.watchdog_error ? "Histórico inválido/inacessível"
+                    : watchdog ? watchdog.circuit_open ? "Bloqueado (requer análise)" : "Sem bloqueio por incidentes" : "Não verificado"} />
                 </div>
               </section>
               <section className="panel">
@@ -297,6 +326,57 @@ export default function App() {
                 Nenhuma leitura isolada foi apagada ou lançada no faturamento. Após verificar a causa da rejeição,
                 um administrador do sistema pode restaurar uma amostra pelo comando
                 <code> --restore-quarantined &lt;UUID&gt;</code> do daemon. Esta tela não executa restaurações.
+              </div>
+            </>
+          )}
+
+          {tab === "watchdog" && (
+            <>
+              <section className="panel" aria-label="Estado do circuito de recuperação">
+                <div className="panel-title">
+                  <h2>Proteção contra reinicializações repetidas</h2>
+                  <span>Diário local · somente leitura</span>
+                </div>
+                {snapshot?.watchdog_error && <div className="notice error" role="alert">{snapshot.watchdog_error}</div>}
+                {!snapshot?.watchdog_error && !watchdog && (
+                  <div className="empty">Diário não disponível. Configure o caminho do banco local para consultar o estado.</div>
+                )}
+                {watchdog && (
+                  <div className="detail-grid">
+                    <Info icon={ShieldCheck} label="Circuito de recuperação"
+                      value={watchdog.circuit_open ? "Aberto — serviço bloqueado" : "Sem bloqueio registrado"} />
+                    <Info icon={Activity} label="Incidentes na janela"
+                      value={`${watchdog.recent_incidents} / ${watchdog.threshold} em ${watchdog.window_minutes} minutos`} />
+                    <Info icon={Database} label="Histórico local retido"
+                      value={`${watchdog.retained_incidents} eventos (máximo 32)`} />
+                    <Info icon={CheckCircle2} label="Último reconhecimento administrativo"
+                      value={watchdog.last_reset_at ? formatDate(watchdog.last_reset_at) : "Ainda não realizado"} />
+                  </div>
+                )}
+              </section>
+              {watchdog && (
+                <section className="panel">
+                  <div className="panel-title"><h2>Histórico de incidentes</h2>
+                    <span>Informações persistidas pelo watchdog</span></div>
+                  <div className="table-scroll"><table>
+                    <thead><tr><th>Data e hora</th><th>Componente</th><th>Tipo</th></tr></thead>
+                    <tbody>
+                      {[...watchdog.incidents].reverse().map((incident, index) => (
+                        <tr key={incident.at + incident.worker + index}>
+                          <td>{formatDate(incident.at)}</td>
+                          <td>{incident.worker === "main-loop" ? "Coleta / transmissão" : "Heartbeat"}</td>
+                          <td>Ausência de progresso</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table></div>
+                  {watchdog.incidents.length === 0 && <div className="empty">Nenhum incidente registrado neste diário local.</div>}
+                </section>
+              )}
+              <div className="notice">
+                Este painel apenas consulta o histórico no disco; não verifica se o serviço está executando, não reinicia
+                o Collector e não reconhece automaticamente incidentes. Para liberar um bloqueio após análise da causa,
+                pare o serviço e use o comando administrativo <code>--reset-watchdog-circuit</code> do daemon.
               </div>
             </>
           )}

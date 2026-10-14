@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Painel local e relatório remoto de incidentes do watchdog — incremento 31 (parcial)
+
+- A leitura do diário de incidentes passou a ser compartilhada pelo núcleo Rust entre daemon e Console Tauri. O snapshot é **somente leitura**, informa contagem na janela de 30 minutos, circuito aberto, último reconhecimento e até 32 registros por data UTC e componente. JSON ausente é um histórico vazio; arquivo inválido/inacessível não é apresentado como saudável.
+- O console desktop apresenta nova aba **Recuperação**, tabela de incidentes de coleta/heartbeat, alertas de circuito aberto e aviso claro de que não controla o serviço. O botão Atualizar consulta apenas dados persistidos; não reinicia, reseta nem descarta fila.
+- O heartbeat autenticado pode incluir **diagnóstico opcional e agregado** do watchdog (contagem recente 0..32 e sinal de circuito aberto), sem UUIDs de leituras, caminhos, tokens ou comunidade SNMP. Se a leitura local falhar, o heartbeat não inventa informações do watchdog. Agentes antigos continuam enviando apenas o ID.
+- O Laravel valida estritamente esse objeto, armazena somente a última contagem e status **reportados**, com timestamp do **servidor**, separados do último heartbeat e upload. A listagem administrativa, filtrada por tenant e carteira, exibe o último relatório e sua data; **não garante que seja o estado atual** quando a estação está offline ou bloqueada.
+- Testes Rust de sanitização, compatibilidade e corrupção do diário; testes Laravel de autenticação/limites/tempo; build React do portal/console. **Não há push de alerta em tempo real quando o serviço está bloqueado** nem homologação física. `NX-039/041` permanecem **PARCIAIS**.
+
 ### Circuito de proteção contra reinícios repetidos — incremento 30 (parcial)
 
 - O watchdog agora registra localmente cada **saída por travamento induzida pelo próprio watchdog** (componente `main-loop` ou `heartbeat-worker`, UTC e versão de formato) em um pequeno arquivo `<queue.sqlite>.watchdog.json`, separado dos payloads e transações da fila SQLite. O histórico é limitado a 32 eventos; não contém leituras, tokens ou comunidades SNMP.

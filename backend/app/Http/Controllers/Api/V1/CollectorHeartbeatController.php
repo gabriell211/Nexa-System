@@ -22,10 +22,17 @@ final class CollectorHeartbeatController extends Controller
         // Only the server clock is authoritative. Never accept a client-supplied
         // timestamp or infer connectivity from SNMP/meters.
         $now=now('UTC');
+        $values=['heartbeat_at'=>$now,'updated_at'=>$now];
+        $watchdog=$request->validated('watchdog');
+        if (is_array($watchdog)) {
+            // Only server time is authoritative: this is last REPORTED state,
+            // not proof the service is currently up or that SNMP is healthy.
+            $values['watchdog_recent_incidents']=(int)$watchdog['recent_incidents'];
+            $values['watchdog_circuit_open_reported']=(bool)$watchdog['circuit_open'];
+            $values['watchdog_reported_at']=$now;
+        }
         $updated=DB::table('collector_agents')
-            ->where('id',$agent->id)->where('active',true)->update([
-                'heartbeat_at'=>$now,'updated_at'=>$now,
-            ]);
+            ->where('id',$agent->id)->where('active',true)->update($values);
 
         if ($updated!==1) abort(401,'Collector has been revoked.');
 

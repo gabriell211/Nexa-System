@@ -1,4 +1,8 @@
-use nexa_collector_core::{read_config, DeliveryDiagnostics, Outbox, QuarantinedReading, SqliteFootprint};
+use chrono::Utc;
+use nexa_collector_core::{
+    recovery_guard::{RecoveryGuard, WatchdogSnapshot},
+    read_config, DeliveryDiagnostics, Outbox, QuarantinedReading, SqliteFootprint,
+};
 use serde::Serialize;
 use std::env;
 
@@ -26,6 +30,8 @@ struct CollectorSnapshot {
     sqlite_footprint: Option<SqliteFootprint>,
     delivery: Option<DeliveryDiagnostics>,
     last_run: Option<String>,
+    watchdog: Option<WatchdogSnapshot>,
+    watchdog_error: Option<String>,
     error: Option<String>,
 }
 
@@ -47,6 +53,8 @@ fn get_snapshot() -> CollectorSnapshot {
         sqlite_footprint: None,
         delivery: None,
         last_run: None,
+        watchdog: None,
+        watchdog_error: None,
         error: None,
     };
 
@@ -73,6 +81,14 @@ fn get_snapshot() -> CollectorSnapshot {
     }
 
     if let Ok(path) = env::var("NEXA_COLLECTOR_DB") {
+        // Use the exact daemon parser. Reading the incident journal never
+        // opens SQLite, resets the circuit, or invokes any privileged command.
+        match RecoveryGuard::for_queue(std::path::Path::new(&path)).snapshot(Utc::now()) {
+            Ok(diagnostics) => snapshot.watchdog = Some(diagnostics),
+            Err(_) => snapshot.watchdog_error = Some(
+                "Diário do watchdog inacessível ou inválido; verifique permissões e integridade.".into()
+            ),
+        }
         // Read-only dashboard; no daemon lifecycle commands or credential exposure.
         if std::path::Path::new(&path).exists() {
             let (samples, payload_bytes, file_bytes) = capacity_limits.unwrap_or((
