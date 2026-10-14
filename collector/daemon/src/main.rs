@@ -9,9 +9,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
     let restore = args.len() == 5 && args[3] == "--restore-quarantined";
     let list_quarantine = args.len() == 4 && args[3] == "--list-quarantined";
+    let storage_status = args.len() == 4 && args[3] == "--storage-status";
     let once = args.len() == 4 && args[3] == "--once";
-    if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || restore) {
-        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --restore-quarantined <sample-uuid>]");
+    if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || storage_status || restore) {
+        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --storage-status | --restore-quarantined <sample-uuid>]");
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
@@ -19,6 +20,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         &args[2], cfg.max_pending_samples, cfg.max_pending_payload_bytes,
         cfg.max_sqlite_files_bytes,
     )?;
+    // Physical disk diagnostics must not trigger SNMP, heartbeat, or uploads.
+    if storage_status {
+        let footprint = outbox.sqlite_footprint()?;
+        println!(
+            "DB={} WAL={} SHM={} total={} soft_limit={} threshold_reached={}",
+            footprint.database_bytes, footprint.wal_bytes, footprint.shm_bytes,
+            footprint.total_bytes, footprint.soft_limit_bytes, footprint.soft_limit_reached
+        );
+        println!(
+            "pending={} quarantined={} retained_payload_bytes={}",
+            outbox.pending()?, outbox.quarantined_count()?, outbox.retained_payload_bytes()?
+        );
+        return Ok(());
+    }
     // Operator-only commands do not start SNMP polling or heartbeat workers.
     if list_quarantine {
         for item in outbox.quarantined_readings(100)? {
