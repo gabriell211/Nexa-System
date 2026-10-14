@@ -17,6 +17,13 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Criptografia autenticada de payload local — incremento 22 (parcial)
+
+- Implementado modo **opt-in para banco novo**: `NEXA_COLLECTOR_DB_KEY_HEX` com 64 caracteres hexadecimais (chave aleatória de 32 bytes), fora do arquivo JSON e do Git. Quando configurada, o Collector cria um SQLite novo com payload de leituras em **AES-256-GCM** e nonce aleatório por gravação; o UUID é autenticado como contexto (AAD). A quarentena e a restauração preservam o ciphertext.
+- O modo criptografado é marcado no SQLite e exige a mesma chave para reabrir. Chave incorreta, nonce/ciphertext alterado e abertura sem chave falham sem tratar conteúdo corrompido como leitura válida. Retransmissões idempotentes conferem o **texto decifrado**, não ciphertext aleatório.
+- **Conversão in-place proibida:** banco anterior que já existe não é criptografado automaticamente, inclusive se estiver vazio agora: WAL, páginas livres e backups podem conter texto claro histórico. Migração segura para novo banco e procedimentos de rekey/backup são entregas separadas.
+- A criptografia cobre **somente a coluna `payload` de `outbox` e `quarantined_readings`**. UUIDs, datas, índices e diagnósticos continuam visíveis; não é SQLCipher nem criptografia integral do SQLite. Sem chave, instalações legadas continuam em texto claro (compatibilidade explícita). Ainda faltam proteção OS/secret store, migração, rotação de chave e homologação Windows/Linux/macOS. `NX-035` **PARCIAL**.
+
 ### Proteção preventiva do tamanho físico SQLite — incremento 21 (parcial)
 
 - O Collector passou a observar os tamanhos reais de `queue.sqlite`, `queue.sqlite-wal` e `queue.sqlite-shm`, incluindo bytes não representados pelo conteúdo JSON. A opção `max_sqlite_files_bytes` tem padrão de **512 MiB** (limite permitido de 1 byte a 64 GiB, inclusive para testar bloqueio sob limite reduzido).
