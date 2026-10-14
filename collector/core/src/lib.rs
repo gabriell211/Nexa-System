@@ -1171,6 +1171,151 @@ mod tests {
     const OTHER_DB_KEY: &str = "cafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00d";
 
     #[test]
+    fn offline_migration_preserves_pending_quarantine_and_retry_state_without_plaintext() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("legacy.sqlite");
+        let target = tmp.path().join("encrypted.sqlite");
+        let good = sample_with_meter(8_765_432);
+        let rejected = sample_with_meter(4_321_987);
+        let delivery = DeliveryDiagnostics {
+            last_success_at: Some(Utc::now().to_rfc3339()),
+            last_failure_at: None,
+            last_error_kind: None,
+            next_attempt_at: None,
+            consecutive_failures: 0,
+        };
+        {
+            let mut source_db = Outbox::open(&source).unwrap();
+            source_db.enqueue(&good).unwrap();
+            source_db.enqueue(&rejected).unwrap();
+            source_db.quarantine(rejected.sample_id, "individually-rejected-422").unwrap();
+            source_db.save_delivery_diagnostics(&delivery).unwrap();
+            source_db.mark_run().unwrap();
+        }
+        let report = Outbox::migrate_plaintext_to_encrypted(
+            &source, &target, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY,
+        ).unwrap();
+        assert_eq!(report.pending, 1);
+        assert_eq!(report.quarantined, 1);
+        assert_eq!(report.state_entries, 2);
+
+        // The original is still usable, not deleted, reset or marked encrypted.
+        let legacy = Outbox::open(&source).unwrap();
+        assert_eq!(legacy.pending().unwrap(), 1);
+        assert_eq!(legacy.quarantined_count().unwrap(), 1);
+        assert_eq!(legacy.next_batch(10).unwrap()[0].sample_id, good.sample_id);
+        drop(legacy);
+
+        assert!(matches!(Outbox::open(&target), Err(CollectorError::EncryptionRequired)));
+        let mut secure = Outbox::open_encrypted_disk_guard(
+            &target, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+        ).unwrap();
+        assert!(secure.payload_encryption_enabled());
+        assert_eq!(secure.pending().unwrap(), 1);
+        assert_eq!(secure.quarantined_count().unwrap(), 1);
+        assert_eq!(secure.next_batch(10).unwrap()[0].meter_total, Some(8_765_432));
+        let listed = secure.quarantined_readings(10).unwrap();
+        assert_eq!(listed[0].sample_id, rejected.sample_id.to_string());
+        assert_eq!(listed[0].reason, "individually-rejected-422");
+        assert_eq!(secure.delivery_diagnostics().unwrap().last_success_at, delivery.last_success_at);
+        assert!(secure.last_run().unwrap().is_some());
+
+        let stored: String = secure.connection.query_row(
+            "SELECT payload FROM outbox LIMIT 1", [], |row| row.get(0),
+        ).unwrap();
+        assert!(stored.starts_with(ENCRYPTION_PREFIX));
+        assert!(!stored.contains("8765432"));
+        assert!(!stored.contains("meter_total"));
+
+        assert!(secure.restore_quarantined(rejected.sample_id).unwrap());
+        secure.acknowledge(&[good.sample_id, rejected.sample_id]).unwrap();
+        assert_eq!(secure.retained().unwrap(), 0);
+    }
+
+    #[test]
+    fn migration_never_overwrites_destination_or_uses_original_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let original = tmp.path().join("source.sqlite");
+        let destination = tmp.path().join("existing.sqlite");
+        let reading = sample_with_meter(1729);
+        {
+            let source = Outbox::open(&original).unwrap();
+            source.enqueue(&reading).unwrap();
+        }
+        std::fs::write(&destination, b"do not overwrite").unwrap();
+        assert!(matches!(
+            Outbox::migrate_plaintext_to_encrypted(
+                &original, &destination, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+            ),
+            Err(CollectorError::Io(_))
+        ));
+        assert_eq!(std::fs::read(&destination).unwrap(), b"do not overwrite");
+        assert!(matches!(
+            Outbox::migrate_plaintext_to_encrypted(
+                &original, &original, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+            ),
+            Err(CollectorError::Configuration(_))
+        ));
+        assert_eq!(Outbox::open(&original).unwrap().pending().unwrap(), 1);
+    }
+
+    #[test]
+    fn migration_refuses_corrupt_payload_and_leaves_incomplete_target_locked() {
+        let tmp = tempfile::tempdir().unwrap();
+        let original = tmp.path().join("source.sqlite");
+        let destination = tmp.path().join("unfinished.sqlite");
+        {
+            let source = Outbox::open(&original).unwrap();
+            source.enqueue(&sample_with_meter(123)).unwrap();
+            source.connection.execute(
+                "UPDATE outbox SET payload = '{corrupt' WHERE sample_id IN (SELECT sample_id FROM outbox LIMIT 1)", [],
+            ).unwrap();
+        }
+        assert!(matches!(
+            Outbox::migrate_plaintext_to_encrypted(
+                &original, &destination, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+            ),
+            Err(CollectorError::Json(_))
+        ));
+        assert!(destination.exists());
+        assert!(matches!(
+            Outbox::open_encrypted_disk_guard(
+                &destination, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+            ),
+            Err(CollectorError::MigrationIncomplete)
+        ));
+        let legacy = Outbox::open(&original).unwrap();
+        assert_eq!(legacy.pending().unwrap(), 1);
+    }
+
+    #[test]
+    fn migration_rejects_encrypted_source_and_invalid_key_without_new_target() {
+        let tmp = tempfile::tempdir().unwrap();
+        let original = tmp.path().join("encrypted-source.sqlite");
+        let destination = tmp.path().join("new.sqlite");
+        {
+            let source = Outbox::open_encrypted_disk_guard(
+                &original, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+            ).unwrap();
+            source.enqueue(&sample_with_meter(9)).unwrap();
+        }
+        assert!(matches!(
+            Outbox::migrate_plaintext_to_encrypted(
+                &original, &destination, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+            ),
+            Err(CollectorError::EncryptionMigrationRequired)
+        ));
+        assert!(!destination.exists());
+        assert!(matches!(
+            Outbox::migrate_plaintext_to_encrypted(
+                &original, &destination, 10, 16384, 512 * 1024 * 1024, "bad-key"
+            ),
+            Err(CollectorError::Configuration(_))
+        ));
+        assert!(!destination.exists());
+    }
+
+    #[test]
     fn encrypted_payload_roundtrip_dedup_quarantine_restore_and_ack() {
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("encrypted.sqlite");
