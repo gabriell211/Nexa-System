@@ -313,3 +313,19 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Status físico online/offline, heartbeat separado da coleta, perda de comunicação agente-servidor, leitura SNMP de estados, geração de alerta por toner/peças, supressão por janela e regras avançadas por equipamento.
 - Operação depende de scheduler de Laravel realmente ativo na infraestrutura. A opção fica desligada até definir política por cliente, intervalo de coleta e comportamento de suporte.
 - Ativar este monitor não substitui monitoramento de rede nem garante detecção de falha de impressão; métricas representam somente ausência observada de leituras.
+
+## Entrega 14 — heartbeat autenticado independente do Collector (14/10/2026)
+
+### Implementado
+- Nova coluna `collector_agents.heartbeat_at`: último POST de saúde autenticado, recebimento marcado exclusivamente pelo servidor. `last_seen_at` continua indicando último upload de leituras; um não atualiza o outro.
+- Autenticação extraída para `CollectorAuthenticator`, compartilhada entre ingest e heartbeat, verificando segredo 64-hex, UUID do agente, revogação e tenant/cliente ativos.
+- Daemon Rust cria worker separado para heartbeat, com tolerância a polling SNMP demorado ou upload em backlog. Intervalo próprio de 30..3600 segundos (60s padrão) e jitter limitado; teste `--once` envia um único sinal.
+- API `collector-agents` com paginação/isolamento tenant e carteira, sem expor hashes de segredos, e estados derivados de clock do servidor. Painel `/agentes` com heartbeat, último upload, tolerância, histórico observável e atualização periódica.
+- Suite Laravel cobre ausência, revogação, credenciais inválidas, empresa inativa, timestamps não confiáveis, papel, carteira, paginação e separação de relógios. Rust cobre defaults e validação do intervalo; Playwright cobre página integrada.
+
+### Limites
+- Heartbeat recente é evidência agente→servidor, **não prova SNMP ou impressora online**.
+- Não existe watchdog nativo, instalador de serviço, telemetria do updater, certificado TLS pinning, gestão de rotação do segredo, semântica de disponibilidade histórica, notificações de atraso ou métrica de latência/rede.
+- O heartbeat não é armazenamento persistente/offline: perda de rede não gera heartbeat até restabelecer conexão. O upload de leituras mantém sua própria fila.
+- As configurações de limiar devem refletir jitter, intervalo de heartbeat e atraso tolerado; o painel não faz afirmação absoluta sobre queda de conexão.
+- `NX-034/041/255` permanecem PARCIAIS; nenhuma nova homologação de dispositivo foi reivindicada.

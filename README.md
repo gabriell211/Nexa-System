@@ -17,6 +17,13 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Heartbeat independente por agente — entrega 14
+
+- Endpoint `POST /api/v1/collector/heartbeat` autenticado pelo mesmo token individual do coletor, com hora registrada exclusivamente pelo servidor. O relógio `heartbeat_at` é **independente** de `last_seen_at` (último upload de leituras).
+- Daemon Rust transmite heartbeat em tarefa própria, com intervalo configurável (padrão 60 segundos) e jitter limitado, sem depender de SNMP, fila de upload ou existência de contador válido.
+- `GET /api/v1/{browser/}collector-agents` e tela `/agentes` mostram estados observados `recent / late / no_heartbeat / revoked`, tolerância e horários separados, respeitando empresa e carteira.
+- **Não** chamar este sinal de diagnóstico de offline da impressora: ele confirma somente a comunicação autenticada agente → API. Atualização, descoberta, monitoramento SNMP e status físico ainda precisam de canais de saúde próprios.
+
 ### Motor opcional de lacunas de telemetria (em validação)
 
 O monitor agendado `nexa:alerts:check-telemetry` analisa ausência de **novas leituras com timestamp real**, com tolerância configurável. A função permanece **desativada por padrão** (`NEXA_TELEMETRY_GAP_ENABLED=false`) e não indica que a impressora ou o agente esteja definitivamente offline. Equipamentos sem leitura inicial não geram alerta automático. Recuperação exige duas amostras novas, separadas por janela de estabilidade; incidentes associados a chamados exigem confirmação do operador. Veja [tracker](docs/EXECUTION-TRACKER.md) para limitações.

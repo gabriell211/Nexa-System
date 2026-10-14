@@ -8,13 +8,14 @@ A **interface desktop usa Tauri 2.12 + React 19 + TypeScript**. A coleta roda no
 - Configuração de equipamentos por IP, ID numérico atribuído pelo backend e rede/CIDR autorizada; não existe varredura automática nesta etapa.
 - Outbox persistente em SQLite com modo WAL, chave única por UUID, envio HTTPS e remoção apenas de amostras reconhecidas pelo backend.
 - API Laravel autentica coletor por token individual, aceita até 100 leituras, valida propriedade do equipamento e retorna ACK idempotente.
+- Heartbeat autenticado independente do upload (`heartbeat_interval_seconds`, padrão 60s), enviado pelo daemon em um worker próprio, com timeout e jitter para reduzir rajadas. O backend registra a data de recebimento em `collector_agents.heartbeat_at`, separada de `last_seen_at` das leituras.
 - Tela desktop local de visão geral, impressoras e configuração, alimentada por configuração e estado SQLite reais (não há dados simulados).
 - Testes escritos para durabilidade da outbox, validação de CIDR e isolamento na API.
 
 ## Limitações importantes — ainda não utilizar como coletor de produção
 
 - **NÃO implementados:** instalador do serviço Windows/systemd/launchd, IPC daemon-console com autenticação, registro pela interface, armazenamento cifrado da fila, cofre de credenciais do sistema, SNMPv3, descoberta automática, USB, perfis por fabricante, alertas, watchdog, update assinado e diagnóstico avançado.
-- A UI tem acesso **somente de leitura** à configuração e ao SQLite, não identifica com certeza se o serviço está em execução. O controle por IPC autenticado ainda está pendente.
+- A UI tem acesso **somente de leitura** à configuração e ao SQLite; a tela de agentes no portal apresenta o heartbeat observado pelo servidor, mas isso não prova execução contínua do serviço local. O controle por IPC autenticado ainda está pendente.
 - O token e a comunidade SNMP são fornecidos por variáveis de ambiente **somente para laboratório**. Para produção, implementar serviço protegido e cofre de segredos do SO.
 - Não há teste real de SNMP, execução Cargo, Tauri build ou homologação de impressoras comprovado neste commit.
 
@@ -38,3 +39,9 @@ Requisitos: Rust 1.90+ (Tauri 2.12), Node.js 22.12+, PHP/Composer e PostgreSQL p
 - Homologar SNMPv3 por fabricante/modelo, métricas de suprimentos e USB somente onde suportado.
 - Validar a outbox com queda de energia, 48h sem rede, ACK parcial, versão de esquema e proteção contra disco cheio.
 - Cobrir todos os cenários QA pertinentes antes de afirmar que um requisito do README está concluído.
+
+## Intervalo de heartbeat e diagnóstico no servidor
+
+O campo opcional `heartbeat_interval_seconds` de `config.local.json` (30..3600s) define a frequência de sinal da API, independentemente de `interval_seconds` usado no SNMP. Em caso de timeout, o processo registra aviso genérico e tenta somente no próximo ciclo, sem expor credenciais. Verifique `/agentes` no portal para último heartbeat e último upload, mantendo `NEXA_HEARTBEAT_MAX_SILENCE_SECONDS` maior que o intervalo mais jitter e tolerância operacional. O status `late` **não confirma** que o daemon esteja desligado: rede/proxy/API indisponíveis produzem o mesmo sintoma.
+
+O token continua vindo do ambiente do serviço e deve ser protegido pelo SO. O HTTPS obrigatório permanece, mas ainda não foi homologado com proxy autenticado, Windows Service, systemd e launchd nem hardware real.
