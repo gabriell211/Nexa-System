@@ -240,3 +240,13 @@ Ao detectar o travamento, o watchdog registra apenas a categoria genérica e enc
 - Sob encerramento solicitado, o watchdog retorna sem provocar reinício anormal. Não existe ferramenta de recuperação automática que edite diretamente a SQLite.
 
 Testes Rust usam relógio sintético para verificar o limite exato, progresso e cancelamento por shutdown; checks de empacotamento do CI verificam a vinculação com as três plataformas. **Faltam testes em host real com falha induzida, reinício de serviço, falta de espaço, SQLite WAL sob interrupção elétrica e proteção contra sucessivas falhas repetidas**. NX-039 permanece PARCIAL.
+
+## Liveness independente da thread de heartbeat — entrega 29
+
+O Collector usa um único observador monotônico com **dois checkpoints**: o loop principal (consulta SNMP, SQLite e transmissão) e a thread independente que realiza o heartbeat HTTPS. A thread de heartbeat não pode atualizar o checkpoint principal; o loop principal não pode atualizar o checkpoint de heartbeat. Ambos têm o mesmo limiar de **180 segundos** e verificação a cada **5 segundos**.
+
+Uma tentativa de heartbeat, inclusive quando o servidor está indisponível e o HTTP termina com erro, é **progresso de execução**. Durante os intervalos de espera (`heartbeat_interval_seconds`, com jitter), cada segundo de sono interrompível confirma que a thread continua executando. Portanto, ficar offline ou esperar o próximo heartbeat **não dispara o watchdog por si só**. Se a thread entrar em deadlock, travar num syscall inesperadamente longo ou encerrar sem continuar a operar, o checkpoint para de ser renovado e o processo termina com código não zero 70, delegado ao supervisor do OS. O código não limpa a outbox.
+
+O observador é inicializado depois de o daemon reportar startup pronto; ambos os checkpoints são armados nesse instante. O monitor não é iniciado em comandos de manutenção, diagnóstico ou `--once`; Stop/SIGTERM/SIGINT normais bloqueiam a ação de recuperação forçada.
+
+**Limitações:** esse watchdog não verifica que o servidor recebeu um ACK de heartbeat, nem que cada impressora produziu leitura válida. Rede inoperante com requisições que retornam erro ainda conta como thread viva. O processo pode continuar vivo com um bug que atualize seu próprio checkpoint sem realizar trabalho útil. Sem ensaio real de simulação de deadlock, política anti-loop específica do launchd, diagnósticos remotos e teste em computadores físicos. Requisitos NX-039 e NX-041 permanecem **PARCIAIS**.
