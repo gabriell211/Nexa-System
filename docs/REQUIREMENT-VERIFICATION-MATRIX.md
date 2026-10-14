@@ -59,9 +59,9 @@
 | NX-031 | Agente local e comunicação | NÃO COMPROVADO | Descoberta de impressoras USB, com suporte condicionado ao sistema operacional, drivers e fabricante. |
 | NX-032 | Agente local e comunicação | NÃO COMPROVADO | Configuração de credenciais por impressora com armazenamento cifrado, nunca na interface ou em logs. |
 | NX-033 | Agente local e comunicação | PARCIAL — sem aceite E2E | Coleta configurável de contadores, capacidade, consumíveis, eventos, dados de identificação e estado. |
-| NX-034 | Agente local e comunicação | PARCIAL — heartbeat agente e horário de upload separados; saúde completa pendente | Intervalos separados de consulta, descoberta, heartbeat e upload, com jitter, timeout e backoff. |
+| NX-034 | Agente local e comunicação | PARCIAL — heartbeat, coleta e retentativa HTTP separados; descoberta e política persistida pendentes | Intervalos separados de consulta, descoberta, heartbeat e upload, com jitter, timeout e backoff. |
 | NX-035 | Agente local e comunicação | PARCIAL — fila SQLite limitada por amostras, sem criptografia nem limite em bytes | Fila de envio persistente, criptografada, limitada em disco, reenvio ordenado e deduplicação no backend. |
-| NX-036 | Agente local e comunicação | PARCIAL — sem aceite E2E | Envio por HTTPS/TLS usando apenas conexão iniciada pelo agente; compatibilidade com proxy autenticado. |
+| NX-036 | Agente local e comunicação | PARCIAL — HTTPS outbound e retry/status; proxy autenticado e testes reais pendentes | Envio por HTTPS/TLS usando apenas conexão iniciada pelo agente; compatibilidade com proxy autenticado. |
 | NX-037 | Agente local e comunicação | NÃO COMPROVADO | Canal alternativo de transporte por e-mail SMTP/POP3 somente se autorizado e implementado com cifragem, autenticação e limites. |
 | NX-038 | Agente local e comunicação | PARCIAL — console de fila/configuração somente leitura, sem diagnóstico de SNMP e logs completos | Diagnóstico local, teste de comunicação, teste de SNMP, validação de IP e logs sanitizados. |
 | NX-039 | Agente local e comunicação | NÃO COMPROVADO | Monitoramento e recuperação de serviços travados com supervisor, sem loop infinito de reinicialização. |
