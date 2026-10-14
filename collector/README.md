@@ -105,3 +105,18 @@ O campo opcional `max_pending_payload_bytes` de `config.local.json` aceita **1 a
 - O daemon recusa novas coletas quando estiver saturado e informa erro genérico sem conteúdo de leitura. A interface apresenta os limites de quantidade e de bytes como dois indicadores separados.
 
 **Importante:** esta política limita apenas os **bytes do payload JSON armazenado**, não o tamanho físico do arquivo SQLite. Os arquivos `queue.sqlite`, `queue.sqlite-wal`, `queue.sqlite-shm`, índices, páginas livres, backups e demais arquivos ocupam espaço adicional e não têm quota fixa nesta implementação. Não ativar como coleta de produção sem monitor de espaço real, reserva de disco, política auditada para dados antigos, proteção dos arquivos (ACL) e criptografia em repouso. Sem testes de disco cheio/queda de energia e hardware real.
+
+## Guard preventivo de espaço físico DB/WAL/SHM — entrega 21
+
+Configuração opcional: `max_sqlite_files_bytes`, padrão `536870912` (512 MiB), entre 1 e 68719476736 (64 GiB). Configurações antigas usam o padrão. Esta verificação soma o tamanho do arquivo SQLite principal e, quando existirem, seus arquivos WAL e SHM. Não conta outras cópias, arquivos temporários em locais externos ou bytes livres no volume.
+
+Ao atingir o limiar, o daemon suspende novas leituras SNMP, mas continua tentando transmitir amostras antigas e processar ACKs confirmados. A inserção de cada nova leitura também confere o tamanho antes de gravar e retorna um erro específico caso o guard seja atingido. Dados pendentes ou em quarentena **não são apagados**; alterações legítimas de estado e restaurações administrativas continuam permitidas para recuperação.
+
+Consulta offline, sem heartbeat, consulta SNMP ou upload:
+```sh
+nexa-collector-daemon config.local.json queue.sqlite --storage-status
+```
+
+O Console apresenta a soma física observada e os tamanhos DB/WAL/SHM separados, além dos dois limites de retenção já existentes. A tela deve ser tratada como instantâneo observacional, não telemetria contínua.
+
+**Limites e operação:** esta é uma proteção preventiva e não impõe quota atômica ao sistema de arquivos. A transação que começa logo abaixo do limiar pode ultrapassá-lo; clientes concorrentes também podem mudar os tamanhos entre medição e escrita. O WAL pode crescer independentemente do tamanho do conteúdo JSON. Após um ACK, o arquivo SQLite pode manter páginas livres e o limite físico permanecer acionado. Não executar `VACUUM`, exclusão de WAL, checkpoint forçado ou migração de banco automaticamente sob pressão: precisam de procedimento supervisionado, reserva de disco e backup verificado. Falta detectar espaço disponível real, implementar reserva mínima, criptografar dados em repouso e homologar falha de energia/dados físicos.
