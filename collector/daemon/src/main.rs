@@ -74,7 +74,7 @@ fn run_application(
         println!("Watchdog incident counter acknowledged; prior history retained; manually restart service after reviewing cause");
         return Ok(());
     }
-    if supervised_mode {
+    if supervised_mode && args.len() == 3 {
         match recovery_guard.circuit_open(Utc::now()) {
             Ok(true) => {
                 // A normal exit prevents launchd KeepAlive, systemd on-failure
