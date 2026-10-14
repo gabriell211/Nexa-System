@@ -151,6 +151,14 @@ fn run_application(
     if supervised_mode && (token.is_none() || (!cfg.printers.is_empty() && snmp_community.is_none())) {
         return Err("supervised collector requires token and configured SNMP credentials".into());
     }
+    // Separate progress checkpoints: the heartbeat worker can no longer be
+    // masked by a responsive main loop (and vice versa). Manual CLI modes do
+    // not start liveness supervision.
+    let progress = if supervised_mode && !once {
+        Some(Arc::new(progress_watchdog::ProgressWatchdog::new(Arc::clone(&shutdown))))
+    } else {
+        None
+    };
     if once {
         if let Some(ref secret) = token {
             if send_heartbeat(&cfg, secret).is_err() {
@@ -161,6 +169,7 @@ fn run_application(
         let heartbeat_cfg = cfg.clone();
         let heartbeat_token = token.clone();
         let heartbeat_shutdown = Arc::clone(&shutdown);
+        let heartbeat_progress = progress.clone();
         thread::spawn(move || {
             loop {
                 if heartbeat_shutdown.load(Ordering::Relaxed) { break; }
@@ -171,12 +180,22 @@ fn run_application(
                 } else {
                     eprintln!("Collector token absent; heartbeat skipped");
                 }
+                // A network error is not a dead worker. The HTTP attempt
+                // finished; only the heartbeat worker refreshes this signal.
+                if let Some(ref monitor) = heartbeat_progress {
+                    monitor.heartbeat_progressed();
+                }
                 let delay = heartbeat_sleep_seconds(
                     heartbeat_cfg.heartbeat_interval_seconds, heartbeat_cfg.collector_id,
                 );
                 for _ in 0..delay {
                     if heartbeat_shutdown.load(Ordering::Relaxed) { return; }
                     thread::sleep(Duration::from_secs(1));
+                    // Each completed interruptible sleep proves worker
+                    // liveness during long configured heartbeat intervals.
+                    if let Some(ref monitor) = heartbeat_progress {
+                        monitor.heartbeat_progressed();
+                    }
                 }
             }
         });
@@ -189,14 +208,11 @@ fn run_application(
     upload_retry.restore(Instant::now(), retry_seconds, stored_retry.consecutive_failures);
     let mut next_poll = Instant::now();
     on_ready()?;
-    // An independent watchdog detects a blocked main collection/delivery
-    // loop even if the separate API heartbeat thread continues working.
-    // CLI, one-shot diagnostics and offline migrations never arm it.
-    let progress = if supervised_mode && !once {
-        Some(progress_watchdog::start_watchdog(Arc::clone(&shutdown)))
-    } else {
-        None
-    };
+    // Begin supervising both workers only after startup has completed.
+    // The watcher cannot renew either worker's checkpoint itself.
+    if let Some(ref monitor) = progress {
+        progress_watchdog::start_watchdog(Arc::clone(monitor));
+    }
 
     loop {
         if shutdown.load(Ordering::Relaxed) { break; }
