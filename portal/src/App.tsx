@@ -163,15 +163,18 @@ function Shell({ token, identity, onLogout }: {
       <div className="sidebar-footer">
         <div className="profile-circle">{identity.user.name.slice(0, 1).toUpperCase()}</div>
         <div className="profile-text"><strong>{identity.user.name}</strong><small>{identity.role}</small></div>
-        <button type="button" className="icon-button transparent" onClick={() => void onLogout()} title="Encerrar sessão" aria-label="Encerrar sessão">
-          <LogOut size={19} aria-hidden="true" />
-        </button>
+
       </div>
     </aside>
     <div className="content-area">
       <header className="topbar">
         <span className="topbar-breadcrumb">Nexa <span>/</span> Painel administrativo</span>
-        <span className="system-status"><span className="status-dot" /> Dados da API</span>
+        <div className="topbar-actions">
+          <span className="system-status"><span className="status-dot" /> Dados da API</span>
+          <button type="button" className="button ghost topbar-logout" onClick={() => void onLogout()} aria-label="Encerrar sessão" title="Encerrar sessão">
+            <LogOut size={17} aria-hidden="true" /> Sair
+          </button>
+        </div>
       </header>
       <main className="main-content">
         <Routes>

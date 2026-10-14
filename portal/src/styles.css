@@ -240,3 +240,18 @@ td.mono { font-family: ui-monospace, monospace; }
 .ticket-comment small { color:#64748b; margin-left:8px; }
 .ticket-comment p { white-space:pre-wrap; overflow-wrap:anywhere; margin:8px 0 0; }
 .stock-field textarea { width:100%; border:1px solid #dce4f0; border-radius:9px; background:#fbfdff; padding:12px 13px; color:#1e3150; font:inherit; }
+
+/* Keep the complete navigation scrollable without pushing the signed-in profile off-screen. */
+.sidebar { min-height: 0; overflow: hidden; }
+.sidebar-nav { min-height: 0; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.sidebar-footer { flex-shrink: 0; }
+.topbar-actions { display: flex; flex: 0 0 auto; gap: 12px; align-items: center; }
+.topbar-logout { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; }
+@media (max-width: 750px) {
+  .sidebar { overflow: visible; }
+  .sidebar-nav { flex: initial; overflow-y: hidden; }
+  .topbar { gap: 10px; }
+  .topbar-breadcrumb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .system-status { display: none; }
+  .topbar-actions { margin-left: auto; }
+}

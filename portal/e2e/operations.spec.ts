@@ -59,7 +59,9 @@ test('secure login, customers, tickets, stock and logout (real browser)', async 
   });
 
   await test.step('Invalidate server session and reject stale browser reload', async () => {
-    await page.getByRole('button',{name:'Encerrar sessão'}).click();
+    const logout = page.getByRole('button',{name:'Encerrar sessão'});
+    await expect(logout).toBeInViewport();
+    await logout.click();
     await expect(page.getByRole('button',{name:/Entrar no painel/})).toBeVisible();
     await page.reload();
     await expect(page.getByRole('heading',{name:'Acesse sua operação.'})).toBeVisible();
