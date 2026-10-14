@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Watchdog independente do heartbeat — incremento 29 (parcial)
+
+- A supervisão do daemon agora mantém **dois indicadores monotônicos independentes**: progresso do loop principal (SNMP/outbox/upload) e progresso da thread de heartbeat. O heartbeat não pode mascarar a coleta travada, nem a coleta ativa pode mascarar uma thread de heartbeat travada.
+- A thread de heartbeat atualiza seu próprio sinal quando uma tentativa HTTP termina, **mesmo em falha de rede**, e após cada segundo de espera cooperativa. Um intervalo de heartbeat configurado de até uma hora não é interpretado incorretamente como travamento.
+- O watchdog somente é armado após a inicialização do daemon supervisionado. Se qualquer thread parar de avançar durante **180 segundos**, registra apenas a categoria de falha (sem credenciais, leituras ou corpo de resposta) e termina com código 70 para o serviço aplicar sua política de recuperação.
+- Pedidos normais de parada desativam ambas as verificações; comandos CLI `--once`, migração, rotação e diagnósticos continuam sem watchdog.
+- Testes Rust verificam os limites separadamente, uma thread mascarando a outra, retomada de progresso, startup e parada; CI permanece obrigatório no Windows, Linux e macOS. **Sem teste operacional de kill/hang ou validação em host físico**. `NX-039/041` continuam parciais.
+
 ### Watchdog de progresso do Collector — incremento 28 (parcial)
 
 - O daemon Rust supervisionado por **systemd / Windows SCM / macOS launchd** agora ativa um watchdog independente do heartbeat HTTP. O relógio de progresso só é atualizado pelo **loop principal** após completar consultas SNMP, operações de coleta, tentativas de upload e ciclos de espera; a thread de heartbeat não consegue renovar o sinal.
