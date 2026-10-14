@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
-    let mut outbox = Outbox::open_bounded(&args[2], cfg.max_pending_samples)?;
+    let mut outbox = Outbox::open_with_limits(&args[2], cfg.max_pending_samples, cfg.max_pending_payload_bytes)?;
     // Operator-only commands do not start SNMP polling or heartbeat workers.
     if list_quarantine {
         for item in outbox.quarantined_readings(100)? {
@@ -74,17 +74,24 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         if Instant::now() >= next_poll {
-            if outbox.retained()? >= cfg.max_pending_samples {
+            if outbox.at_capacity()? {
                 eprintln!("Outbox saturated; new SNMP samples deferred until confirmed uploads release space");
             } else if let Ok(community) = env::var("NEXA_SNMP_COMMUNITY") {
                 for printer in &cfg.printers {
-                    if outbox.retained()? >= cfg.max_pending_samples {
+                    if outbox.at_capacity()? {
                         eprintln!("Outbox full; remaining printers deferred");
                         break;
                     }
                     match collect_snmp_v2c(printer, community.as_bytes()) {
                         Ok(reading) => {
-                            outbox.enqueue(&reading)?;
+                            match outbox.enqueue(&reading) {
+                                Ok(_) => {}
+                                Err(CollectorError::OutboxFull { .. } | CollectorError::OutboxBytesFull { .. }) => {
+                                    eprintln!("Outbox at configured retention capacity; new reading not persisted; further SNMP polling deferred");
+                                    break;
+                                }
+                                Err(error) => return Err(Box::new(error)),
+                            }
                         }
                         Err(_) => eprintln!("SNMP reading unavailable for printer {}", printer.printer_id),
                     }
@@ -103,7 +110,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if once {
-            println!("Outbox pending: {}, quarantined: {}", outbox.pending()?, outbox.quarantined_count()?);
+            println!("Outbox pending: {}, quarantined: {}, retained payload bytes: {}", outbox.pending()?, outbox.quarantined_count()?, outbox.retained_payload_bytes()?);
             break;
         }
         // Upload retry scheduling runs independently of the (possibly 24-hour)
