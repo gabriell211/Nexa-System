@@ -113,7 +113,7 @@ final class CollectorHeartbeatTest extends TestCase
         $this->heartbeat($secret,(string)Str::uuid())->assertUnauthorized();
         $this->heartbeat($secret,'not-a-uuid')->assertUnprocessable();
         Auth::forgetGuards();
-        $this->postJson('/api/v1/collector/heartbeat',[
+        $this->withHeader('Authorization','')->postJson('/api/v1/collector/heartbeat',[
             'collector_id'=>$agent->collector_id,
         ])->assertUnauthorized();
         $this->assertNull($agent->fresh()->heartbeat_at);
