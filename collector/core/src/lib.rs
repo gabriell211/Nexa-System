@@ -36,6 +36,33 @@ pub enum CollectorError {
     SampleConflict,
 }
 
+/// Non-sensitive local transfer history. Stored as a single JSON document in SQLite.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DeliveryDiagnostics {
+    pub last_success_at: Option<String>,
+    pub last_failure_at: Option<String>,
+    pub last_error_kind: Option<String>,
+    pub next_attempt_at: Option<String>,
+    pub consecutive_failures: u32,
+}
+
+impl DeliveryDiagnostics {
+    /// Use a bounded wall-clock delta only to restore an in-memory timer.
+    /// Invalid stored timestamps are surfaced, not silently reset.
+    pub fn seconds_until_retry(&self, now: DateTime<Utc>) -> Result<u64, CollectorError> {
+        match self.next_attempt_at.as_deref() {
+            None => Ok(0),
+            Some(raw) => {
+                let when = DateTime::parse_from_rfc3339(raw).map_err(|_| {
+                    CollectorError::Configuration("invalid stored delivery retry timestamp".into())
+                })?;
+                Ok(when.signed_duration_since(now).num_seconds().clamp(0, 21_600) as u64)
+            }
+        }
+    }
+}
+
 /// Typed delivery state controls retries independently from the SNMP polling interval.
 /// The queue itself is never deleted or mutated by this policy.
 #[derive(Debug, Default)]
@@ -85,6 +112,15 @@ impl UploadRetryPolicy {
     }
 
     pub fn failures(&self) -> u32 { self.failures }
+
+    pub fn restore(&mut self, now: Instant, wait_seconds: u64, failures: u32) {
+        self.failures = failures;
+        self.next_attempt = if wait_seconds > 0 {
+            Some(now + Duration::from_secs(wait_seconds.min(21_600)))
+        } else {
+            None
+        };
+    }
 }
 
 /// Never include request bodies, authentication tokens, or server error bodies in logs.
@@ -277,6 +313,27 @@ impl Outbox {
             tx.execute("DELETE FROM outbox WHERE sample_id = ?1", [id.to_string()])?;
         }
         tx.commit()?;
+        Ok(())
+    }
+
+    pub fn delivery_diagnostics(&self) -> Result<DeliveryDiagnostics, CollectorError> {
+        let raw: Option<String> = self.connection.query_row(
+            "SELECT value FROM state WHERE key = 'delivery_diagnostics'",
+            [],
+            |row| row.get(0),
+        ).optional()?;
+        raw.map(|value| serde_json::from_str(&value).map_err(CollectorError::from))
+            .transpose()
+            .map(|value| value.unwrap_or_default())
+    }
+
+    pub fn save_delivery_diagnostics(&self, diagnostics: &DeliveryDiagnostics) -> Result<(), CollectorError> {
+        let serialized = serde_json::to_string(diagnostics)?;
+        self.connection.execute(
+            "INSERT INTO state(key, value) VALUES ('delivery_diagnostics', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [&serialized],
+        )?;
         Ok(())
     }
 
@@ -587,6 +644,50 @@ mod tests {
         outbox.acknowledge(&[one.sample_id]).unwrap();
         assert_eq!(outbox.pending().unwrap(), 1);
         assert_eq!(outbox.next_batch(10).unwrap()[0].sample_id, two.sample_id);
+    }
+
+    #[test]
+    fn delivery_diagnostics_survive_restart_without_exposing_secrets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("queue.sqlite");
+        let moment = Utc::now();
+        let next = moment + chrono::Duration::minutes(30);
+        let initial = DeliveryDiagnostics {
+            last_success_at: None,
+            last_failure_at: Some(moment.to_rfc3339()),
+            last_error_kind: Some("authorization".to_string()),
+            next_attempt_at: Some(next.to_rfc3339()),
+            consecutive_failures: 4,
+        };
+        {
+            let outbox = Outbox::open_bounded(&db, 2).unwrap();
+            let reading = sample_with_meter(21);
+            outbox.enqueue(&reading).unwrap();
+            outbox.save_delivery_diagnostics(&initial).unwrap();
+        }
+        let reopened = Outbox::open_bounded(&db, 2).unwrap();
+        assert_eq!(reopened.pending().unwrap(), 1);
+        let stored = reopened.delivery_diagnostics().unwrap();
+        assert_eq!(stored.last_error_kind.as_deref(), Some("authorization"));
+        assert_eq!(stored.consecutive_failures, 4);
+        assert!((1798..=1800).contains(&stored.seconds_until_retry(moment).unwrap()));
+        let mut policy = UploadRetryPolicy::default();
+        let now = Instant::now();
+        policy.restore(now, stored.seconds_until_retry(moment).unwrap(), stored.consecutive_failures);
+        assert!(!policy.ready(now));
+        assert!(policy.ready(now + Duration::from_secs(1801)));
+    }
+
+    #[test]
+    fn invalid_saved_delivery_timestamp_does_not_bypass_fail_closed_restore() {
+        let diagnostics = DeliveryDiagnostics {
+            next_attempt_at: Some("not-a-timestamp".into()),
+            ..DeliveryDiagnostics::default()
+        };
+        assert!(matches!(
+            diagnostics.seconds_until_retry(Utc::now()),
+            Err(CollectorError::Configuration(_))
+        ));
     }
 
     #[test]
