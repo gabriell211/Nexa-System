@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Serviço nativo macOS (launchd) — incremento 27, validação parcial
+
+- O Collector Rust passa a oferecer execução foreground sob **launchd LaunchDaemon** (`--launchd`), com caminhos fixos em `/Library/Application Support/NexaCollector`, conta sem login `_nexacollector` e fechamento cooperativo via `SIGTERM`/`SIGINT`.
+- `collector/macos/com.nexa.collector.plist` define `RunAtLoad`, reinício após saída não bem-sucedida (`KeepAlive.SuccessfulExit=false`), throttling de 30 segundos e máscara de arquivos `0077`; não é watchdog de travamentos internos.
+- `collector/macos/install.sh` prepara o usuário/grupo, binário, configuração, dados, logs e um plist **em staging**, sem adicionar o serviço ao diretório de inicialização. `activate.sh` é o passo administrativo explícito que verifica ACLs, presença de credenciais e executa `launchctl bootstrap`.
+- No modo launchd, o daemon lê **somente arquivos de credenciais** sob `credentials/` (token, chave AES, comunidade SNMP), sem fallback para variáveis herdadas. Não há migração automática de bancos legados.
+- Novo job macOS compila e testa o daemon nativamente, valida o plist e scripts. **Não prova instalação/boot/recuperação em Mac físico**, nem integração Keychain. Linux systemd e Windows SCM seguem independentes. `NX-035/039/041` continuam parciais.
+
 ### Serviço nativo Windows (SCM) — incremento 26, validação parcial
 
 - Novo modo `--service` para o daemon Rust no Windows: registra no **Service Control Manager** o estado *StartPending → Running → Stopped*, recebe `SERVICE_CONTROL_STOP` e solicita parada cooperativa. O ciclo principal verifica o sinal de parada inclusive entre as consultas SNMP; a fila SQLite continua intacta.
