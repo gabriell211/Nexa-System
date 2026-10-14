@@ -1267,6 +1267,23 @@ mod tests {
     const OTHER_DB_KEY: &str = "cafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00d";
 
     #[test]
+    fn heartbeat_watchdog_status_excludes_secrets_devices_and_sample_payloads() {
+        let collector_id = Uuid::new_v4();
+        let reported = serde_json::to_value(&HeartbeatBody {
+            collector_id,
+            watchdog: Some(WatchdogHeartbeat { recent_incidents: 2, circuit_open: false }),
+        }).unwrap();
+        assert_eq!(reported["watchdog"]["recent_incidents"], 2);
+        assert_eq!(reported["watchdog"]["circuit_open"], false);
+        assert_eq!(reported["collector_id"], collector_id.to_string());
+        assert_eq!(reported["watchdog"].as_object().unwrap().len(), 2);
+        let legacy = serde_json::to_value(&HeartbeatBody {
+            collector_id, watchdog: None,
+        }).unwrap();
+        assert!(legacy.get("watchdog").is_none());
+    }
+
+    #[test]
     fn offline_key_rotation_preserves_uuid_quarantine_timestamps_and_retry_history() {
         let tmp = tempfile::tempdir().unwrap();
         let old_path = tmp.path().join("old-encrypted.sqlite");
