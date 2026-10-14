@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Rotação offline de chave da outbox criptografada — incremento 24 (parcial)
+
+- Novo comando: `nexa-collector-daemon config.local.json fila-antiga.sqlite --rotate-encryption-to fila-nova.sqlite`, com chaves **distintas** em `NEXA_COLLECTOR_DB_KEY_HEX` (atual) e `NEXA_COLLECTOR_NEW_DB_KEY_HEX` (nova), fornecidas externamente ao código e à linha de comando.
+- Exige fonte criptografada íntegra, autenticada com a chave antiga e destino inexistente. A migração copia para **outro arquivo SQLite**, descriptografa em memória e recifra cada leitura com AES-256-GCM e novo nonce; conserva UUIDs, timestamps, quarentena e estado da transmissão.
+- O banco original não é modificado nem excluído. Destino parcial permanece `migration_status=incomplete` e não é aberto pelo daemon; origem plaintext, chave antiga errada e destino existente são recusados.
+- **Troca operacional manual:** parar serviço e console, fazer backup e verificar chave nova, rotacionar, alterar **juntos** caminho do SQLite e segredo fornecido ao serviço/console, reabrir/validar, só então retomar a coleta. A chave antiga deve permanecer protegida até backup/retenção da origem serem resolvidos.
+- **Ainda faltam:** proteção e rotação pelo keychain/DPAPI/Secret Service, implantação de serviço nativo e testes de corte em máquina física; sem criptografia integral dos arquivos SQLite/WAL. `NX-035` continua PARCIAL.
+
 ### Migração offline de outbox legada para payload criptografado — incremento 23 (parcial)
 
 - Novo comando **offline** do daemon: `nexa-collector-daemon config.local.json antiga.sqlite --migrate-encrypted-to nova.sqlite`. Requer `NEXA_COLLECTOR_DB_KEY_HEX`, serviço parado e caminho de destino **inexistente**. Não inicia SNMP, heartbeat nem upload e não substitui o caminho de operação automaticamente.
