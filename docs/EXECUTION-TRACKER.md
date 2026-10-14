@@ -448,3 +448,16 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - A prova de desligamento do serviço OS e a troca de caminho são procedimentos manuais. Embora a fonte esteja travada durante a cópia, escritores reativados **depois** da transação ainda podem divergir; não há cutover automático/replicação.
 - Não migra o banco em uso, não remove texto claro de source/WAL/backups, não criptografa metadados e não implementa rotação de chaves, secret store, cota física ou garantia de ENOSPC.
 - Sem aceitação de instalação nativa no Windows/Linux/macOS e sem teste de energia/hardware real. `NX-035` continua **PARCIAL**.
+
+## Entrega 24 — rotação offline de chave AES-256-GCM (14/10/2026)
+
+### Incremento implementado
+- Reutilizado fluxo de migração para fonte cifrada autenticada com a chave antiga; nova API `rotate_encryption_key_offline` e CLI `--rotate-encryption-to <new-db>` com variáveis **separadas** `NEXA_COLLECTOR_DB_KEY_HEX` e `NEXA_COLLECTOR_NEW_DB_KEY_HEX`.
+- Recusa chaves iguais, chave anterior incorreta, fonte plaintext ou incompleta e destino já existente, sem sobrescrever ou truncar a origem.
+- Segura origem com `BEGIN IMMEDIATE`, valida chave e `quick_check`, decifra JSON de outbox/quarentena em buffer com zeroização e cifra sob nova chave/AAD UUID antes da cópia. Preserva UUID, timestamp, ordem, motivos, ACK pendente e estado de transmissão.
+- Marcador `migration_status=incomplete` bloqueia leitura do destino até checagem de contagens, ciphertext roundtrip e `quick_check`, quando vira `complete`. O processo não alterna o caminho da base nem altera a configuração dos serviços.
+- Novos testes Rust cobrem rotação e preservação de metadados/quarentena, chave errada/igual, fonte plaintext, destino existente e ciphertext corrompido, mantendo destino parcial inutilizável.
+
+### Limites de aceite
+- Rotação **offline**, sem prova de parada de writers depois do snapshot; cutover e backup exigem operador. Nenhuma chave é recuperável automaticamente se perdida.
+- Ausentes cofre nativo (Windows DPAPI/Credential Manager, macOS Keychain e Linux Secret Service), cifragem integral SQLite, descarte seguro de backups, instaladores e teste real de interrupção elétrica/disco cheio. `NX-035` permanece **PARCIAL**.
