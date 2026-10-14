@@ -1,6 +1,6 @@
 use nexa_collector_core::{
-    collect_snmp_v2c, heartbeat_sleep_seconds, read_config, send_heartbeat, upload_pending,
-    upload_error_kind, CollectorConfig, CollectorError, Outbox, UploadRetryPolicy,
+    collect_snmp_v2c, heartbeat_sleep_seconds, read_config, send_heartbeat, send_heartbeat_with_watchdog, upload_pending,
+    upload_error_kind, CollectorConfig, CollectorError, Outbox, UploadRetryPolicy, WatchdogHeartbeat,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use std::{
@@ -204,11 +204,22 @@ fn run_application(
         let heartbeat_token = token.clone();
         let heartbeat_shutdown = Arc::clone(&shutdown);
         let heartbeat_progress = progress.clone();
+        let heartbeat_guard = recovery_guard.clone();
         thread::spawn(move || {
             loop {
                 if heartbeat_shutdown.load(Ordering::Relaxed) { break; }
                 if let Some(ref secret) = heartbeat_token {
-                    if send_heartbeat(&heartbeat_cfg, secret).is_err() {
+                    let diagnostics = match heartbeat_guard.snapshot(Utc::now()) {
+                        Ok(health) => Some(WatchdogHeartbeat {
+                            recent_incidents: health.recent_incidents,
+                            circuit_open: health.circuit_open,
+                        }),
+                        Err(error) => {
+                            eprintln!("Watchdog diagnostics unavailable ({error}); heartbeat sends no watchdog status");
+                            None
+                        }
+                    };
+                    if send_heartbeat_with_watchdog(&heartbeat_cfg, secret, diagnostics).is_err() {
                         eprintln!("Heartbeat unavailable; collector identity or network must be checked");
                     }
                 } else {
