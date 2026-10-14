@@ -208,3 +208,20 @@ Stop-Service -Name NexaCollector
 O SCM mostra estados StartPending/Running/Stopped. A parada solicita interrupção do loop e deixa o SQLite ser fechado pelo processo. Falha de inicialização reporta saída com erro; as ações configuradas de recuperação não substituem supervisão de processos travados que permanecem vivos.
 
 **Limites:** não foi executado em estação Windows física, ainda não há política de atualização assinada, instalador MSI, DPAPI/Credential Manager, watchdog de deadlock, comunicação IPC autenticada com Tauri nem testes de falha de rede/energia. O estado Running indica inicialização do daemon, não disponibilidade das impressoras. NX-035, NX-039 e NX-041 permanecem parciais.
+
+## Serviço nativo macOS — entrega 27 (launchd)
+
+O daemon Rust pode rodar como **LaunchDaemon** por meio de `--launchd` (somente macOS). O supervisor do macOS reinicia o processo quando ele encerra com falha e limita reinícios; `SIGTERM` solicita saída cooperativa para fechar a outbox SQLite sem expurgar leituras. Isso não detecta loop travado que permaneça vivo, nem interrompe instantaneamente requisições SNMP/HTTPS bloqueantes.
+
+### Instalação manual com provisionamento de segredos
+
+1. Compile nativamente no macOS: `cd collector && cargo build --release -p nexa-collector-daemon`.
+2. Em um Mac compatível com `launchd`, execute `sudo bash collector/macos/install.sh "$(pwd)/collector/target/release/nexa-collector-daemon"`. O instalador rejeita diretórios existentes, cria conta de sistema dedicada `_nexacollector` sem login, instala o executável em `/Library/PrivilegedHelperTools/NexaCollector` e prepara um plist de staging em `/Library/Application Support/NexaCollector/launchd`. **Não cria um LaunchDaemon ativo nem registra auto-start.**
+3. Edite `/Library/Application Support/NexaCollector/config.json` (modo 0640, owner root, grupo `_nexacollector`), ajustando URL HTTPS, identificador real e impressoras autorizadas. Para banco novo, o payload será cifrado com a chave fornecida. Bancos antigos plaintext devem passar pelo procedimento offline de migração já documentado.
+4. Provisione os arquivos `NEXA_COLLECTOR_TOKEN`, `NEXA_COLLECTOR_DB_KEY_HEX` e `NEXA_SNMP_COMMUNITY` em `/Library/Application Support/NexaCollector/credentials`, com proprietário `root`, grupo `_nexacollector` e modo **0640**, usando um gerenciador de segredos/processo administrativo seguro. Não inclua valores em argumentos, plist, scripts, arquivos versionados ou logs.
+5. Somente depois do provisionamento, execute `sudo bash collector/macos/activate.sh`. Esse comando confere arquivos e permissões, copia o plist para `/Library/LaunchDaemons` e chama `launchctl bootstrap system`. O serviço, a partir daí, pode iniciar automaticamente em reinicializações do macOS.
+6. Diagnóstico: `sudo launchctl print system/com.nexa.collector`; solicitar parada/descarregamento: `sudo launchctl bootout system/com.nexa.collector`. Logs (com controle de acesso pelo dono): `/Library/Logs/NexaCollector/stdout.log` e `stderr.log`. Eles exigem configuração operacional de rotação/limites para evitar crescimento indefinido.
+
+A conta isolada possui permissão de escrita apenas nos dados e logs da aplicação; configurações e credenciais podem ser lidas, mas não alteradas, pela identidade de serviço. `Umask=63` (0077) torna privados os arquivos novos. A instalação não remove banco antigo, não altera serviço Windows/Linux nem gerencia automaticamente credenciais.
+
+**Pendências de produção:** nenhum ensaio de boot/energia/macOS físico, sem Keychain/secure enclave, sem assinatura/notarização Apple, sem pkg profissional, sem watchdog para deadlocks, sem rotação de logs implementada, sem controle atômico de espaço livre e sem homologação em equipamentos SNMP reais. `NX-035`, `NX-039` e `NX-041` continuam PARCIAIS. O CI apenas compila e testa, não ativa o serviço do sistema.
