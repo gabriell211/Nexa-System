@@ -2,6 +2,10 @@
 declare(strict_types=1);
 
 return [
+    'collector_heartbeat'=>[
+        // Heartbeat is independent of SNMP polling and successful upload.
+        'max_silence_seconds'=>(int)env('NEXA_HEARTBEAT_MAX_SILENCE_SECONDS',180),
+    ],
     'telemetry_gap' => [
         // Disabled until explicitly enabled by the installation operator.
         'enabled' => (bool) env('NEXA_TELEMETRY_GAP_ENABLED', false),
