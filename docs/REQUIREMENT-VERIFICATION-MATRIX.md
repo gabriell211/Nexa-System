@@ -64,7 +64,7 @@
 | NX-036 | Agente local e comunicação | PARCIAL — HTTPS outbound e retry/status; proxy autenticado e testes reais pendentes | Envio por HTTPS/TLS usando apenas conexão iniciada pelo agente; compatibilidade com proxy autenticado. |
 | NX-037 | Agente local e comunicação | NÃO COMPROVADO | Canal alternativo de transporte por e-mail SMTP/POP3 somente se autorizado e implementado com cifragem, autenticação e limites. |
 | NX-038 | Agente local e comunicação | PARCIAL — console local de fila e histórico de upload sanitizado; SNMP/proxy avançado e homologação pendentes | Diagnóstico local, teste de comunicação, teste de SNMP, validação de IP e logs sanitizados. |
-| NX-039 | Agente local e comunicação | PARCIAL — systemd, Windows SCM e macOS launchd em código; sem watchdog de hang nem homologação real | Monitoramento e recuperação de serviços travados com supervisor, sem loop infinito de reinicialização. |
+| NX-039 | Agente local e comunicação | PARCIAL — serviços nos 3 OS e watchdog monotônico de loop principal; sem liveness total, anti-loop no launchd ou homologação de restart real | Monitoramento e recuperação de serviços travados com supervisor, sem loop infinito de reinicialização. |
 | NX-040 | Agente local e comunicação | NÃO COMPROVADO | Atualização automática controlada, assinatura/verificação de artefatos, rollback e política de versões mínimas. |
 | NX-041 | Agente local e comunicação | PARCIAL — heartbeat, upload e diagnósticos de retry separados; supervisão completa pendente | Monitoramento de pontos instalados com data de última comunicação, versão, rede e estado. |
 | NX-042 | Agente local e comunicação | NÃO COMPROVADO | Reinstalação e recuperação dos dados locais sem replicar leituras já recebidas. |
