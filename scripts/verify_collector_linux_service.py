@@ -57,7 +57,7 @@ assert 'std::process::exit(WATCHDOG_EXIT_CODE)' in watchdog
 assert 'guard.record(kind, Utc::now())' in watchdog
 assert '--watchdog-status' in daemon
 assert '--reset-watchdog-circuit' in daemon
-assert 'if supervised_mode {' in daemon
+assert 'if supervised_mode && args.len() == 3 {' in daemon
 assert 'recovery_guard.circuit_open(Utc::now())' in daemon
 assert "StateDirectoryMode=0700" in unit
 assert "install -o root -g root -m 0644" in installer
