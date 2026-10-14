@@ -38,6 +38,10 @@ assert 'run_application(arguments(), stop, || Ok(()), false, true)' in runtime
 assert 'signal_hook::flag::register(SIGTERM' in runtime
 assert 'signal_hook::flag::register(SIGINT' in runtime
 assert "signal-hook" in cargo
+watchdog = (root / "collector/daemon/src/progress_watchdog.rs").read_text()
+assert "std::process::exit(WATCHDOG_EXIT_CODE)" in watchdog
+assert "supervised_mode && !once" in daemon
+assert "watcher.progressed()" in daemon
 
 assert "dscl . -create /Users/_nexacollector" in installer
 assert "dscl . -create /Groups/_nexacollector" in installer
