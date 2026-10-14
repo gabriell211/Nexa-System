@@ -420,6 +420,9 @@ impl Outbox {
             ));
         }
         let database_path = path.as_ref().to_path_buf();
+        // Refuse in-place encryption of *any* prior SQLite file, even if the
+        // current tables are empty: deleted plaintext may persist in WAL/pages.
+        let previously_existing = database_path.exists();
         let mut db = Connection::open(&database_path)?;
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.pragma_update(None, "busy_timeout", 5000_i64)?;
@@ -460,6 +463,9 @@ impl Outbox {
                 }
             }
             (None, Some(cipher)) => {
+                if previously_existing {
+                    return Err(CollectorError::EncryptionMigrationRequired);
+                }
                 let retained: u64 = db.query_row(
                     "SELECT (SELECT COUNT(*) FROM outbox)
                           + (SELECT COUNT(*) FROM quarantined_readings)",
@@ -962,6 +968,112 @@ pub fn upload_pending(
 #[cfg(test)]
 mod tests {
     use super::*;
+    const TEST_DB_KEY: &str = "ce7af92eab45e368f57e0998d3fcb36c9dc3ec6a8857352a24ef106952841eb";
+    const OTHER_DB_KEY: &str = "cafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00d";
+
+    #[test]
+    fn encrypted_payload_roundtrip_dedup_quarantine_restore_and_ack() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("encrypted.sqlite");
+        let original = sample_with_meter(830_112);
+        let mut encrypted = Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY).unwrap();
+        assert!(encrypted.payload_encryption_enabled());
+        assert!(encrypted.enqueue(&original).unwrap());
+        assert!(!encrypted.enqueue(&original).unwrap());
+
+        let raw: String = encrypted.connection.query_row(
+            "SELECT payload FROM outbox WHERE sample_id = ?1",
+            [original.sample_id.to_string()], |row| row.get(0),
+        ).unwrap();
+        assert!(raw.starts_with(ENCRYPTION_PREFIX));
+        assert!(!raw.contains("830112"));
+        assert!(!raw.contains("meter_total"));
+        let mut changed = original.clone();
+        changed.meter_total = Some(1);
+        assert!(matches!(encrypted.enqueue(&changed), Err(CollectorError::SampleConflict)));
+        assert_eq!(encrypted.next_batch(10).unwrap()[0].meter_total, Some(830_112));
+
+        encrypted.quarantine(original.sample_id, "individually-rejected-422").unwrap();
+        let preserved_ciphertext: String = encrypted.connection.query_row(
+            "SELECT payload FROM quarantined_readings WHERE sample_id = ?1",
+            [original.sample_id.to_string()], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(raw, preserved_ciphertext);
+        assert_eq!(encrypted.quarantined_readings(10).unwrap()[0].printer_id, original.printer_id);
+        drop(encrypted);
+
+        assert!(matches!(
+            Outbox::open(&path),
+            Err(CollectorError::EncryptionRequired)
+        ));
+        assert!(matches!(
+            Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, OTHER_DB_KEY),
+            Err(CollectorError::Crypto)
+        ));
+        let mut reopened = Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY).unwrap();
+        assert!(reopened.restore_quarantined(original.sample_id).unwrap());
+        assert_eq!(reopened.next_batch(10).unwrap()[0].sample_id, original.sample_id);
+        reopened.acknowledge(&[original.sample_id]).unwrap();
+        assert_eq!(reopened.retained().unwrap(), 0);
+    }
+
+    #[test]
+    fn encrypted_database_never_permits_plaintext_downgrade_or_legacy_in_place_conversion() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("old.sqlite");
+        let sample = sample_with_meter(1337);
+        {
+            let outbox = Outbox::open(&path).unwrap();
+            outbox.enqueue(&sample).unwrap();
+        }
+        assert!(matches!(
+            Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY),
+            Err(CollectorError::EncryptionMigrationRequired)
+        ));
+        assert_eq!(Outbox::open(&path).unwrap().next_batch(10).unwrap()[0].sample_id, sample.sample_id);
+        {
+            let mut old = Outbox::open(&path).unwrap();
+            old.acknowledge(&[sample.sample_id]).unwrap();
+        }
+        // Even an emptied old file may retain plaintext in free pages/WAL.
+        assert!(matches!(
+            Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY),
+            Err(CollectorError::EncryptionMigrationRequired)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_encryption_keys_and_corrupted_authenticated_ciphertext() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("secure.sqlite");
+        assert!(matches!(
+            Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, "bad"),
+            Err(CollectorError::Configuration(_))
+        ));
+        let reading = sample_with_meter(250);
+        let outbox = Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY).unwrap();
+        outbox.enqueue(&reading).unwrap();
+        outbox.connection.execute(
+            "UPDATE outbox SET payload = 'enc:v1:bad-ciphertext' WHERE sample_id = ?1",
+            [reading.sample_id.to_string()],
+        ).unwrap();
+        assert!(matches!(outbox.next_batch(10), Err(CollectorError::Crypto)));
+        assert_eq!(outbox.pending().unwrap(), 1);
+        assert!(matches!(outbox.enqueue(&reading), Err(CollectorError::Crypto)));
+    }
+
+    #[test]
+    fn encrypted_payloads_use_unique_nonces_and_bind_sample_identity() {
+        let cipher = PayloadCipher::from_hex(TEST_DB_KEY).unwrap();
+        let left = Uuid::new_v4().to_string();
+        let right = Uuid::new_v4().to_string();
+        let one = cipher.seal("hello", &left).unwrap();
+        let two = cipher.seal("hello", &left).unwrap();
+        assert_ne!(one, two);
+        assert_eq!(cipher.open(&one, &left).unwrap(), "hello");
+        assert!(matches!(cipher.open(&one, &right), Err(CollectorError::Crypto)));
+    }
+
     #[test]
     fn outbox_is_durable_and_deduplicated() {
         let tmp = tempfile::tempdir().unwrap();
