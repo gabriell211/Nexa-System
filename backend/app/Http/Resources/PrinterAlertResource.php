@@ -16,6 +16,7 @@ final class PrinterAlertResource extends JsonResource
             'printer_id'=>$this->printer_id,
             'ticket_id'=>$this->ticket_id,
             'origin'=>$this->origin,
+            'telemetry_anchor_id'=>$this->telemetry_anchor_id,
             'code'=>$this->code,
             'category'=>$this->category,
             'severity'=>$this->severity,
