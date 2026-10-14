@@ -94,3 +94,14 @@ nexa-collector-daemon config.local.json queue.sqlite --restore-quarantined <UUID
 O Console Tauri mostra os 25 primeiros UUIDs, data, impressora e motivo sem exibir payload dos contadores ou segredos. Os comandos não removem leitura isolada, exceto a transferência segura para a fila pendente; excluir uma amostra definitivamente exigiria um fluxo futuro de revisão/auditoria, ainda não implementado.
 
 **Atenção:** um `422` não significa necessariamente que uma impressora está offline; pode indicar mudança de contrato, data inválida, equipamento desativado ou outra regra de validação. Amostras com mais de 14 dias continuarão rejeitadas se restauradas sem um processo de conciliação aprovado. Não há criptografia em repouso, limite de disco em bytes, exportação auditada nem homologação física. A coluna `payload` do SQLite precisa ser protegida por ACL do sistema operacional.
+
+## Orçamento de bytes serializados (incremento 20)
+
+O campo opcional `max_pending_payload_bytes` de `config.local.json` aceita **1 a 1.073.741.824 bytes**; sem ele, o padrão é **67.108.864 bytes (64 MiB)**. É um segundo limite, independente de `max_pending_samples`.
+
+- O SQLite insere o novo registro **somente** se a soma `LENGTH(CAST(payload AS BLOB))` de `outbox` e `quarantined_readings`, mais o novo JSON, não ultrapassar o orçamento. A verificação e o INSERT pertencem ao mesmo comando.
+- Isolar ou restaurar um UUID não reduz essa soma. Leituras confirmadas saem da outbox, liberando orçamento, sem descarte de registros ainda pendentes.
+- Se a configuração for reduzida abaixo do volume legado, o banco pode reabrir sem descartar dados. Novas inserções falham de modo explícito até a ocupação cair.
+- O daemon recusa novas coletas quando estiver saturado e informa erro genérico sem conteúdo de leitura. A interface apresenta os limites de quantidade e de bytes como dois indicadores separados.
+
+**Importante:** esta política limita apenas os **bytes do payload JSON armazenado**, não o tamanho físico do arquivo SQLite. Os arquivos `queue.sqlite`, `queue.sqlite-wal`, `queue.sqlite-shm`, índices, páginas livres, backups e demais arquivos ocupam espaço adicional e não têm quota fixa nesta implementação. Não ativar como coleta de produção sem monitor de espaço real, reserva de disco, política auditada para dados antigos, proteção dos arquivos (ACL) e criptografia em repouso. Sem testes de disco cheio/queda de energia e hardware real.

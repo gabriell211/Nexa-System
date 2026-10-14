@@ -20,6 +20,8 @@ struct CollectorSnapshot {
     quarantine_count: Option<u64>,
     quarantine_preview: Vec<QuarantinedReading>,
     queue_capacity: Option<u64>,
+    payload_bytes_retained: Option<u64>,
+    payload_bytes_limit: Option<u64>,
     delivery: Option<DeliveryDiagnostics>,
     last_run: Option<String>,
     error: Option<String>,
@@ -37,6 +39,8 @@ fn get_snapshot() -> CollectorSnapshot {
         quarantine_count: None,
         quarantine_preview: Vec::new(),
         queue_capacity: None,
+        payload_bytes_retained: None,
+        payload_bytes_limit: None,
         delivery: None,
         last_run: None,
         error: None,
@@ -50,6 +54,7 @@ fn get_snapshot() -> CollectorSnapshot {
                 snapshot.endpoint = Some(config.api_url);
                 snapshot.interval_seconds = Some(config.interval_seconds);
                 snapshot.queue_capacity = Some(config.max_pending_samples);
+                snapshot.payload_bytes_limit = Some(config.max_pending_payload_bytes);
                 snapshot.printers = config.printers.into_iter().map(|p| PrinterInfo {
                     printer_id: p.printer_id,
                     ip: p.ip.to_string(),
@@ -67,6 +72,7 @@ fn get_snapshot() -> CollectorSnapshot {
             match Outbox::open(path) {
                 Ok(outbox) => {
                     snapshot.queue_pending = outbox.pending().ok();
+                    snapshot.payload_bytes_retained = outbox.retained_payload_bytes().ok();
                     snapshot.quarantine_count = outbox.quarantined_count().ok();
                     match outbox.quarantined_readings(25) {
                         Ok(readings) => snapshot.quarantine_preview = readings,

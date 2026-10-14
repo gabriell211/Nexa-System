@@ -17,6 +17,13 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Limite do payload serializado retido — incremento 20 (parcial)
+
+- O Collector agora aplica `max_pending_payload_bytes` (padrão 67.108.864 bytes = 64 MiB) juntamente com `max_pending_samples`. A verificação acontece dentro do mesmo `INSERT` SQLite; mede bytes UTF-8 da coluna JSON armazenada em outbox **e** quarentena.
+- Nenhum UUID já pendente ou isolado é apagado para abrir espaço. Duplicações idênticas seguem idempotentes e valores inválidos são rejeitados. Se dados legados já excederem um limite menor, permanecem intactos e novas coletas são impedidas até reduzir a ocupação mediante confirmação legítima.
+- Daemon pausa novas coletas ao atingir qualquer limite; o Console exibe ocupação separada por quantidade e bytes.
+- **Não é limite físico real de espaço em disco**: índices, páginas livres, metadados SQLite, WAL, SHM, journaling e backups podem exceder o orçamento de payload. Ainda faltam quota de filesystem, proteção de espaço reservado, criptografia e ensaio em disco cheio. `NX-035/045` continuam **PARCIAIS**.
+
 ### Quarentena reversível de leituras rejeitadas — incremento 19 (parcial)
 
 - Se um lote recebe HTTP `422`, o Collector tenta novamente **somente a leitura mais antiga**. Apenas caso essa leitura individual também receba `422`, ela é isolada por transação em `quarantined_readings` (SQLite). Erros de autorização, limitação de taxa, falhas de rede e ACK inválido **não** isolam leituras.

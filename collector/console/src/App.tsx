@@ -30,6 +30,8 @@ type CollectorSnapshot = {
   quarantine_count: number | null;
   quarantine_preview: QuarantinedReading[];
   queue_capacity: number | null;
+  payload_bytes_retained: number | null;
+  payload_bytes_limit: number | null;
   delivery: DeliveryDiagnostics | null;
   last_run: string | null;
   error: string | null;
@@ -70,8 +72,14 @@ export default function App() {
   const queueObserved = snapshot?.queue_pending !== null && snapshot?.queue_pending !== undefined
     && snapshot?.queue_capacity !== null && snapshot?.queue_capacity !== undefined && queueCapacity > 0;
   const queuePercent = queueObserved ? Math.min(100, Math.round(retainedCount / queueCapacity * 100)) : null;
-  const queueFull = queueObserved && retainedCount >= queueCapacity;
-  const queueWarning = queueObserved && retainedCount >= queueCapacity * 0.8;
+  const retainedBytes = snapshot?.payload_bytes_retained ?? 0;
+  const byteLimit = snapshot?.payload_bytes_limit ?? 0;
+  const bytesObserved = snapshot?.payload_bytes_retained != null && snapshot?.payload_bytes_limit != null && byteLimit > 0;
+  const bytePercent = bytesObserved ? Math.min(100, Math.round(retainedBytes / byteLimit * 100)) : null;
+  const byteFull = bytesObserved && retainedBytes >= byteLimit;
+  const byteWarning = bytesObserved && retainedBytes >= byteLimit * 0.8;
+  const queueFull = (queueObserved && retainedCount >= queueCapacity) || byteFull;
+  const queueWarning = (queueObserved && retainedCount >= queueCapacity * 0.8) || byteWarning;
 
   const menu: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
     { id: "overview", label: "Visão geral", icon: LayoutDashboard },
@@ -146,20 +154,30 @@ export default function App() {
                     <span>{queuePercent}% da capacidade configurada</span></div>
                   <div className="queue-body">
                     <div className="queue-track" role="progressbar" aria-label="Fila de amostras pendentes"
-                      aria-valuemin={0} aria-valuemax={queueCapacity} aria-valuenow={retainedCount}>
+                      aria-valuemin={0} aria-valuemax={queueCapacity} aria-valuenow={Math.min(retainedCount,queueCapacity)}>
                       <div className={queueFull ? "queue-fill full" : queueWarning ? "queue-fill warning" : "queue-fill"}
                         style={{ width: `${queuePercent}%` }} />
                     </div>
                     <p>{retainedCount.toLocaleString("pt-BR")} / {queueCapacity.toLocaleString("pt-BR")} amostras retidas
                       ({queuePending.toLocaleString("pt-BR")} pendentes, {quarantineCount.toLocaleString("pt-BR")} isoladas).</p>
+                    {bytesObserved && (
+                      <>
+                        <div className="queue-track" role="progressbar" aria-label="Orçamento de bytes serializados retidos"
+                          aria-valuemin={0} aria-valuemax={byteLimit} aria-valuenow={retainedBytes} style={{ marginTop: 18 }}>
+                          <div className={byteFull ? "queue-fill full" : byteWarning ? "queue-fill warning" : "queue-fill"}
+                            style={{ width: `${bytePercent}%` }} />
+                        </div>
+                        <p>{retainedBytes.toLocaleString("pt-BR")} / {byteLimit.toLocaleString("pt-BR")} bytes de payload JSON retido.</p>
+                      </>
+                    )}
                   </div>
                 </section>
               )}
               {queueWarning && (
                 <div className="notice warning" role="status">
                   {queueFull
-                    ? "A fila atingiu o limite. Se o serviço estiver ativo, novas consultas SNMP são suspensas até a confirmação de leituras pendentes."
-                    : "A fila está próxima do limite. Verifique a conectividade do serviço pelos logs e a confirmação de uploads no servidor."}
+                    ? "A fila atingiu o limite de amostras ou payload em bytes. Novas coletas serão suspensas até que confirmações liberem espaço."
+                    : "A fila está próxima de um limite. Verifique a conectividade e as confirmações de upload."}
                   {" "}O console mostra apenas o estado persistido; não comprova a conectividade do equipamento.
                 </div>
               )}
@@ -255,6 +273,7 @@ export default function App() {
                 <Info icon={Network} label="Endpoint da API" value={snapshot?.endpoint ?? "Não configurado"} />
                 <Info icon={Activity} label="Intervalo de coleta" value={snapshot?.interval_seconds ? snapshot.interval_seconds + " segundos" : "Não configurado"} />
                 <Info icon={Database} label="Capacidade da fila" value={snapshot?.queue_capacity ? `${snapshot.queue_capacity.toLocaleString("pt-BR")} amostras` : "Não configurado"} />
+                <Info icon={HardDrive} label="Orçamento JSON armazenado" value={snapshot?.payload_bytes_limit ? `${snapshot.payload_bytes_limit.toLocaleString("pt-BR")} bytes` : "Não configurado"} />
                 <Info icon={ShieldCheck} label="Identificador do coletor" value={snapshot?.collector_id ?? "Não configurado"} />
               </div>
               <div className="notice">Tokens de acesso e comunidades SNMP nunca são carregados ou exibidos nesta interface.</div>
