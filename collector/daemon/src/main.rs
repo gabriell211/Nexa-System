@@ -11,6 +11,8 @@ use zeroize::Zeroizing;
 
 #[cfg(windows)]
 mod windows_service_runtime;
+#[cfg(target_os = "macos")]
+mod macos_launchd_runtime;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
@@ -18,8 +20,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     if args.len() == 2 && args[1] == "--service" {
         return windows_service_runtime::dispatch();
     }
+    #[cfg(target_os = "macos")]
+    if args.len() == 2 && args[1] == "--launchd" {
+        return macos_launchd_runtime::dispatch();
+    }
 
-    run_application(args, Arc::new(AtomicBool::new(false)), || Ok(()), false)
+    run_application(args, Arc::new(AtomicBool::new(false)), || Ok(()), false, false)
 }
 
 fn run_application(
@@ -27,6 +33,7 @@ fn run_application(
     shutdown: Arc<AtomicBool>,
     on_ready: impl FnOnce() -> Result<(), Box<dyn Error>>,
     windows_service_mode: bool,
+    macos_launchd_mode: bool,
 ) -> Result<(), Box<dyn Error>> {
     let migrate = args.len() == 5 && args[3] == "--migrate-encrypted-to";
     let rotate = args.len() == 5 && args[3] == "--rotate-encryption-to";
@@ -36,6 +43,7 @@ fn run_application(
     let once = args.len() == 4 && args[3] == "--once";
     if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || storage_status || restore || migrate || rotate)
         || (windows_service_mode && args.len() != 3)
+        || (macos_launchd_mode && args.len() != 3)
     {
         eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --storage-status | --restore-quarantined <sample-uuid> | --migrate-encrypted-to <new-queue.sqlite> | --rotate-encryption-to <new-queue.sqlite>]");
         std::process::exit(2);
@@ -44,13 +52,13 @@ fn run_application(
     // systemd LoadCredential exposes files under CREDENTIALS_DIRECTORY.
     // Never fall back to inherited env variables if that directory is set.
     let has_systemd_credentials = env::var_os("CREDENTIALS_DIRECTORY").is_some();
-    let supervised_mode = has_systemd_credentials || windows_service_mode;
+    let supervised_mode = has_systemd_credentials || windows_service_mode || macos_launchd_mode;
     if rotate {
         // Rotation MUST never modify its source, discover the new key from an
         // isolated environment variable, or trigger any upload/heartbeat.
-        let old_key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX", windows_service_mode)?
+        let old_key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX", windows_service_mode, macos_launchd_mode)?
             .ok_or("Old encryption key is required for offline rotation")?;
-        let new_key = load_secret("NEXA_COLLECTOR_NEW_DB_KEY_HEX", windows_service_mode)?
+        let new_key = load_secret("NEXA_COLLECTOR_NEW_DB_KEY_HEX", windows_service_mode, macos_launchd_mode)?
             .ok_or("New encryption key is required for offline rotation")?;
         let report = Outbox::rotate_encryption_key_offline(
             &args[2], &args[4], cfg.max_pending_samples,
@@ -67,7 +75,7 @@ fn run_application(
         // Never open or rewrite the source with the encrypted store routine.
         // Stop the daemon first, use a NEW destination, and switch paths
         // manually after inspecting the report. No network calls occur here.
-        let key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX", windows_service_mode)?
+        let key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX", windows_service_mode, macos_launchd_mode)?
             .ok_or("NEXA_COLLECTOR_DB_KEY_HEX is required for offline migration")?;
         let report = Outbox::migrate_plaintext_to_encrypted(
             &args[2], &args[4], cfg.max_pending_samples,
@@ -81,9 +89,9 @@ fn run_application(
     }
     // In service mode, missing DB key must never silently create plaintext
     // storage. Legacy manually launched collectors keep opt-in compatibility.
-    let db_key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX", windows_service_mode)?;
+    let db_key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX", windows_service_mode, macos_launchd_mode)?;
     if supervised_mode && db_key.is_none() {
-        return Err("systemd collector requires a database encryption credential".into());
+        return Err("supervised collector requires a database encryption credential".into());
     }
     let mut outbox = match db_key.as_deref() {
         Some(key) => Outbox::open_encrypted_disk_guard(
@@ -132,14 +140,14 @@ fn run_application(
 
     // Separate supervised communication loop: long SNMP scans, empty meter
     // batches and backlogged uploads must not delay agent health checks.
-    let token = load_secret("NEXA_COLLECTOR_TOKEN", windows_service_mode)?;
+    let token = load_secret("NEXA_COLLECTOR_TOKEN", windows_service_mode, macos_launchd_mode)?;
     let snmp_community = if cfg.printers.is_empty() {
         None
     } else {
-        load_secret("NEXA_SNMP_COMMUNITY", windows_service_mode)?
+        load_secret("NEXA_SNMP_COMMUNITY", windows_service_mode, macos_launchd_mode)?
     };
     if supervised_mode && (token.is_none() || (!cfg.printers.is_empty() && snmp_community.is_none())) {
-        return Err("systemd collector requires token and configured SNMP credentials".into());
+        return Err("supervised collector requires token and configured SNMP credentials".into());
     }
     if once {
         if let Some(ref secret) = token {
@@ -336,7 +344,20 @@ fn read_secret_file(path: &Path) -> Result<Zeroizing<String>, Box<dyn Error>> {
 /// In systemd mode missing credential files are fatal, NEVER silently
 /// replaced with environment variables or a plaintext DB configuration.
 /// Outside systemd, preserve explicit development CLI environment support.
-fn load_secret(name: &str, windows_service_mode: bool) -> Result<Option<Zeroizing<String>>, Box<dyn Error>> {
+fn load_secret(
+    name: &str,
+    windows_service_mode: bool,
+    macos_launchd_mode: bool,
+) -> Result<Option<Zeroizing<String>>, Box<dyn Error>> {
+    if macos_launchd_mode {
+        #[cfg(target_os = "macos")]
+        {
+            return read_secret_file(&Path::new("/Library/Application Support/NexaCollector")
+                .join("credentials").join(name)).map(Some);
+        }
+        #[cfg(not(target_os = "macos"))]
+        return Err("macOS launchd credentials are unavailable on this platform".into());
+    }
     if windows_service_mode {
         #[cfg(windows)]
         {
