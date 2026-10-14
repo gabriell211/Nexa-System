@@ -183,7 +183,7 @@ final class CollectorHeartbeatMonitorTest extends TestCase
         $this->withToken($techToken)->getJson('/api/v1/collector-health-incidents?collector_agent_id='.$unassigned->id)
             ->assertOk()->assertJsonCount(0,'data');
         Auth::forgetGuards();
-        $this->getJson('/api/v1/collector-health-incidents')->assertUnauthorized();
+        $this->withHeader('Authorization','')->getJson('/api/v1/collector-health-incidents')->assertUnauthorized();
         Auth::forgetGuards();
         $this->withToken($ownerToken)->getJson('/api/v1/collector-health-incidents?per_page=1001')
             ->assertUnprocessable();
