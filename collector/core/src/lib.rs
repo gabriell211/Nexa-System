@@ -1,3 +1,4 @@
+pub mod recovery_guard;
 use aes_gcm::{
     aead::{Aead, AeadCore, OsRng, Payload},
     Aes256Gcm, KeyInit, Nonce,
