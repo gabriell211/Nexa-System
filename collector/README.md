@@ -133,3 +133,17 @@ Os registros das colunas `outbox.payload` e `quarantined_readings.payload` podem
 - O Console precisa ter acesso à variável para exibir os metadados de leituras da quarentena (a chave não aparece na UI). Essa distribuição de segredos precisa ser aperfeiçoada em implementação de serviço nativo e cofre do sistema operacional.
 
 **Limitações explícitas:** isso **não é criptografia integral do SQLite**. UUIDs, índices, horários, estado de retry, metadados, padrões de ocupação e tabelas não sensíveis continuam visíveis. WAL/backups de bancos legados podem conter payload em texto claro; nunca faça conversão in-place. Permissões ACL de DB/WAL/SHM e do processo, chaves em memória, gestão/rotação segura, snapshots cifrados, migração verificada, supervisão, instalações nativas e testes de perda de energia são requisitos pendentes. Não afirmar NX-035 completo ou produção homologada.
+
+## Migração offline de banco legado em texto claro — entrega 23
+
+Para converter um SQLite antigo sem descartar amostras, **pare o serviço do Collector e o Console** e confirme que nenhuma instância poderá voltar a gravar no arquivo original durante a migração e o corte. Gere e guarde uma chave de 32 bytes em cofre externo e forneça a mesma `NEXA_COLLECTOR_DB_KEY_HEX` para o comando e para o futuro daemon/console. Exemplo de invocação (sem expor a chave em argumentos ou README):
+
+```sh
+nexa-collector-daemon config.local.json queue.sqlite --migrate-encrypted-to queue-encrypted.sqlite
+```
+
+O caminho `queue-encrypted.sqlite` **não deve existir**, nem ser um link para outro arquivo. O comando bloqueia a escrita na origem durante a leitura SQLite (transação `BEGIN IMMEDIATE`), usa `quick_check`, conserva as linhas e metadados `outbox`, `quarantined_readings` e `state`, cifra e autentica cada JSON com o UUID como AAD, compara contagens e testa integridade do destino. O arquivo criptografado permanece marcado como `incomplete` até a confirmação final. Se faltar espaço ou houver JSON inválido, a fonte fica intacta, o destino parcial não abre em operação normal, e o operador deve investigar antes de tentar um **novo nome de destino**. Nunca apague a fonte ou seu backup para recuperar espaço automaticamente.
+
+Após sucesso, confira contagens e estado com `--storage-status` usando a nova base e a chave, compare IDs e registros isolados pela CLI, atualize `NEXA_COLLECTOR_DB` no Console e o caminho SQLite no comando/serviço do daemon, e só então inicie os serviços. **Não reative o writer do banco antigo** após a migração, pois o processo não replica leituras coletadas depois da cópia e não executa troca automática. Mantenha o banco original protegido até a conciliação/autorização de descarte, incluindo arquivos WAL/SHM e backups anteriores.
+
+A criação exclusiva do destino evita sobrescrever um arquivo existente. No Unix, o arquivo novo é criado com modo `0600`, sujeito também à segurança do diretório; no Windows dependemos da ACL do diretório/serviço, que deve ser configurada e testada. A proteção é **somente dos payloads**. Diagnósticos, UUIDs, datas e índices continuam em claro. Não há gerenciamento de chave por keychain, prova de parada do serviço OS, rotação, sincronização atômica com o processo, backup criptografado, quota física rígida nem testes de energia/disco cheio. NX-035 permanece parcial.
