@@ -532,7 +532,49 @@ impl Outbox {
         max_sqlite_files_bytes: u64,
         hex_key: &str,
     ) -> Result<MigrationReport, CollectorError> {
-        let cipher = PayloadCipher::from_hex(hex_key)?;
+        Self::copy_to_encrypted_destination(
+            source_path, destination_path, max_pending_samples,
+            max_pending_payload_bytes, max_sqlite_files_bytes, None, hex_key,
+        )
+    }
+
+    /// Offline re-key into a new database. No in-place modification, no
+    /// implicit deletion, and no automatic switchover of the daemon.
+    /// Both keys must be supplied separately and must differ.
+    pub fn rotate_encryption_key_offline(
+        source_path: impl AsRef<Path>,
+        destination_path: impl AsRef<Path>,
+        max_pending_samples: u64,
+        max_pending_payload_bytes: u64,
+        max_sqlite_files_bytes: u64,
+        old_hex_key: &str,
+        new_hex_key: &str,
+    ) -> Result<MigrationReport, CollectorError> {
+        let old_bytes = old_hex_key.to_ascii_lowercase();
+        let new_bytes = new_hex_key.to_ascii_lowercase();
+        if old_bytes == new_bytes {
+            return Err(CollectorError::Configuration(
+                "the new encryption key must differ from the old key".into(),
+            ));
+        }
+        Self::copy_to_encrypted_destination(
+            source_path, destination_path, max_pending_samples,
+            max_pending_payload_bytes, max_sqlite_files_bytes,
+            Some(old_hex_key), new_hex_key,
+        )
+    }
+
+    fn copy_to_encrypted_destination(
+        source_path: impl AsRef<Path>,
+        destination_path: impl AsRef<Path>,
+        max_pending_samples: u64,
+        max_pending_payload_bytes: u64,
+        max_sqlite_files_bytes: u64,
+        old_hex_key: Option<&str>,
+        new_hex_key: &str,
+    ) -> Result<MigrationReport, CollectorError> {
+        let cipher = PayloadCipher::from_hex(new_hex_key)?;
+        let source_cipher = old_hex_key.map(PayloadCipher::from_hex).transpose()?;
         let source_path = source_path.as_ref();
         let destination_path = destination_path.as_ref();
         let source_canonical = fs::canonicalize(source_path)?;
@@ -559,8 +601,27 @@ impl Outbox {
             "SELECT value FROM state WHERE key = 'payload_encryption_mode'",
             [], |row| row.get(0),
         ).optional()?;
-        if source_mode.is_some() {
-            return Err(CollectorError::EncryptionMigrationRequired);
+        match (source_mode.as_deref(), source_cipher.as_ref()) {
+            (None, None) => {}
+            (Some(ENCRYPTION_MODE), Some(old_cipher)) => {
+                let check: String = source_lock.query_row(
+                    "SELECT value FROM state WHERE key = 'payload_encryption_check'",
+                    [], |row| row.get(0),
+                ).map_err(|_| CollectorError::Crypto)?;
+                if old_cipher.open(&check, KEY_CHECK_ID)? != KEY_CHECK_PLAINTEXT {
+                    return Err(CollectorError::Crypto);
+                }
+                let migration: Option<String> = source_lock.query_row(
+                    "SELECT value FROM state WHERE key = 'migration_status'",
+                    [], |row| row.get(0),
+                ).optional()?;
+                if migration.as_deref().is_some_and(|state| state != "complete") {
+                    return Err(CollectorError::MigrationIncomplete);
+                }
+            }
+            (None, Some(_)) => return Err(CollectorError::EncryptionRequired),
+            (Some(ENCRYPTION_MODE), None) => return Err(CollectorError::EncryptionMigrationRequired),
+            _ => return Err(CollectorError::Crypto),
         }
         let check: String = source_lock.query_row(
             "PRAGMA quick_check(1)", [], |row| row.get(0),
@@ -598,7 +659,13 @@ impl Outbox {
             })?;
             for row in rows {
                 let (id, raw, queued_at) = row?;
-                let plaintext = Zeroizing::new(raw);
+                let plaintext = Zeroizing::new(match source_cipher.as_ref() {
+                    Some(old_cipher) => old_cipher.open(&raw, &id)?,
+                    None if raw.starts_with(ENCRYPTION_PREFIX) => {
+                        return Err(CollectorError::EncryptionRequired);
+                    }
+                    None => raw,
+                });
                 let reading: Reading = serde_json::from_str(&plaintext)?;
                 if reading.sample_id.to_string() != id {
                     return Err(CollectorError::SampleConflict);
@@ -628,7 +695,13 @@ impl Outbox {
             })?;
             for row in rows {
                 let (id, raw, queued_at, quarantined_at, reason) = row?;
-                let plaintext = Zeroizing::new(raw);
+                let plaintext = Zeroizing::new(match source_cipher.as_ref() {
+                    Some(old_cipher) => old_cipher.open(&raw, &id)?,
+                    None if raw.starts_with(ENCRYPTION_PREFIX) => {
+                        return Err(CollectorError::EncryptionRequired);
+                    }
+                    None => raw,
+                });
                 let reading: Reading = serde_json::from_str(&plaintext)?;
                 if reading.sample_id.to_string() != id {
                     return Err(CollectorError::SampleConflict);
