@@ -106,6 +106,64 @@ final class CollectorHeartbeatTest extends TestCase
             ->assertJsonPath('data.0.last_upload_at',$agent->last_seen_at->toIso8601String());
     }
 
+    public function test_authenticated_watchdog_diagnostics_use_server_timestamp_and_are_advisory(): void
+    {
+        extract($this->fixtures());
+        $this->travelTo(CarbonImmutable::parse('2026-10-14T12:00:00Z'));
+        $this->heartbeat($secret,$agent->collector_id,[
+            'watchdog'=>['recent_incidents'=>2,'circuit_open'=>false],
+            'reported_at'=>'2045-01-01T00:00:00Z',
+        ])->assertOk();
+        $agent->refresh();
+        $this->assertSame(2,$agent->watchdog_recent_incidents);
+        $this->assertFalse($agent->watchdog_circuit_open_reported);
+        $this->assertSame('2026-10-14T12:00:00+00:00',$agent->watchdog_reported_at->toIso8601String());
+        $this->assertNull($agent->last_seen_at);
+        $this->assertDatabaseCount('printer_readings',0);
+
+        Auth::forgetGuards();
+        $this->withToken($ownerToken)->getJson('/api/v1/collector-agents')
+            ->assertOk()->assertJsonPath('data.0.watchdog_recent_incidents',2)
+            ->assertJsonPath('data.0.watchdog_circuit_open_reported',false)
+            ->assertJsonPath('data.0.watchdog_reported_at','2026-10-14T12:00:00+00:00')
+            ->assertJsonMissingPath('data.0.token_hash');
+
+        // Legacy agents may continue to heartbeat without altering the last
+        // known watchdog report, which must be clearly labelled as stale.
+        $this->travel(90)->seconds();
+        $this->heartbeat($secret,$agent->collector_id)->assertOk();
+        $this->assertSame('2026-10-14T12:00:00+00:00',$agent->fresh()->watchdog_reported_at->toIso8601String());
+    }
+
+    public function test_watchdog_payload_is_bounded_and_rejects_unexpected_diagnostic_fields(): void
+    {
+        extract($this->fixtures());
+        foreach ([
+            ['watchdog'=>['recent_incidents'=>33,'circuit_open'=>false]],
+            ['watchdog'=>['recent_incidents'=>-1,'circuit_open'=>true]],
+            ['watchdog'=>['recent_incidents'=>1]],
+            ['watchdog'=>['recent_incidents'=>1,'circuit_open'=>false,'token'=>'secret']],
+            ['watchdog'=>['recent_incidents'=>'NaN','circuit_open'=>false]],
+        ] as $invalid) {
+            $this->heartbeat($secret,$agent->collector_id,$invalid)->assertUnprocessable();
+        }
+        $this->assertNull($agent->fresh()->watchdog_reported_at);
+        $this->assertNull($agent->fresh()->heartbeat_at);
+    }
+
+    public function test_wrong_token_cannot_publish_watchdog_state_for_other_collector(): void
+    {
+        extract($this->fixtures());
+        $this->heartbeat(str_repeat('b',64),$agent->collector_id,[
+            'watchdog'=>['recent_incidents'=>3,'circuit_open'=>true],
+        ])->assertUnauthorized();
+        $this->assertNull($agent->fresh()->watchdog_reported_at);
+        Auth::forgetGuards();
+        $this->withToken($techToken)->getJson('/api/v1/collector-agents')
+            ->assertOk()->assertJsonPath('data.0.watchdog_recent_incidents',null)
+            ->assertJsonPath('data.0.watchdog_circuit_open_reported',null);
+    }
+
     public function test_wrong_token_wrong_uuid_and_missing_bearer_cannot_update_heartbeat(): void
     {
         extract($this->fixtures());
