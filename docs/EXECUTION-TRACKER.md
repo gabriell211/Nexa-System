@@ -376,3 +376,17 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - O diagnóstico não é healthcheck de rede ou prova de disponibilidade de equipamento. A data prevista pode variar conforme relógio do sistema, ciclos de 5s e duração de operações bloqueantes.
 - Não existe criptografia em repouso, bloqueio seguro de arquivos, watchdog instalado, upgrade nativo, proxy autenticado e instrumentação histórica server-side; NX-034/035/038/041 permanecem PARCIAIS.
 - Uma falha grave de persistência encerra o processo, necessitando supervisão nativa ainda não implementada.
+
+## Entrega 19 — quarentena transacional de amostras com rejeição individual HTTP 422 (14/10/2026)
+
+### Implementação parcial
+- Tabela SQLite `quarantined_readings` adicionada de forma incremental, mantendo payload original, UUID, timestamp, motivo categórico. Apenas transações de mover/restaurar alteram a fila; nenhuma expiração automática ou descarte.
+- Em `422` no lote, reenvia apenas a primeira amostra. Um `422` **individual** causa isolamento; se a primeira for aceita, somente seu ACK é apagado. Outros códigos/erros/ACK inválidos permanecem na outbox.
+- Capacidade total calcula `outbox + quarantine`, evitando que a fila liberada pelo isolamento permita crescimento indefinido. Restauração exige comando CLI explícito por UUID; listagem sanitizada e tela de consulta somente leitura no console.
+- Testes de unidade para isolamento seletivo, ACK, reversibilidade após reiniciar banco SQLite, integridade de contagem, erros temporários e ausência de exclusão silenciosa.
+
+### Limites de aceite
+- **NÃO representa solução fiscal para leituras >14 dias.** Backend continua recusando amostras antigas; restauro só é seguro com processo autorizado de conciliação/manualização ainda inexistente.
+- `NX-035/038/045` são PARCIAIS: criptografia local, quota por bytes, recuperação em disco cheio, auditoria de decisões sobre descarte, gestão de retenção e testes reais de interrupção elétrica são pendentes.
+- A interface de desktop lê até 25 metadados isolados por vez, sem paginação; a CLI lista até 100 por execução. Reprocessamento de milhares de registros requer ferramenta e regras específicas ainda não implementadas.
+- Homologação de serviço nativo e impressão em hardware real ainda pendente. Não declarar 62 QA ou 324 NX concluídos.
