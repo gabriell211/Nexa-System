@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.nexa.collector</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon</string>
+    <string>--launchd</string>
+  </array>
+  <key>UserName</key>
+  <string>_nexacollector</string>
+  <key>GroupName</key>
+  <string>_nexacollector</string>
+  <key>WorkingDirectory</key>
+  <string>/Library/Application Support/NexaCollector/data</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <key>ExitTimeOut</key>
+  <integer>45</integer>
+  <key>Umask</key>
+  <integer>63</integer>
+  <key>StandardOutPath</key>
+  <string>/Library/Logs/NexaCollector/stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Library/Logs/NexaCollector/stderr.log</string>
+</dict>
+</plist>
