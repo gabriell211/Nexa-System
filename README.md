@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Alertas administrativos de silêncio do Collector — incremento 32 (parcial)
+
+- Novo monitor administrativo agendado (`nexa:alerts:check-collectors`) detecta **ausência de heartbeat autenticado recebido pela API** após tolerância configurada; **não** conclui que a impressora ou SNMP estão offline. O monitor é explicitamente opt-in via `NEXA_COLLECTOR_HEALTH_ALERTS_ENABLED=true` e `NEXA_COLLECTOR_HEALTH_SILENCE_SECONDS` (60..86400; padrão 300 segundos).
+- Para agentes previamente conectados, ativos e pertencentes a cliente/tenant ativos, registra incidentes `COLLECTOR_HEARTBEAT_LATE` em tabela independente de alertas de impressora. Índice parcial exclusivo garante **um incidente ativo por agente**, com timestamps do servidor, auditoria de abertura/encerramento e histórico de episódios.
+- Um heartbeat novo, posterior à abertura, e dentro da tolerância resolve o incidente como `heartbeat_resumed`. Desativação/revogação encerra como `deactivated`, **sem fingir recuperação da comunicação**. Enviar contadores por upload sozinho não encerra o alerta. Agentes nunca conectados não disparam alerta automático nesta etapa.
+- O endpoint protegido `GET /api/v1/collector-health-incidents` expõe histórico paginado com isolamento por empresa e carteira; `GET /api/v1/collector-agents` inclui incidente de comunicação ativo. A página de agentes React permite alternar entre incidentes ativos e histórico e mostra o alerta no registro do agente.
+- Scheduler executa verificação por minuto com `withoutOverlapping`, **apenas quando habilitado**; nenhuma mensagem externa/push/e-mail é enviada. Testes Laravel cobrem duplicidade, retomada, revogação, limiar e autorização. `NX-039/041` permanecem **PARCIAIS** até integração de notificações, observabilidade contínua e homologação física.
+
 ### Painel local e relatório remoto de incidentes do watchdog — incremento 31 (parcial)
 
 - A leitura do diário de incidentes passou a ser compartilhada pelo núcleo Rust entre daemon e Console Tauri. O snapshot é **somente leitura**, informa contagem na janela de 30 minutos, circuito aberto, último reconhecimento e até 32 registros por data UTC e componente. JSON ausente é um histórico vazio; arquivo inválido/inacessível não é apresentado como saudável.
