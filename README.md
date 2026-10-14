@@ -17,6 +17,13 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Serviço nativo Linux com credenciais isoladas — incremento 25 (parcial)
+
+- Novo arquivo `collector/linux/nexa-collector.service` com processo independente `systemd`, identidade `nexa-collector`, diretório persistente privado via `StateDirectory`, reinício em falha limitado por `StartLimitBurst`, máscara `UMask=0077` e hardening de filesystem/processo.
+- O daemon Rust passou a ler credenciais sob `$CREDENTIALS_DIRECTORY` quando iniciado pelo `systemd`: token de agente, chave AES-256-GCM e comunidade SNMP são entregues como **arquivos protegidos** por `LoadCredential=`, não como valores de `Environment=` no unit. Credenciais ausentes ou inválidas interrompem a inicialização sem cair para variáveis de ambiente. Execução de desenvolvimento fora do `systemd` mantém compatibilidade com variáveis explícitas.
+- `collector/linux/install.sh` cria conta de serviço sem login, diretórios/configuração de acesso restrito, instala o binário e unidade e executa `daemon-reload`. **Não ativa ou inicia automaticamente:** operação exige configuração válida e arquivos de credenciais provisionados pelo administrador.
+- CI verifica sintaxe do instalador, estrutura de segurança da unidade e parsing de credenciais, mas **não** demonstra operação no boot, instalação física nem recuperação real da rede. Windows Service e macOS launchd ainda pendentes. `NX-039` e `NX-035` permanecem **PARCIAIS**.
+
 ### Rotação offline de chave da outbox criptografada — incremento 24 (parcial)
 
 - Novo comando: `nexa-collector-daemon config.local.json fila-antiga.sqlite --rotate-encryption-to fila-nova.sqlite`, com chaves **distintas** em `NEXA_COLLECTOR_DB_KEY_HEX` (atual) e `NEXA_COLLECTOR_NEW_DB_KEY_HEX` (nova), fornecidas externamente ao código e à linha de comando.

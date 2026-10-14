@@ -1,0 +1,43 @@
+[Unit]
+Description=Nexa Collector - local printer telemetry collection
+Documentation=https://github.com/gabriell211/Nexa-System/tree/main/collector
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=nexa-collector
+Group=nexa-collector
+WorkingDirectory=/var/lib/nexa-collector
+ExecStart=/usr/local/libexec/nexa-collector-daemon /etc/nexa-collector/config.json /var/lib/nexa-collector/queue.sqlite
+Restart=on-failure
+RestartSec=15s
+TimeoutStopSec=30s
+StateDirectory=nexa-collector
+StateDirectoryMode=0700
+UMask=0077
+
+# Root-owned credential files are copied to a protected per-unit location by
+# systemd. The daemon reads them via CREDENTIALS_DIRECTORY; no Environment= secrets.
+LoadCredential=NEXA_COLLECTOR_TOKEN:/etc/nexa-collector/credentials/token
+LoadCredential=NEXA_COLLECTOR_DB_KEY_HEX:/etc/nexa-collector/credentials/db-key-hex
+LoadCredential=NEXA_SNMP_COMMUNITY:/etc/nexa-collector/credentials/snmp-community
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

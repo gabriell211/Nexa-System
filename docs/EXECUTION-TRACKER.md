@@ -461,3 +461,16 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 ### Limites de aceite
 - Rotação **offline**, sem prova de parada de writers depois do snapshot; cutover e backup exigem operador. Nenhuma chave é recuperável automaticamente se perdida.
 - Ausentes cofre nativo (Windows DPAPI/Credential Manager, macOS Keychain e Linux Secret Service), cifragem integral SQLite, descarte seguro de backups, instaladores e teste real de interrupção elétrica/disco cheio. `NX-035` permanece **PARCIAL**.
+
+## Entrega 25 — serviço systemd Linux e credenciais protegidas (14/10/2026)
+
+### Incremento
+- Serviço `collector/linux/nexa-collector.service` invoca daemon independente do Console com `Restart=on-failure`, atraso 15s, `StartLimitIntervalSec/StartLimitBurst`, usuário sem login, `StateDirectoryMode=0700`, `UMask=0077`, `ProtectSystem=strict` e demais diretivas de hardening compatíveis com SNMP UDP e HTTPS.
+- Usa `LoadCredential=` para três arquivos root-only de token, chave AES e comunidade SNMP; daemon seleciona `CREDENTIALS_DIRECTORY` como fonte exclusiva em execução supervisionada, falha sem credenciais e nunca cai para ambiente em modo de serviço. Fora dele, variáveis explícitas continuam disponíveis para laboratório.
+- Instalador Bash cria usuário/diretórios/configuração restrita, instala executável e unit, recusa sobrescrever binário com serviço ativo e não inicia ou habilita automaticamente sem provisionamento do operador.
+- Testes: Rust de leitura de arquivo de credenciais (CRLF, ausente, inválido e excesso de tamanho); CI separado de checagem estrutural do serviço/Bash/credenciais e `systemd-analyze verify`.
+
+### Limites
+- Não foi executado o serviço em host real; `systemd-analyze verify` não comprova boot, reinício real, permissões montadas, conectividade SNMP ou escrita da outbox.
+- Não existe `sd_notify`/watchdog para processo travado que não encerra; reinício é apenas em falha, com limite de tentativas. `NX-039` permanece PARCIAL.
+- Não existe serviço nativo Windows ou launchd macOS, Tauri nativo validado, armazenamento de segredos em TPM/DPAPI/keychain, SNMPv3, instalador assinado ou homologação de dispositivos; `NX-035`, `NX-039`, `NX-041` continuam parciais.

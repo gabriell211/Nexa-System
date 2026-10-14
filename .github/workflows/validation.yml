@@ -252,6 +252,19 @@ jobs:
       - name: Validate nginx configuration
         run: docker run --rm --add-host api:127.0.0.1 nexa-portal:test nginx -t
 
+  collector-linux-package:
+    name: Linux Collector service packaging checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify unit hardening, credential wiring and bash syntax
+        run: python3 scripts/verify_collector_linux_service.py
+      - name: Verify systemd unit structure
+        run: |
+          mkdir -p /tmp/nexa-systemd-verify
+          sed 's#^ExecStart=.*#ExecStart=/bin/true#' collector/linux/nexa-collector.service > /tmp/nexa-systemd-verify/nexa-collector.service
+          systemd-analyze verify /tmp/nexa-systemd-verify/nexa-collector.service
+
   collector:
     name: Rust collector core tests
     runs-on: ubuntu-latest

@@ -3,7 +3,8 @@ use nexa_collector_core::{
     upload_error_kind, CollectorConfig, CollectorError, Outbox, UploadRetryPolicy,
 };
 use chrono::{Duration as ChronoDuration, Utc};
-use std::{env, error::Error, thread, time::{Duration, Instant}};
+use std::{env, error::Error, fs, path::Path, thread, time::{Duration, Instant}};
+use zeroize::Zeroizing;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
@@ -18,13 +19,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
+    // systemd LoadCredential exposes files under CREDENTIALS_DIRECTORY.
+    // Never fall back to inherited env variables if that directory is set.
+    let has_systemd_credentials = env::var_os("CREDENTIALS_DIRECTORY").is_some();
     if rotate {
         // Rotation MUST never modify its source, discover the new key from an
         // isolated environment variable, or trigger any upload/heartbeat.
-        let old_key = env::var("NEXA_COLLECTOR_DB_KEY_HEX")
-            .map_err(|_| "Old encryption key is required for offline rotation")?;
-        let new_key = env::var("NEXA_COLLECTOR_NEW_DB_KEY_HEX")
-            .map_err(|_| "New encryption key is required for offline rotation")?;
+        let old_key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX")?
+            .ok_or("Old encryption key is required for offline rotation")?;
+        let new_key = load_secret("NEXA_COLLECTOR_NEW_DB_KEY_HEX")?
+            .ok_or("New encryption key is required for offline rotation")?;
         let report = Outbox::rotate_encryption_key_offline(
             &args[2], &args[4], cfg.max_pending_samples,
             cfg.max_pending_payload_bytes, cfg.max_sqlite_files_bytes,
@@ -40,8 +44,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         // Never open or rewrite the source with the encrypted store routine.
         // Stop the daemon first, use a NEW destination, and switch paths
         // manually after inspecting the report. No network calls occur here.
-        let key = env::var("NEXA_COLLECTOR_DB_KEY_HEX")
-            .map_err(|_| "NEXA_COLLECTOR_DB_KEY_HEX is required for offline migration")?;
+        let key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX")?
+            .ok_or("NEXA_COLLECTOR_DB_KEY_HEX is required for offline migration")?;
         let report = Outbox::migrate_plaintext_to_encrypted(
             &args[2], &args[4], cfg.max_pending_samples,
             cfg.max_pending_payload_bytes, cfg.max_sqlite_files_bytes, &key,
@@ -52,18 +56,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
         return Ok(());
     }
-    // A configured key is mandatory to reopen an encrypted database. Legacy
-    // plaintext databases are never migrated in-place.
-    let mut outbox = match env::var("NEXA_COLLECTOR_DB_KEY_HEX") {
-        Ok(key) => Outbox::open_encrypted_disk_guard(
+    // In service mode, missing DB key must never silently create plaintext
+    // storage. Legacy manually launched collectors keep opt-in compatibility.
+    let db_key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX")?;
+    if has_systemd_credentials && db_key.is_none() {
+        return Err("systemd collector requires a database encryption credential".into());
+    }
+    let mut outbox = match db_key.as_deref() {
+        Some(key) => Outbox::open_encrypted_disk_guard(
             &args[2], cfg.max_pending_samples, cfg.max_pending_payload_bytes,
-            cfg.max_sqlite_files_bytes, &key,
+            cfg.max_sqlite_files_bytes, key,
         )?,
-        Err(env::VarError::NotPresent) => Outbox::open_with_disk_guard(
+        None => Outbox::open_with_disk_guard(
             &args[2], cfg.max_pending_samples, cfg.max_pending_payload_bytes,
             cfg.max_sqlite_files_bytes,
         )?,
-        Err(_) => return Err("NEXA_COLLECTOR_DB_KEY_HEX contains invalid environment data".into()),
     };
     // Physical disk diagnostics must not trigger SNMP, heartbeat, or uploads.
     if storage_status {
@@ -102,7 +109,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Separate supervised communication loop: long SNMP scans, empty meter
     // batches and backlogged uploads must not delay agent health checks.
-    let token = env::var("NEXA_COLLECTOR_TOKEN").ok();
+    let token = load_secret("NEXA_COLLECTOR_TOKEN")?;
+    let snmp_community = if cfg.printers.is_empty() {
+        None
+    } else {
+        load_secret("NEXA_SNMP_COMMUNITY")?
+    };
+    if has_systemd_credentials && (token.is_none() || (!cfg.printers.is_empty() && snmp_community.is_none())) {
+        return Err("systemd collector requires token and configured SNMP credentials".into());
+    }
     if once {
         if let Some(ref secret) = token {
             if send_heartbeat(&cfg, secret).is_err() {
@@ -142,7 +157,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 eprintln!("SQLite physical file footprint reached configured soft guard; SNMP polling deferred; ACKs remain enabled");
             } else if outbox.at_capacity()? {
                 eprintln!("Outbox count/payload budget saturated; new SNMP samples deferred");
-            } else if let Ok(community) = env::var("NEXA_SNMP_COMMUNITY") {
+            } else if let Some(ref community) = snmp_community {
                 for printer in &cfg.printers {
                     if outbox.at_capacity()? {
                         eprintln!("Outbox full; remaining printers deferred");
@@ -257,4 +272,68 @@ fn attempt_upload(
         }
     }
     Ok(())
+}
+
+const MAX_CREDENTIAL_BYTES: u64 = 4096;
+
+/// Read service credentials without exposing them in command line arguments,
+/// environment-variable unit definitions or diagnostic messages.
+fn read_secret_file(path: &Path) -> Result<Zeroizing<String>, Box<dyn Error>> {
+    if fs::metadata(path)?.len() > MAX_CREDENTIAL_BYTES {
+        return Err("credential exceeds maximum accepted size".into());
+    }
+    let raw = fs::read(path)?;
+    let secret = Zeroizing::new(String::from_utf8(raw).map_err(|_| "credential is not UTF-8")?);
+    let trimmed = secret.trim_end_matches(&['\r', '\n'][..]);
+    if trimmed.is_empty() || trimmed.contains('\r') || trimmed.contains('\n') || trimmed.contains('\0') {
+        return Err("credential is empty or contains an invalid separator".into());
+    }
+    Ok(Zeroizing::new(trimmed.to_string()))
+}
+
+/// In systemd mode missing credential files are fatal, NEVER silently
+/// replaced with environment variables or a plaintext DB configuration.
+/// Outside systemd, preserve explicit development CLI environment support.
+fn load_secret(name: &str) -> Result<Option<Zeroizing<String>>, Box<dyn Error>> {
+    if let Some(directory) = env::var_os("CREDENTIALS_DIRECTORY") {
+        let file = Path::new(&directory).join(name);
+        return read_secret_file(&file).map(Some);
+    }
+    match env::var(name) {
+        Ok(value) if !value.is_empty() => Ok(Some(Zeroizing::new(value))),
+        Ok(_) => Err("empty credential supplied".into()),
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(_) => Err("credential environment contains invalid Unicode".into()),
+    }
+}
+
+#[cfg(test)]
+mod credential_tests {
+    use super::*;
+
+    #[test]
+    fn loads_systemd_credential_text_without_trailing_newline() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("token");
+        fs::write(&path, b"abcdef1234\r\n").unwrap();
+        assert_eq!(read_secret_file(&path).unwrap().as_str(), "abcdef1234");
+    }
+
+    #[test]
+    fn refuses_oversized_multiline_or_empty_credentials() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("secret");
+        for value in [b"first\nsecond".as_slice(), b"\n", b"abc\0def"] {
+            fs::write(&path, value).unwrap();
+            assert!(read_secret_file(&path).is_err());
+        }
+        fs::write(&path, vec![b'x'; (MAX_CREDENTIAL_BYTES + 1) as usize]).unwrap();
+        assert!(read_secret_file(&path).is_err());
+    }
+
+    #[test]
+    fn missing_credential_file_fails_closed() {
+        let directory = tempfile::tempdir().unwrap();
+        assert!(read_secret_file(&directory.path().join("absent")).is_err());
+    }
 }
