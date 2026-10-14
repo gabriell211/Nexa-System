@@ -5,6 +5,7 @@
   "heartbeat_interval_seconds": 60,
   "max_pending_samples": 50000,
   "max_pending_payload_bytes": 67108864,
+  "max_sqlite_files_bytes": 536870912,
   "authorized_subnets": [
     "192.0.2.0/24"
   ],
