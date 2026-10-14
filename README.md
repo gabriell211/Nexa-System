@@ -17,6 +17,13 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Diagnóstico local persistente de transmissão — incremento 18 (parcial)
+
+- O daemon registra no SQLite da outbox informações sanitizadas: último ACK bem-sucedido, última falha, categoria, contagem consecutiva e próxima tentativa estimada.
+- A janela de backoff agora é recuperada após reinicialização do processo, com conversão limitada do relógio UTC persistido para timer monotônico local (máximo 6 horas).
+- O console Tauri/React exibe esses campos apenas para leitura. **Não** indica disponibilidade física da impressora nem testa a execução de um serviço nativo.
+- Persistência de diagnósticos não é criptografia da fila; relógio do SO incorreto pode deslocar a espera. Falta supervisor nativo, rotação de segredos, telemetria remota e testes físicos. NX-034/035/038/041 continuam parciais.
+
 ### Retentativas de upload do Collector — incremento 17 (parcial)
 
 - O daemon desacopla tentativas de transmissão do intervalo SNMP: verifica a fila em ciclos de 5 segundos, enviando lotes de até 100 amostras quando há janela de tentativa aberta.

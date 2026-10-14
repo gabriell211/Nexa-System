@@ -1,4 +1,4 @@
-use nexa_collector_core::{read_config, Outbox};
+use nexa_collector_core::{read_config, DeliveryDiagnostics, Outbox};
 use serde::Serialize;
 use std::env;
 
@@ -18,6 +18,7 @@ struct CollectorSnapshot {
     printers: Vec<PrinterInfo>,
     queue_pending: Option<u64>,
     queue_capacity: Option<u64>,
+    delivery: Option<DeliveryDiagnostics>,
     last_run: Option<String>,
     error: Option<String>,
 }
@@ -32,6 +33,7 @@ fn get_snapshot() -> CollectorSnapshot {
         printers: Vec::new(),
         queue_pending: None,
         queue_capacity: None,
+        delivery: None,
         last_run: None,
         error: None,
     };
@@ -61,6 +63,10 @@ fn get_snapshot() -> CollectorSnapshot {
             match Outbox::open(path) {
                 Ok(outbox) => {
                     snapshot.queue_pending = outbox.pending().ok();
+                    match outbox.delivery_diagnostics() {
+                        Ok(delivery) => snapshot.delivery = Some(delivery),
+                        Err(_) => snapshot.error = Some("Histórico de transmissão local inválido.".into()),
+                    }
                     snapshot.last_run = outbox.last_run().ok().flatten();
                 }
                 Err(_) => snapshot.error = Some("Não foi possível consultar a fila local.".into()),

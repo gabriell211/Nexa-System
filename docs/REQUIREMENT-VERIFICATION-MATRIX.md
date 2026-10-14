@@ -63,10 +63,10 @@
 | NX-035 | Agente local e comunicação | PARCIAL — fila SQLite limitada por amostras, sem criptografia nem limite em bytes | Fila de envio persistente, criptografada, limitada em disco, reenvio ordenado e deduplicação no backend. |
 | NX-036 | Agente local e comunicação | PARCIAL — HTTPS outbound e retry/status; proxy autenticado e testes reais pendentes | Envio por HTTPS/TLS usando apenas conexão iniciada pelo agente; compatibilidade com proxy autenticado. |
 | NX-037 | Agente local e comunicação | NÃO COMPROVADO | Canal alternativo de transporte por e-mail SMTP/POP3 somente se autorizado e implementado com cifragem, autenticação e limites. |
-| NX-038 | Agente local e comunicação | PARCIAL — console de fila/configuração somente leitura, sem diagnóstico de SNMP e logs completos | Diagnóstico local, teste de comunicação, teste de SNMP, validação de IP e logs sanitizados. |
+| NX-038 | Agente local e comunicação | PARCIAL — console local de fila e histórico de upload sanitizado; SNMP/proxy avançado e homologação pendentes | Diagnóstico local, teste de comunicação, teste de SNMP, validação de IP e logs sanitizados. |
 | NX-039 | Agente local e comunicação | NÃO COMPROVADO | Monitoramento e recuperação de serviços travados com supervisor, sem loop infinito de reinicialização. |
 | NX-040 | Agente local e comunicação | NÃO COMPROVADO | Atualização automática controlada, assinatura/verificação de artefatos, rollback e política de versões mínimas. |
-| NX-041 | Agente local e comunicação | PARCIAL — heartbeat agente e horário de upload separados; saúde completa pendente | Monitoramento de pontos instalados com data de última comunicação, versão, rede e estado. |
+| NX-041 | Agente local e comunicação | PARCIAL — heartbeat, upload e diagnósticos de retry separados; supervisão completa pendente | Monitoramento de pontos instalados com data de última comunicação, versão, rede e estado. |
 | NX-042 | Agente local e comunicação | NÃO COMPROVADO | Reinstalação e recuperação dos dados locais sem replicar leituras já recebidas. |
 | NX-043 | Agente local e comunicação | NÃO COMPROVADO | Configuração remota segura limitada aos agentes do próprio provedor e a usuários autorizados. |
 | NX-044 | Agente local e comunicação | NÃO COMPROVADO | Identificação de duplicidade de agentes ou colisão de identidade de impressora. |

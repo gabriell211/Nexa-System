@@ -65,3 +65,11 @@ O daemon agora tenta enviar a outbox independentemente de `interval_seconds` da 
 O ACK pode ser parcial, mas não vazio, duplicado nem conter UUID fora do lote efetivamente enviado. Confirmações válidas removem somente UUIDs listados; requisições malformadas nunca removem registros. Falhas ao ler/gravar a SQLite ou decodificar registros persistidos provocam saída com erro e exigem supervisor, sem descarte silencioso. Log de erro informa somente categoria e retardo, nunca cabeçalhos de autenticação, token ou corpo da resposta.
 
 **Limites:** não existe serviço OS/supervisor nativo instalado, persistência da janela de backoff entre reinicializações, teste físico de proxy/queda prolongada, armazenamento cifrado, quota real em bytes, isolamento de amostras inválidas (422) ou validação integral dos cenários QA. Em especial, leituras com mais de 14 dias são recusadas pela API atual e precisam de política operacional explícita, nunca de exclusão automática sem auditoria.
+
+## Diagnóstico e recuperação após reinicialização (incremento 18)
+
+O arquivo SQLite mantém `delivery_diagnostics` na tabela `state`: `last_success_at`, `last_failure_at`, `last_error_kind`, `next_attempt_at` e `consecutive_failures`. Os campos são datas ISO 8601, categoria genérica e contador: não armazenam token, segredo SNMP, corpo HTTP, URL completa ou amostra de impressão. Atualização atômica via `INSERT ... ON CONFLICT` em uma linha.
+
+Ao iniciar, o daemon restaura os atrasos futuros usando UTC persistido convertido a um timer monotônico, limitado a 6 horas. Um JSON ou timestamp de estado danificado é tratado como erro local explícito; não se descarta outbox nem se contorna o bloqueio silenciosamente. Um ACK real atualiza a data de sucesso, e uma fila vazia pode limpar falhas antigas sem fabricar um upload.
+
+O console mostra a ocupação e este diagnóstico em leitura local manual. O build React do console é testado em CI, mas **Tauri nativo, instaladores, supervisor Windows/systemd/launchd, recuperação da energia, permissões de acesso ao arquivo SQLite e compatibilidade com hardware permanecem sem homologação**. A mudança é de observabilidade e retomada do backoff, não de disponibilidade garantida.
