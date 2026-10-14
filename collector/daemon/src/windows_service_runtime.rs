@@ -89,7 +89,7 @@ fn run_service() -> windows_service::Result<()> {
                 handle.set_service_status(status(ServiceState::Running, true))?;
                 Ok(())
             },
-            true,
+            true, false,
         )
     });
 
