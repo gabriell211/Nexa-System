@@ -25,7 +25,7 @@ final class CollectorHealthIncidentController extends Controller
         $tenant=$request->attributes->get('nexa_tenant');
         $query=CollectorHealthIncident::query()
             ->where('tenant_id',$tenant->id)
-            ->with('agent:id,collector_id,customer_id','customer:id,name')
+            ->with(['agent:id,collector_id,customer_id','customer:id,name'])
             ->when(isset($filters['status']),fn($q)=>$q->where('status',$filters['status']))
             ->when(isset($filters['collector_agent_id']),fn($q)=>$q->where('collector_agent_id',$filters['collector_agent_id']))
             ->when(isset($filters['customer_id']),fn($q)=>$q->where('customer_id',$filters['customer_id']));
