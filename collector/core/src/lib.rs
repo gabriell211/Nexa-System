@@ -1021,6 +1021,7 @@ mod tests {
             heartbeat_interval_seconds: 60,
             max_pending_samples: 0,
             max_pending_payload_bytes: 64 * 1024 * 1024,
+            max_sqlite_files_bytes: 512 * 1024 * 1024,
             authorized_subnets: vec!["192.0.2.0/24".into()],
             printers: vec![],
         };
