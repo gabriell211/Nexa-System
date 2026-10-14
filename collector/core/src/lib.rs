@@ -290,7 +290,9 @@ impl Outbox {
         let affected = self.connection.execute(
             "INSERT OR IGNORE INTO outbox(sample_id, payload, queued_at)
              SELECT ?1, ?2, ?3
-             WHERE (SELECT COUNT(*) FROM outbox)
+             WHERE NOT EXISTS (
+                 SELECT 1 FROM quarantined_readings WHERE sample_id = ?1
+             ) AND (SELECT COUNT(*) FROM outbox)
                  + (SELECT COUNT(*) FROM quarantined_readings) < ?4",
             params![sample_id, payload, Utc::now().to_rfc3339(), self.max_pending_samples],
         )?;
@@ -308,7 +310,17 @@ impl Outbox {
         match existing {
             Some(saved) if saved == payload => Ok(false),
             Some(_) => Err(CollectorError::SampleConflict),
-            None => Err(CollectorError::OutboxFull { limit: self.max_pending_samples }),
+            None => {
+                let quarantined: bool = self.connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM quarantined_readings WHERE sample_id = ?1)",
+                    [&sample_id], |row| row.get(0),
+                )?;
+                if quarantined {
+                    Err(CollectorError::SampleConflict)
+                } else {
+                    Err(CollectorError::OutboxFull { limit: self.max_pending_samples })
+                }
+            },
         }
     }
 
@@ -570,6 +582,7 @@ fn process_upload_batch<F>(
 where
     F: FnMut(&[Reading]) -> Result<Vec<Uuid>, CollectorError>,
 {
+    if samples.is_empty() { return Ok(0); }
     let acknowledged = match send(samples) {
         Ok(ids) => ids,
         Err(CollectorError::HttpStatus { status: 422, .. }) => {
@@ -847,6 +860,90 @@ mod tests {
             diagnostics.seconds_until_retry(Utc::now()),
             Err(CollectorError::Configuration(_))
         ));
+    }
+
+    #[test]
+    fn isolates_only_single_reading_confirmed_rejected_and_preserves_the_rest() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("queue.sqlite");
+        let good = sample_with_meter(10);
+        let bad = sample_with_meter(11);
+        let newer = sample_with_meter(12);
+        let mut outbox = Outbox::open_bounded(&path, 3).unwrap();
+        outbox.enqueue(&good).unwrap();
+        outbox.enqueue(&bad).unwrap();
+        outbox.enqueue(&newer).unwrap();
+
+        // Simulate the backend's atomic batch 422: a batch containing 'bad'
+        // is rejected, even when other readings are legitimate.
+        let fake_api = |batch: &[Reading]| -> Result<Vec<Uuid>, CollectorError> {
+            if batch.iter().any(|reading| reading.sample_id == bad.sample_id) {
+                return Err(CollectorError::HttpStatus {
+                    status: 422, retry_after_seconds: None,
+                });
+            }
+            Ok(batch.iter().map(|reading| reading.sample_id).collect())
+        };
+
+        for _ in 0..3 {
+            let batch = outbox.next_batch(100).unwrap();
+            if batch.is_empty() { break; }
+            process_upload_batch(&mut outbox, &batch, fake_api).unwrap();
+        }
+        assert_eq!(outbox.pending().unwrap(), 0);
+        assert_eq!(outbox.quarantined_count().unwrap(), 1);
+        assert_eq!(outbox.retained().unwrap(), 1);
+        let quarantined = outbox.quarantined_readings(10).unwrap();
+        assert_eq!(quarantined[0].sample_id, bad.sample_id.to_string());
+        assert_eq!(quarantined[0].reason, "individually-rejected-422");
+
+        // No silent data loss, no new data admitted in excess of capacity,
+        // and quarantine contents remain recoverable after a process restart.
+        drop(outbox);
+        let mut reopened = Outbox::open_bounded(&path, 3).unwrap();
+        assert_eq!(reopened.quarantined_count().unwrap(), 1);
+        assert!(reopened.restore_quarantined(bad.sample_id).unwrap());
+        assert_eq!(reopened.next_batch(10).unwrap()[0].sample_id, bad.sample_id);
+        assert_eq!(reopened.quarantined_count().unwrap(), 0);
+        assert!(!reopened.restore_quarantined(bad.sample_id).unwrap());
+    }
+
+    #[test]
+    fn quarantine_counts_toward_capacity_and_restoration_does_not_duplicate() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut outbox = Outbox::open_bounded(temp.path().join("queue.sqlite"), 1).unwrap();
+        let bad = sample_with_meter(12);
+        outbox.enqueue(&bad).unwrap();
+        outbox.quarantine(bad.sample_id, "individually-rejected-422").unwrap();
+        assert_eq!(outbox.pending().unwrap(), 0);
+        assert_eq!(outbox.retained().unwrap(), 1);
+        assert!(matches!(
+            outbox.enqueue(&sample_with_meter(13)),
+            Err(CollectorError::OutboxFull { limit: 1 })
+        ));
+        assert!(matches!(outbox.enqueue(&bad), Err(CollectorError::SampleConflict)));
+        assert!(outbox.restore_quarantined(bad.sample_id).unwrap());
+        assert_eq!(outbox.retained().unwrap(), 1);
+        outbox.acknowledge(&[bad.sample_id]).unwrap();
+        assert_eq!(outbox.retained().unwrap(), 0);
+        assert!(outbox.enqueue(&sample_with_meter(14)).unwrap());
+    }
+
+    #[test]
+    fn invalid_ack_or_transient_error_never_quarantines_any_reading() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut outbox = Outbox::open_bounded(temp.path().join("queue.sqlite"), 3).unwrap();
+        let sample = sample_with_meter(41);
+        outbox.enqueue(&sample).unwrap();
+        let samples = outbox.next_batch(10).unwrap();
+        let wrong_ack = process_upload_batch(&mut outbox, &samples, |_| Ok(vec![Uuid::new_v4()]));
+        assert!(matches!(wrong_ack, Err(CollectorError::InvalidAcknowledgement)));
+        let throttled = process_upload_batch(&mut outbox, &samples, |_| {
+            Err(CollectorError::HttpStatus { status: 429, retry_after_seconds: Some(60) })
+        });
+        assert!(matches!(throttled, Err(CollectorError::HttpStatus { status: 429, .. })));
+        assert_eq!(outbox.pending().unwrap(), 1);
+        assert_eq!(outbox.quarantined_count().unwrap(), 0);
     }
 
     #[test]
