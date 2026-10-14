@@ -8,15 +8,34 @@ use std::{env, error::Error, thread, time::{Duration, Instant}};
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
     let migrate = args.len() == 5 && args[3] == "--migrate-encrypted-to";
+    let rotate = args.len() == 5 && args[3] == "--rotate-encryption-to";
     let restore = args.len() == 5 && args[3] == "--restore-quarantined";
     let list_quarantine = args.len() == 4 && args[3] == "--list-quarantined";
     let storage_status = args.len() == 4 && args[3] == "--storage-status";
     let once = args.len() == 4 && args[3] == "--once";
-    if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || storage_status || restore || migrate) {
-        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --storage-status | --restore-quarantined <sample-uuid> | --migrate-encrypted-to <new-queue.sqlite>]");
+    if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || storage_status || restore || migrate || rotate) {
+        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --storage-status | --restore-quarantined <sample-uuid> | --migrate-encrypted-to <new-queue.sqlite> | --rotate-encryption-to <new-queue.sqlite>]");
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
+    if rotate {
+        // Rotation MUST never modify its source, discover the new key from an
+        // isolated environment variable, or trigger any upload/heartbeat.
+        let old_key = env::var("NEXA_COLLECTOR_DB_KEY_HEX")
+            .map_err(|_| "Old encryption key is required for offline rotation")?;
+        let new_key = env::var("NEXA_COLLECTOR_NEW_DB_KEY_HEX")
+            .map_err(|_| "New encryption key is required for offline rotation")?;
+        let report = Outbox::rotate_encryption_key_offline(
+            &args[2], &args[4], cfg.max_pending_samples,
+            cfg.max_pending_payload_bytes, cfg.max_sqlite_files_bytes,
+            &old_key, &new_key,
+        )?;
+        println!(
+            "Encrypted key rotation verified: pending={} quarantined={} metadata_records={}. Source retained. Update key and database path together before restarting.",
+            report.pending, report.quarantined, report.state_entries,
+        );
+        return Ok(());
+    }
     if migrate {
         // Never open or rewrite the source with the encrypted store routine.
         // Stop the daemon first, use a NEW destination, and switch paths
