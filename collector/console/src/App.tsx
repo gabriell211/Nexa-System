@@ -39,6 +39,7 @@ type CollectorSnapshot = {
   quarantine_preview: QuarantinedReading[];
   queue_capacity: number | null;
   payload_bytes_retained: number | null;
+  payload_encryption_enabled: boolean | null;
   payload_bytes_limit: number | null;
   sqlite_footprint: SqliteFootprint | null;
   delivery: DeliveryDiagnostics | null;
@@ -224,6 +225,8 @@ export default function App() {
                 <div className="detail-grid">
                   <Info icon={CheckCircle2} label="Cadastro local" value={snapshot?.configured ? "Configuração válida" : "Não configurado"} />
                   <Info icon={HardDrive} label="Persistência" value={snapshot?.queue_pending === null || snapshot === null ? "Fila não disponível" : "SQLite WAL acessível"} />
+                  <Info icon={ShieldCheck} label="Payload das leituras em repouso"
+                    value={snapshot?.payload_encryption_enabled === true ? "AES-256-GCM habilitado" : snapshot?.payload_encryption_enabled === false ? "Sem criptografia de payload" : "Não verificado"} />
                   <Info icon={ArrowDownUp} label="Transmissão" value="Verificar logs do serviço" />
                   <Info icon={CircleHelp} label="Serviço do sistema" value="Estado não verificado pela interface" />
                 </div>
@@ -307,6 +310,7 @@ export default function App() {
                 <Info icon={Database} label="Capacidade da fila" value={snapshot?.queue_capacity ? `${snapshot.queue_capacity.toLocaleString("pt-BR")} amostras` : "Não configurado"} />
                 <Info icon={HardDrive} label="Orçamento JSON armazenado" value={snapshot?.payload_bytes_limit ? `${snapshot.payload_bytes_limit.toLocaleString("pt-BR")} bytes` : "Não configurado"} />
                 <Info icon={HardDrive} label="Limite preventivo DB + WAL + SHM" value={snapshot?.sqlite_footprint ? `${snapshot.sqlite_footprint.soft_limit_bytes.toLocaleString("pt-BR")} bytes` : "Não verificado"} />
+                <Info icon={ShieldCheck} label="Criptografia da outbox" value={snapshot?.payload_encryption_enabled === true ? "AES-256-GCM ativo" : snapshot?.payload_encryption_enabled === false ? "Texto claro (legado)" : "Não verificada"} />
                 <Info icon={ShieldCheck} label="Identificador do coletor" value={snapshot?.collector_id ?? "Não configurado"} />
               </div>
               <div className="notice">Tokens de acesso e comunidades SNMP nunca são carregados ou exibidos nesta interface.</div>

@@ -1,4 +1,10 @@
+use aes_gcm::{
+    aead::{Aead, AeadCore, OsRng, Payload},
+    Aes256Gcm, KeyInit, Nonce,
+};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Utc};
+use zeroize::Zeroizing;
 use ipnet::IpNet;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
@@ -38,6 +44,12 @@ pub enum CollectorError {
     SqliteSoftLimit { limit: u64 },
     #[error("sample UUID reused with different reading content")]
     SampleConflict,
+    #[error("encrypted collector storage requires its configured encryption key")]
+    EncryptionRequired,
+    #[error("existing unencrypted readings require a separate audited migration before enabling encryption")]
+    EncryptionMigrationRequired,
+    #[error("collector payload encryption or authentication failed")]
+    Crypto,
 }
 
 /// Non-sensitive local transfer history. Stored as a single JSON document in SQLite.
@@ -136,7 +148,9 @@ pub fn upload_error_kind(error: &CollectorError) -> &'static str {
         CollectorError::HttpStatus { .. } => "http-rejected",
         CollectorError::Transport(_) => "transport",
         CollectorError::InvalidAcknowledgement => "invalid-ack",
-        CollectorError::Storage(_) | CollectorError::Io(_) | CollectorError::Json(_) => "local-storage",
+        CollectorError::Storage(_) | CollectorError::Io(_) | CollectorError::Json(_)
+        | CollectorError::Crypto | CollectorError::EncryptionRequired
+        | CollectorError::EncryptionMigrationRequired => "local-storage",
         _ => "configuration",
     }
 }
@@ -271,8 +285,60 @@ pub struct SqliteFootprint {
     pub soft_limit_reached: bool,
 }
 
+/// AES-256-GCM payload encryption, authenticated to the sample UUID.
+/// Table indexes/UUIDs/timestamps and diagnostic metadata remain unencrypted.
+const ENCRYPTION_MODE: &str = "aes-256-gcm-v1";
+const ENCRYPTION_PREFIX: &str = "enc:v1:";
+const KEY_CHECK_ID: &str = "nexa-collector-database-key-check";
+const KEY_CHECK_PLAINTEXT: &str = "nexa-collector-key-check-v1";
+
+struct PayloadCipher {
+    cipher: Aes256Gcm,
+}
+
+impl PayloadCipher {
+    fn from_hex(hex_key: &str) -> Result<Self, CollectorError> {
+        if hex_key.len() != 64 || !hex_key.bytes().all(|c| c.is_ascii_hexdigit()) {
+            return Err(CollectorError::Configuration(
+                "NEXA_COLLECTOR_DB_KEY_HEX must contain exactly 64 hexadecimal characters".into(),
+            ));
+        }
+        let mut raw = Zeroizing::new([0_u8; 32]);
+        for (index, slot) in raw.iter_mut().enumerate() {
+            *slot = u8::from_str_radix(&hex_key[index * 2..index * 2 + 2], 16)
+                .map_err(|_| CollectorError::Crypto)?;
+        }
+        Ok(Self { cipher: Aes256Gcm::new_from_slice(&raw[..]).map_err(|_| CollectorError::Crypto)? })
+    }
+
+    fn seal(&self, text: &str, associated_id: &str) -> Result<String, CollectorError> {
+        let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+        let ciphertext = self.cipher.encrypt(
+            &nonce,
+            Payload { msg: text.as_bytes(), aad: associated_id.as_bytes() },
+        ).map_err(|_| CollectorError::Crypto)?;
+        let mut result = Vec::with_capacity(nonce.len() + ciphertext.len());
+        result.extend_from_slice(&nonce);
+        result.extend_from_slice(&ciphertext);
+        Ok(format!("{ENCRYPTION_PREFIX}{}", BASE64.encode(result)))
+    }
+
+    fn open(&self, stored: &str, associated_id: &str) -> Result<String, CollectorError> {
+        let encoded = stored.strip_prefix(ENCRYPTION_PREFIX).ok_or(CollectorError::Crypto)?;
+        let decoded = BASE64.decode(encoded).map_err(|_| CollectorError::Crypto)?;
+        if decoded.len() < 12 + 16 { return Err(CollectorError::Crypto); }
+        let nonce = Nonce::from_slice(&decoded[..12]);
+        let plaintext = self.cipher.decrypt(
+            nonce,
+            Payload { msg: &decoded[12..], aad: associated_id.as_bytes() },
+        ).map_err(|_| CollectorError::Crypto)?;
+        String::from_utf8(plaintext).map_err(|_| CollectorError::Crypto)
+    }
+}
+
 pub struct Outbox {
     connection: Connection,
+    cipher: Option<PayloadCipher>,
     database_path: PathBuf,
     max_pending_samples: u64,
     max_pending_payload_bytes: u64,
@@ -312,6 +378,32 @@ impl Outbox {
         max_pending_payload_bytes: u64,
         max_sqlite_files_bytes: u64,
     ) -> Result<Self, CollectorError> {
+        Self::open_database(path, max_pending_samples, max_pending_payload_bytes, max_sqlite_files_bytes, None)
+    }
+
+    /// Opt-in for new, empty databases. Existing plaintext databases with
+    /// readings are never converted in-place (WAL/free-page remnants).
+    pub fn open_encrypted_disk_guard(
+        path: impl AsRef<Path>,
+        max_pending_samples: u64,
+        max_pending_payload_bytes: u64,
+        max_sqlite_files_bytes: u64,
+        hex_key: &str,
+    ) -> Result<Self, CollectorError> {
+        let cipher = PayloadCipher::from_hex(hex_key)?;
+        Self::open_database(
+            path, max_pending_samples, max_pending_payload_bytes,
+            max_sqlite_files_bytes, Some(cipher),
+        )
+    }
+
+    fn open_database(
+        path: impl AsRef<Path>,
+        max_pending_samples: u64,
+        max_pending_payload_bytes: u64,
+        max_sqlite_files_bytes: u64,
+        cipher: Option<PayloadCipher>,
+    ) -> Result<Self, CollectorError> {
         if !(1..=1_000_000).contains(&max_pending_samples) {
             return Err(CollectorError::Configuration(
                 "max_pending_samples must be 1..1000000".into(),
@@ -328,7 +420,10 @@ impl Outbox {
             ));
         }
         let database_path = path.as_ref().to_path_buf();
-        let db = Connection::open(&database_path)?;
+        // Refuse in-place encryption of *any* prior SQLite file, even if the
+        // current tables are empty: deleted plaintext may persist in WAL/pages.
+        let previously_existing = database_path.exists();
+        let mut db = Connection::open(&database_path)?;
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.pragma_update(None, "busy_timeout", 5000_i64)?;
         db.execute_batch(
@@ -349,8 +444,52 @@ impl Outbox {
                 reason TEXT NOT NULL
             );"
         )?;
+        // Explicit mode marker: encrypted stores cannot be opened without a
+        // matching key; plaintext stores with readings cannot be auto-migrated.
+        let mode: Option<String> = db.query_row(
+            "SELECT value FROM state WHERE key = 'payload_encryption_mode'",
+            [], |row| row.get(0),
+        ).optional()?;
+        match (mode.as_deref(), cipher.as_ref()) {
+            (None, None) => {}
+            (Some(ENCRYPTION_MODE), None) => return Err(CollectorError::EncryptionRequired),
+            (Some(ENCRYPTION_MODE), Some(cipher)) => {
+                let check: String = db.query_row(
+                    "SELECT value FROM state WHERE key = 'payload_encryption_check'",
+                    [], |row| row.get(0),
+                ).map_err(|_| CollectorError::Crypto)?;
+                if cipher.open(&check, KEY_CHECK_ID)? != KEY_CHECK_PLAINTEXT {
+                    return Err(CollectorError::Crypto);
+                }
+            }
+            (None, Some(cipher)) => {
+                if previously_existing {
+                    return Err(CollectorError::EncryptionMigrationRequired);
+                }
+                let retained: u64 = db.query_row(
+                    "SELECT (SELECT COUNT(*) FROM outbox)
+                          + (SELECT COUNT(*) FROM quarantined_readings)",
+                    [], |row| row.get(0),
+                )?;
+                if retained > 0 {
+                    return Err(CollectorError::EncryptionMigrationRequired);
+                }
+                let check = cipher.seal(KEY_CHECK_PLAINTEXT, KEY_CHECK_ID)?;
+                let transaction = db.transaction()?;
+                transaction.execute(
+                    "INSERT INTO state(key, value) VALUES ('payload_encryption_check', ?1)",
+                    [&check],
+                )?;
+                transaction.execute(
+                    "INSERT INTO state(key, value) VALUES ('payload_encryption_mode', ?1)",
+                    [ENCRYPTION_MODE],
+                )?;
+                transaction.commit()?;
+            }
+            _ => return Err(CollectorError::Crypto),
+        }
         Ok(Self {
-            connection: db, database_path, max_pending_samples,
+            connection: db, cipher, database_path, max_pending_samples,
             max_pending_payload_bytes, max_sqlite_files_bytes,
         })
     }
@@ -386,9 +525,27 @@ impl Outbox {
         Ok(self.sqlite_footprint()?.soft_limit_reached)
     }
 
+    pub fn payload_encryption_enabled(&self) -> bool { self.cipher.is_some() }
+
+    fn encode_payload(&self, plaintext: &str, sample_id: &str) -> Result<String, CollectorError> {
+        match &self.cipher {
+            Some(cipher) => cipher.seal(plaintext, sample_id),
+            None => Ok(plaintext.to_owned()),
+        }
+    }
+
+    fn decode_payload(&self, stored: &str, sample_id: &str) -> Result<String, CollectorError> {
+        match &self.cipher {
+            Some(cipher) => cipher.open(stored, sample_id),
+            None if stored.starts_with(ENCRYPTION_PREFIX) => Err(CollectorError::EncryptionRequired),
+            None => Ok(stored.to_owned()),
+        }
+    }
+
     pub fn enqueue(&self, reading: &Reading) -> Result<bool, CollectorError> {
         let sample_id = reading.sample_id.to_string();
-        let payload = serde_json::to_string(reading)?;
+        let plain = serde_json::to_string(reading)?;
+        let payload = self.encode_payload(&plain, &sample_id)?;
 
         // Conservative preflight for the physical database/WAL footprint.
         // Existing UUIDs are still checked below for idempotency. This cannot
@@ -422,7 +579,7 @@ impl Outbox {
             |row| row.get(0),
         ).optional()?;
         match existing {
-            Some(saved) if saved == payload => Ok(false),
+            Some(saved) if self.decode_payload(&saved, &sample_id)? == plain => Ok(false),
             Some(_) => Err(CollectorError::SampleConflict),
             None => {
                 let quarantined: bool = self.connection.query_row(
@@ -500,7 +657,7 @@ impl Outbox {
         })?;
         rows.map(|row| {
             let (sample_id, payload, quarantined_at, reason) = row?;
-            let reading: Reading = serde_json::from_str(&payload)?;
+            let reading: Reading = serde_json::from_str(&self.decode_payload(&payload, &sample_id)?)?;
             if reading.sample_id.to_string() != sample_id {
                 return Err(CollectorError::SampleConflict);
             }
@@ -565,10 +722,20 @@ impl Outbox {
 
     pub fn next_batch(&self, limit: usize) -> Result<Vec<Reading>, CollectorError> {
         let mut stmt = self.connection.prepare(
-            "SELECT payload FROM outbox ORDER BY queued_at, sample_id LIMIT ?1"
+            "SELECT sample_id, payload FROM outbox ORDER BY queued_at, sample_id LIMIT ?1"
         )?;
-        let rows = stmt.query_map([limit.clamp(1,100) as i64], |row| row.get::<_,String>(0))?;
-        rows.map(|row| serde_json::from_str(&row?).map_err(CollectorError::from)).collect()
+        let rows = stmt.query_map([limit.clamp(1,100) as i64], |row| {
+            Ok((row.get::<_,String>(0)?, row.get::<_,String>(1)?))
+        })?;
+        rows.map(|row| {
+            let (sample_id, stored) = row?;
+            let plain = self.decode_payload(&stored, &sample_id)?;
+            let reading: Reading = serde_json::from_str(&plain)?;
+            if reading.sample_id.to_string() != sample_id {
+                return Err(CollectorError::Crypto);
+            }
+            Ok(reading)
+        }).collect()
     }
 
     pub fn acknowledge(&mut self, sample_ids: &[Uuid]) -> Result<(), CollectorError> {
@@ -801,6 +968,112 @@ pub fn upload_pending(
 #[cfg(test)]
 mod tests {
     use super::*;
+    const TEST_DB_KEY: &str = "ce7af92eab45e368f57e0998d3fcb36c9dc3ec6a8857352a24ef106952841eb0";
+    const OTHER_DB_KEY: &str = "cafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00d";
+
+    #[test]
+    fn encrypted_payload_roundtrip_dedup_quarantine_restore_and_ack() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("encrypted.sqlite");
+        let original = sample_with_meter(830_112);
+        let mut encrypted = Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY).unwrap();
+        assert!(encrypted.payload_encryption_enabled());
+        assert!(encrypted.enqueue(&original).unwrap());
+        assert!(!encrypted.enqueue(&original).unwrap());
+
+        let raw: String = encrypted.connection.query_row(
+            "SELECT payload FROM outbox WHERE sample_id = ?1",
+            [original.sample_id.to_string()], |row| row.get(0),
+        ).unwrap();
+        assert!(raw.starts_with(ENCRYPTION_PREFIX));
+        assert!(!raw.contains("830112"));
+        assert!(!raw.contains("meter_total"));
+        let mut changed = original.clone();
+        changed.meter_total = Some(1);
+        assert!(matches!(encrypted.enqueue(&changed), Err(CollectorError::SampleConflict)));
+        assert_eq!(encrypted.next_batch(10).unwrap()[0].meter_total, Some(830_112));
+
+        encrypted.quarantine(original.sample_id, "individually-rejected-422").unwrap();
+        let preserved_ciphertext: String = encrypted.connection.query_row(
+            "SELECT payload FROM quarantined_readings WHERE sample_id = ?1",
+            [original.sample_id.to_string()], |row| row.get(0),
+        ).unwrap();
+        assert_eq!(raw, preserved_ciphertext);
+        assert_eq!(encrypted.quarantined_readings(10).unwrap()[0].printer_id, original.printer_id);
+        drop(encrypted);
+
+        assert!(matches!(
+            Outbox::open(&path),
+            Err(CollectorError::EncryptionRequired)
+        ));
+        assert!(matches!(
+            Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, OTHER_DB_KEY),
+            Err(CollectorError::Crypto)
+        ));
+        let mut reopened = Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY).unwrap();
+        assert!(reopened.restore_quarantined(original.sample_id).unwrap());
+        assert_eq!(reopened.next_batch(10).unwrap()[0].sample_id, original.sample_id);
+        reopened.acknowledge(&[original.sample_id]).unwrap();
+        assert_eq!(reopened.retained().unwrap(), 0);
+    }
+
+    #[test]
+    fn encrypted_database_never_permits_plaintext_downgrade_or_legacy_in_place_conversion() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("old.sqlite");
+        let sample = sample_with_meter(1337);
+        {
+            let outbox = Outbox::open(&path).unwrap();
+            outbox.enqueue(&sample).unwrap();
+        }
+        assert!(matches!(
+            Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY),
+            Err(CollectorError::EncryptionMigrationRequired)
+        ));
+        assert_eq!(Outbox::open(&path).unwrap().next_batch(10).unwrap()[0].sample_id, sample.sample_id);
+        {
+            let mut old = Outbox::open(&path).unwrap();
+            old.acknowledge(&[sample.sample_id]).unwrap();
+        }
+        // Even an emptied old file may retain plaintext in free pages/WAL.
+        assert!(matches!(
+            Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY),
+            Err(CollectorError::EncryptionMigrationRequired)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_encryption_keys_and_corrupted_authenticated_ciphertext() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("secure.sqlite");
+        assert!(matches!(
+            Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, "bad"),
+            Err(CollectorError::Configuration(_))
+        ));
+        let reading = sample_with_meter(250);
+        let outbox = Outbox::open_encrypted_disk_guard(&path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY).unwrap();
+        outbox.enqueue(&reading).unwrap();
+        outbox.connection.execute(
+            "UPDATE outbox SET payload = 'enc:v1:bad-ciphertext' WHERE sample_id = ?1",
+            [reading.sample_id.to_string()],
+        ).unwrap();
+        assert!(matches!(outbox.next_batch(10), Err(CollectorError::Crypto)));
+        assert_eq!(outbox.pending().unwrap(), 1);
+        assert!(matches!(outbox.enqueue(&reading), Err(CollectorError::Crypto)));
+    }
+
+    #[test]
+    fn encrypted_payloads_use_unique_nonces_and_bind_sample_identity() {
+        let cipher = PayloadCipher::from_hex(TEST_DB_KEY).unwrap();
+        let left = Uuid::new_v4().to_string();
+        let right = Uuid::new_v4().to_string();
+        let one = cipher.seal("hello", &left).unwrap();
+        let two = cipher.seal("hello", &left).unwrap();
+        assert_ne!(one, two);
+        assert_eq!(cipher.open(&one, &left).unwrap(), "hello");
+        assert!(matches!(cipher.open(&one, &right), Err(CollectorError::Crypto)));
+    }
+
     #[test]
     fn outbox_is_durable_and_deduplicated() {
         let tmp = tempfile::tempdir().unwrap();

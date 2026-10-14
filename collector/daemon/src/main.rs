@@ -16,10 +16,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
-    let mut outbox = Outbox::open_with_disk_guard(
-        &args[2], cfg.max_pending_samples, cfg.max_pending_payload_bytes,
-        cfg.max_sqlite_files_bytes,
-    )?;
+    // A configured key is mandatory to reopen an encrypted database. Legacy
+    // plaintext databases are never migrated in-place.
+    let mut outbox = match env::var("NEXA_COLLECTOR_DB_KEY_HEX") {
+        Ok(key) => Outbox::open_encrypted_disk_guard(
+            &args[2], cfg.max_pending_samples, cfg.max_pending_payload_bytes,
+            cfg.max_sqlite_files_bytes, &key,
+        )?,
+        Err(env::VarError::NotPresent) => Outbox::open_with_disk_guard(
+            &args[2], cfg.max_pending_samples, cfg.max_pending_payload_bytes,
+            cfg.max_sqlite_files_bytes,
+        )?,
+        Err(_) => return Err("NEXA_COLLECTOR_DB_KEY_HEX contains invalid environment data".into()),
+    };
     // Physical disk diagnostics must not trigger SNMP, heartbeat, or uploads.
     if storage_status {
         let footprint = outbox.sqlite_footprint()?;
@@ -189,6 +198,8 @@ fn attempt_upload(
             if matches!(
                 &error,
                 CollectorError::Storage(_) | CollectorError::Io(_) | CollectorError::Json(_)
+                | CollectorError::Crypto | CollectorError::EncryptionRequired
+                | CollectorError::EncryptionMigrationRequired
             ) {
                 return Err(error);
             }

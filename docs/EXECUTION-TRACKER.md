@@ -419,3 +419,18 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - **Não equivale a quota rígida de disco ou garantia contra ENOSPC.** Operações podem ultrapassar o limite entre a medição e a escrita, incluindo concorrência e WAL; metadados em outros caminhos, backups, temporários e disponibilidade física livre não são monitorados.
 - ACK não encolhe necessariamente DB/WAL, e operação de VACUUM/CHKPT manual exige supervisão e backup. Não há política de mínimo espaço livre nem instalações de serviço nativo nem criptografia em repouso.
 - O monitoramento local é observacional e não inclui testes reais de interrupção elétrica/disco cheio; `NX-035` e `NX-045` continuam **PARCIAIS**.
+
+## Entrega 22 — criptografia autenticada opt-in de payload do Collector (14/10/2026)
+
+### Incremento implementado
+- Novo `PayloadCipher` usa AES-256-GCM com nonce por registro e AAD do UUID; codificação `enc:v1:` em coluna payload. AAD bloqueia troca de ciphertext entre UUIDs. Chave hexadecimal de 32 bytes é recebida somente via `NEXA_COLLECTOR_DB_KEY_HEX`; não está no JSON nem no Git.
+- Estado do DB traz marcador explícito de modo cifrado e verificador autenticado de chave. Abertura criptografada rejeita chave errada/ciphertext danificado; abertura plaintext rejeita banco marcado, sem downgrade silencioso.
+- `enqueue` compara dados decifrados para deduplicar UUID com ciphertext randomizado; `next_batch` e consulta de quarentena autenticam/descriptografam; transições de quarentena e ACK mantêm bytes cifrados enquanto retidos.
+- Ativação **somente para arquivo DB novo**. Um banco legado existente, até vazio, recusa conversão para evitar restos plaintext em páginas livres/WAL/SHM. Não há procedimento de migração/rekey nesta entrega.
+- Daemon e console fazem abertura protegida quando a variável externa está definida; sem ela o daemon legado mantém compatibilidade plaintext. Console apresenta status verificado ou mensagem de falha sem expor a chave.
+- Testes Rust adicionados: round-trip, deduplicação, quarentena/restore/ACK após reiniciar, chave incorreta/ausente, recusa de migração legada, ciphertext modificado, unicidade de nonce e integridade AAD.
+
+### Limites de produção
+- **Somente payload de leituras cifrado; não equivale a SQLCipher ou cifragem do arquivo inteiro.** Metadata, horários, índices, estado de retry e payload histórico de bancos antigos permanecem expostos.
+- Migração segura para arquivo novo com auditoria, rotação de chave, distribuição em OS keychain/secret store, permissões nos arquivos e zeroização integral de segredos em runtime ainda pendentes.
+- Faltam testes E2E nativos Tauri, instaladores Windows/Linux/macOS, retomada após interrupção elétrica, hardware SNMP e auditoria fiscal de leituras antigas. `NX-035` continua PARCIAL, sem homologação de produção.
