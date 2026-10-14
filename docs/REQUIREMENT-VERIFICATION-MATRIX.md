@@ -60,7 +60,7 @@
 | NX-032 | Agente local e comunicação | NÃO COMPROVADO | Configuração de credenciais por impressora com armazenamento cifrado, nunca na interface ou em logs. |
 | NX-033 | Agente local e comunicação | PARCIAL — sem aceite E2E | Coleta configurável de contadores, capacidade, consumíveis, eventos, dados de identificação e estado. |
 | NX-034 | Agente local e comunicação | PARCIAL — heartbeat, coleta e retentativa HTTP separados; descoberta e política persistida pendentes | Intervalos separados de consulta, descoberta, heartbeat e upload, com jitter, timeout e backoff. |
-| NX-035 | Agente local e comunicação | PARCIAL — fila e quarentena SQLite transacionais sem descarte, sem criptografia ou quota em bytes | Fila de envio persistente, criptografada, limitada em disco, reenvio ordenado e deduplicação no backend. |
+| NX-035 | Agente local e comunicação | PARCIAL — fila/quarentena preservadas com orçamento por bytes JSON; sem criptografia ou quota física de disco | Fila de envio persistente, criptografada, limitada em disco, reenvio ordenado e deduplicação no backend. |
 | NX-036 | Agente local e comunicação | PARCIAL — HTTPS outbound e retry/status; proxy autenticado e testes reais pendentes | Envio por HTTPS/TLS usando apenas conexão iniciada pelo agente; compatibilidade com proxy autenticado. |
 | NX-037 | Agente local e comunicação | NÃO COMPROVADO | Canal alternativo de transporte por e-mail SMTP/POP3 somente se autorizado e implementado com cifragem, autenticação e limites. |
 | NX-038 | Agente local e comunicação | PARCIAL — console local de fila e histórico de upload sanitizado; SNMP/proxy avançado e homologação pendentes | Diagnóstico local, teste de comunicação, teste de SNMP, validação de IP e logs sanitizados. |
@@ -70,7 +70,7 @@
 | NX-042 | Agente local e comunicação | NÃO COMPROVADO | Reinstalação e recuperação dos dados locais sem replicar leituras já recebidas. |
 | NX-043 | Agente local e comunicação | NÃO COMPROVADO | Configuração remota segura limitada aos agentes do próprio provedor e a usuários autorizados. |
 | NX-044 | Agente local e comunicação | NÃO COMPROVADO | Identificação de duplicidade de agentes ou colisão de identidade de impressora. |
-| NX-045 | Agente local e comunicação | PARCIAL — backpressure inclui quarentena; expurgo auditado, recursos e quota em bytes pendentes | Política de retenção de dados na borda, limites de memória/CPU e suporte a clientes com conexão intermitente. |
+| NX-045 | Agente local e comunicação | PARCIAL — backpressure por amostras e bytes JSON, sem cota física, retenção auditada nem teste de disco cheio | Política de retenção de dados na borda, limites de memória/CPU e suporte a clientes com conexão intermitente. |
 | NX-046 | Agente local e comunicação | NÃO COMPROVADO | Inventário e diagnóstico de compatibilidade de hardware sem declarar homologado um modelo não testado. |
 | NX-047 | Parque, ciclo de vida e impressoras | PARCIAL — sem aceite E2E | Parque completo, impressoras por cliente, novas impressoras e impressoras com monitoramento duplicado. |
 | NX-048 | Parque, ciclo de vida e impressoras | PARCIAL — sem aceite E2E | Cadastro de fabricante, modelo, série, IP, MAC, patrimônio, responsável, proprietário, localização e departamento. |
