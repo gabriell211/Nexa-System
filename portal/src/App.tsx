@@ -3,7 +3,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import {
   Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList, ClipboardCheck,
-  Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon,
+  Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon, ShieldAlert,
   Search, ShieldCheck, Trash2, Users, X, MapPin, UserRoundCog,
 } from 'lucide-react';
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
@@ -13,6 +13,7 @@ import { InventoryPage } from './pages/InventoryPage';
 import { ShipmentsPage } from './pages/ShipmentsPage';
 import { SuppliesPage } from './pages/SuppliesPage';
 import { TicketsPage } from './pages/TicketsPage';
+import { AlertsPage } from './pages/AlertsPage';
 import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
 import type {
   AuditEntry, Credentials, CurrentUser, Customer, CustomerPayload, Dashboard,
@@ -153,6 +154,10 @@ function Shell({ token, identity, onLogout }: {
           <NavLink to="/chamados" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
             <ClipboardCheck size={19}/> Chamados
           </NavLink>}
+        {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
+          <NavLink to="/alertas" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
+            <ShieldAlert size={19}/> Alertas
+          </NavLink>}
         {canStock && <NavLink to="/estoque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Database size={19}/> Estoque</NavLink>}
         {canStock && <NavLink to="/reposicoes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ArrowRight size={19}/> Remessas</NavLink>}
         {canStock && <NavLink to="/suprimentos" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ClipboardList size={19}/> Suprimentos</NavLink>}
@@ -184,6 +189,8 @@ function Shell({ token, identity, onLogout }: {
           <Route path="/parque" element={<PrintersPage token={token} canWrite={canWrite} />} />
           {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
             <Route path="/chamados" element={<TicketsPage canReopen={canWrite||identity.role==='supervisor'} />} />}
+          {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
+            <Route path="/alertas" element={<AlertsPage />} />}
           {canStock && <Route path="/estoque" element={<InventoryPage token={token} />} />}
           {canStock && <Route path="/reposicoes" element={<ShipmentsPage token={token} canClose={canWrite} />} />}
           {canStock && <Route path="/suprimentos" element={<SuppliesPage token={token} canRemove={canWrite} />} />}

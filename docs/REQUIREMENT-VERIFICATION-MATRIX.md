@@ -139,7 +139,7 @@
 | NX-110 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Tratamento de envio parcial, recebimento parcial, extravio, divergência e cancelamento. |
 | NX-111 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Rastreio por movimentação, técnico, cliente, unidade e impressora. |
 | NX-112 | Alertas e manutenções preventivas | NÃO COMPROVADO | Alertas de falha da impressora, de comunicação impressora/agente/servidor e de manutenção preventiva. |
-| NX-113 | Alertas e manutenções preventivas | NÃO COMPROVADO | Criticidade, categoria, origem, timestamps e estados ativo, reconhecido, vinculado, resolvido e ignorado. |
+| NX-113 | Alertas e manutenções preventivas | PARCIAL — alertas manuais; E2E e homologação automática pendentes | Criticidade, categoria, origem, timestamps e estados ativo, reconhecido, vinculado, resolvido e ignorado. |
 | NX-114 | Alertas e manutenções preventivas | NÃO COMPROVADO | Atraso configurável antes do alerta de desconexão, para reduzir ruído de instabilidades curtas. |
 | NX-115 | Alertas e manutenções preventivas | NÃO COMPROVADO | Exigir comunicação estável antes de encerrar alerta automático de falha de conexão. |
 | NX-116 | Alertas e manutenções preventivas | NÃO COMPROVADO | Regras por dias, páginas produzidas, nível de suprimento, fabricante, modelo, cliente e impressora. |
@@ -147,12 +147,12 @@
 | NX-118 | Alertas e manutenções preventivas | NÃO COMPROVADO | Histórico de manutenções preventivas com data realizada, peças, técnico e reinício do ciclo da regra. |
 | NX-119 | Alertas e manutenções preventivas | NÃO COMPROVADO | Configuração de alertas específicos de USB/rede, catálogo de códigos e severidades por dispositivo. |
 | NX-120 | Alertas e manutenções preventivas | NÃO COMPROVADO | Supressão contextual em dispositivos reserva, em manutenção, ou em janelas agendadas. |
-| NX-121 | Alertas e manutenções preventivas | NÃO COMPROVADO | Silenciamento, reconhecimento, ignorar, encerramento automático e explicação do motivo. |
-| NX-122 | Alertas e manutenções preventivas | NÃO COMPROVADO | Deduplicação e correlação; alerta persistente não pode abrir chamados repetidos sem política. |
-| NX-123 | Alertas e manutenções preventivas | NÃO COMPROVADO | Relacionar alerta a chamado existente ou criar chamado novo com equipamento e cliente preenchidos. |
-| NX-124 | Alertas e manutenções preventivas | NÃO COMPROVADO | Estados de alertas vinculados a chamados e regra de encerramento coerente. |
+| NX-121 | Alertas e manutenções preventivas | PARCIAL — alertas manuais; E2E e homologação automática pendentes | Silenciamento, reconhecimento, ignorar, encerramento automático e explicação do motivo. |
+| NX-122 | Alertas e manutenções preventivas | PARCIAL — alertas manuais; E2E e homologação automática pendentes | Deduplicação e correlação; alerta persistente não pode abrir chamados repetidos sem política. |
+| NX-123 | Alertas e manutenções preventivas | PARCIAL — alertas manuais; E2E e homologação automática pendentes | Relacionar alerta a chamado existente ou criar chamado novo com equipamento e cliente preenchidos. |
+| NX-124 | Alertas e manutenções preventivas | PARCIAL — alertas manuais; E2E e homologação automática pendentes | Estados de alertas vinculados a chamados e regra de encerramento coerente. |
 | NX-125 | Alertas e manutenções preventivas | NÃO COMPROVADO | Notificações por e-mail/eventos com preferências por destinatário, cliente, tipo e criticidade. |
-| NX-126 | Alertas e manutenções preventivas | NÃO COMPROVADO | Histórico de ações em alertas com autor e visibilidade para auditoria. |
+| NX-126 | Alertas e manutenções preventivas | PARCIAL — alertas manuais; E2E e homologação automática pendentes | Histórico de ações em alertas com autor e visibilidade para auditoria. |
 | NX-127 | Chamados, técnicos, atendimento e SLA | PARCIAL — API/portal inicial; QA E2E limitado | Chamados abertos pelo cliente ou pelo provedor, vinculados opcionalmente a impressora(s), dispositivo(s) e alerta(s). |
 | NX-128 | Chamados, técnicos, atendimento e SLA | PARCIAL — API/portal inicial; QA E2E limitado | Permitir chamado interno sem cliente/equipamento para tarefas administrativas. |
 | NX-129 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Tipos de chamados configuráveis com opção de visibilidade para o portal cliente. |
@@ -164,7 +164,7 @@
 | NX-135 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Serviços prestados catalogados, valor por serviço, peças de estoque utilizadas e custos adicionais. |
 | NX-136 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Destino de peça usada: cliente (estoque) ou instalação na impressora, conforme natureza do atendimento. |
 | NX-137 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Cálculo de valor total do serviço, desconto, pagamento confirmado e conferência antes do encerramento. |
-| NX-138 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Relação entre chamados e alertas e encerramento com tratamento consistente dos alertas associados. |
+| NX-138 | Chamados, técnicos, atendimento e SLA | PARCIAL — alertas manuais; E2E e homologação automática pendentes | Relação entre chamados e alertas e encerramento com tratamento consistente dos alertas associados. |
 | NX-139 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Impressão de ordem de serviço com linhas adicionais configuráveis e identidade da empresa. |
 | NX-140 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Política de SLA por cliente, filial e impressora, com herança e substituição explícitas. |
 | NX-141 | Chamados, técnicos, atendimento e SLA | NÃO COMPROVADO | Contagem em horas corridas, horas úteis do provedor ou horas úteis do cliente, conforme a regra. |
@@ -470,3 +470,10 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 - A matriz mantém `QA-17` como não comprovado: comentários internos são persistidos para operadores, mas ainda não há portal de cliente para testar a restrição externa de ponta a ponta.
 - Playwright real (Chromium desktop e mobile) foi acrescentado ao GitHub Actions; prova apenas a jornada implementada, distinta de homologação de produção ou dos 62 cenários completos.
 - Corrigidas incompatibilidades de busca com `q=` e `active_only=true` e adicionada regressão para ambos os endpoints. Isso foi descoberto pela navegação E2E, não por mocks.
+
+## Alertas de impressoras e correlação manual com chamados (14/10/2026)
+
+- `NX-113/121/122/123/124/126/138`: escopo **PARCIAL**. Existe estrutura persistente de incidentes manuais, severidade, categoria, origem imutável `operator`, estados, deduplicação transacional, vínculo validado com chamado da mesma impressora/cliente/tenant e auditoria.
+- Não existe geração automática por SNMP/USB, regras de estabilidade, janelas de manutenção, silenciamento temporal, notificações ou detecção de falha por histórico. `NX-112/114/115/116/117/118/119/120/125` permanecem sem aceite.
+- Resolver/ignorar alerta é decisão explícita do operador com justificativa; encerrar chamado **não** significa prova de normalização do equipamento. Não inferir encerramento automático.
+- Novo `PrinterAlertTest` executa casos de deduplicação, vínculos cruzados, segregação de carteira, transições e origem; `portal/e2e/helpers/alert-workflow.ts` invocado por `operations.spec.ts` exercita cadastro cliente/impressora/chamado/alerta e vínculo no navegador, sem mocks. Aprovação depende do CI correspondente.

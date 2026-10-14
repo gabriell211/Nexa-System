@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\V1\StockSupplierController;
 use App\Http\Controllers\Api\V1\StockCompatibilityController;
 use App\Http\Controllers\Api\V1\StockDocumentedReceiptController;
 use App\Http\Controllers\Api\V1\ServiceTicketController;
+use App\Http\Controllers\Api\V1\PrinterAlertController;
 use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
 use Illuminate\Support\Facades\Route;
 
@@ -79,6 +80,11 @@ $registerBackoffice = static function (): void {
     });
 
     Route::middleware('nexa.roles:owner,admin,manager,supervisor,technician')->group(static function (): void {
+        Route::get('/alerts', [PrinterAlertController::class, 'index']);
+        Route::get('/alerts/{alert}', [PrinterAlertController::class, 'show']);
+        Route::post('/alerts', [PrinterAlertController::class, 'store']);
+        Route::post('/alerts/{alert}/transition', [PrinterAlertController::class, 'transition']);
+        Route::post('/alerts/{alert}/link-ticket', [PrinterAlertController::class, 'linkTicket']);
         Route::get('/tickets', [ServiceTicketController::class, 'index']);
         Route::get('/tickets/operators', ServiceTicketOperatorController::class);
         Route::get('/tickets/{ticket}', [ServiceTicketController::class, 'show']);

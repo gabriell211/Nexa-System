@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardCheck, MessageSquarePlus, Plus, RotateCcw } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
-import type { Customer, Page } from '../types';
+import type { Customer, Page, Printer } from '../types';
 
 type Status = 'triage'|'unassigned'|'pending'|'in_progress'|'resolved'|'closed';
 type Priority = 'low'|'normal'|'high'|'critical';
@@ -26,6 +26,7 @@ const options:Record<Status,Status[]> = {
 
 function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
   const [customer,setCustomer]=useState('');
+  const [printer,setPrinter]=useState('');
   const [subject,setSubject]=useState('');
   const [description,setDescription]=useState('');
   const [category,setCategory]=useState('suporte');
@@ -34,11 +35,16 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
     queryKey:['ticket-customer-options'],
     queryFn:()=>api<Page<Customer>>('/customers'+queryString({per_page:100,active_only:true}),null),
   });
+  const printers=useQuery({
+    queryKey:['ticket-printer-options'],
+    queryFn:()=>api<Page<Printer>>('/printers'+queryString({per_page:100,active_only:true}),null),
+    enabled:Boolean(customer),
+  });
   const create=useMutation({
     mutationFn:()=>api<{data:Ticket}>('/tickets',null,{
       method:'POST',body:JSON.stringify({
         customer_id:customer ? Number(customer) : null,
-        printer_id:null,subject:subject.trim(),description:description.trim(),
+        printer_id:printer ? Number(printer) : null,subject:subject.trim(),description:description.trim(),
         category:category.trim(),priority,
       }),
     }),
@@ -51,9 +57,18 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
     <h3>Abrir chamado</h3>
     <div className="stock-form-grid">
       <div className="stock-field"><label htmlFor="ticket-customer">Cliente</label>
-        <select id="ticket-customer" value={customer} onChange={e=>setCustomer(e.target.value)}>
+        <select id="ticket-customer" value={customer} onChange={e=>{setCustomer(e.target.value);setPrinter('');}}>
           <option value="">Interno (sem cliente)</option>
           {(customers.data?.data??[]).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+        </select></div>
+      <div className="stock-field"><label htmlFor="ticket-printer">Impressora (opcional)</label>
+        <select id="ticket-printer" value={printer} disabled={!customer}
+          onChange={e=>setPrinter(e.target.value)}>
+          <option value="">Sem impressora</option>
+          {(printers.data?.data??[]).filter(item=>item.customer_id===Number(customer))
+            .map(item=><option key={item.id} value={item.id}>
+              #{item.id} {item.manufacturer} {item.model}
+            </option>)}
         </select></div>
       <div className="stock-field"><label htmlFor="ticket-priority">Prioridade</label>
         <select id="ticket-priority" value={priority} onChange={e=>setPriority(e.target.value as Priority)}>
@@ -70,6 +85,7 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
       <textarea id="ticket-description" required minLength={5} maxLength={12000}
         value={description} onChange={e=>setDescription(e.target.value)} rows={3}/></div>
     {customers.error&&<p role="alert" className="notice error">{readableError(customers.error)}</p>}
+    {printers.error&&<p role="alert" className="notice error">{readableError(printers.error)}</p>}
     {create.error&&<p role="alert" className="notice error">{readableError(create.error)}</p>}
     <button className="button primary" disabled={create.isPending||customers.isPending||Boolean(customers.error)}
       type="submit"><Plus size={16}/> {create.isPending?'Salvando...':'Abrir chamado'}</button>

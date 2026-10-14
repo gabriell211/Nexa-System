@@ -279,3 +279,20 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - A coluna `internal=false` identifica comentário destinado ao cliente, mas **não existe endpoint de visualização por cliente**; `QA-17` não pode ser aceito sem autorização comprovada em portal real.
 - A UI inicial não suporta seleção múltipla de impressoras/dispositivos, campo de equipe, troca direta de responsável sem transição, nem paginação remota nos seletores com mais de 100 registros.
 - Teste Playwright cobre uma jornada específica, não os 62 QA integrais. Teste emulando viewport mobile não é ensaio em dispositivo físico. Homologação de produção permanece pendente.
+
+## Entrega 12 — incidentes manuais e correlação com chamados (2026-10-14)
+
+### Implementado na branch `feat/alerts-lifecycle-e2e-20261014`
+
+- Modelo `printer_alerts` com FKs compostas para tenant/cliente/impressora e tenant/chamado, severidade, categoria, código, motivo, origem `operator` e estados `active/acknowledged/linked/resolved/ignored`.
+- Deduplicação no PostgreSQL e SQLite por índice único parcial de incidente não encerrado + lock da linha de impressora para serializar novas ocorrências sob concorrência.
+- API autenticada com `/alerts`, `/alerts/{id}`, `/alerts/{id}/transition`, `/alerts/{id}/link-ticket`; permissão por papel e carteira aplicada antes de mutações.
+- Correlação só aceita chamado ainda em atendimento, da mesma impressora/cliente e tenant. Vínculo repetido ao mesmo chamado é idempotente, e alterações geram auditoria.
+- Portal `/alertas` para registro humano real, fila, filtros, detalhe, reconhecimento, resolução, ignorar e vínculo com chamado. O cadastro de chamado também permite selecionar impressora ativa do cliente.
+- Testes Laravel multiempresa e E2E em Chromium desktop/mobile sem respostas simuladas.
+
+### Pendente e escopo excluído
+- A origem `operator` impede fingir que um operador recebeu dados SNMP. Não há geração automática de alerta pelo Collector, classificadores de erro USB/rede, histerese de desconexão, timers de manutenção ou regras por página/nível/modelo.
+- Não há fechamento automático do alerta ao resolver chamado, porque o status de um ticket não prova recuperação da impressora. Requer regra explícita e validação de origem.
+- Seletores da UI limitados aos primeiros 100 equipamentos/chamados autorizados; precisa busca paginada, escopo por unidade e melhorias de escala.
+- Relatórios, notificações e aceite físico permanecem pendentes. Nenhum requisito NX é marcado integralmente.
