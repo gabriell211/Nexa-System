@@ -1,7 +1,8 @@
 use nexa_collector_core::{
-    collect_snmp_v2c, heartbeat_sleep_seconds, read_config, send_heartbeat, upload_pending, Outbox,
+    collect_snmp_v2c, heartbeat_sleep_seconds, read_config, send_heartbeat, upload_pending,
+    upload_error_kind, CollectorConfig, CollectorError, Outbox, UploadRetryPolicy,
 };
-use std::{env, error::Error, thread, time::Duration};
+use std::{env, error::Error, thread, time::{Duration, Instant}};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
@@ -41,45 +42,82 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
     }
 
+    let mut upload_retry = UploadRetryPolicy::default();
+    let mut next_poll = Instant::now();
+
     loop {
-        // Drain before polling to free capacity after a network outage.
-        // A full queue is never truncated or overwritten.
-        if let Some(ref secret) = token {
-            if upload_pending(&cfg, secret, &mut outbox).is_err() {
-                eprintln!("Upload unavailable; queued readings retained");
-            }
-        }
-
-        let pending = outbox.pending()?;
-        if pending >= cfg.max_pending_samples {
-            eprintln!("Collector outbox full; polling paused until acknowledged uploads free space");
-        } else if let Ok(community) = env::var("NEXA_SNMP_COMMUNITY") {
-            for printer in &cfg.printers {
-                if outbox.pending()? >= cfg.max_pending_samples {
-                    eprintln!("Collector outbox full; remaining printers deferred");
-                    break;
-                }
-                match collect_snmp_v2c(printer, community.as_bytes()) {
-                    Ok(reading) => {
-                        outbox.enqueue(&reading)?;
+        if Instant::now() >= next_poll {
+            if outbox.pending()? >= cfg.max_pending_samples {
+                eprintln!("Outbox saturated; new SNMP samples deferred until confirmed uploads release space");
+            } else if let Ok(community) = env::var("NEXA_SNMP_COMMUNITY") {
+                for printer in &cfg.printers {
+                    if outbox.pending()? >= cfg.max_pending_samples {
+                        eprintln!("Outbox full; remaining printers deferred");
+                        break;
                     }
-                    Err(_) => eprintln!("SNMP unavailable for printer ID {}", printer.printer_id),
+                    match collect_snmp_v2c(printer, community.as_bytes()) {
+                        Ok(reading) => {
+                            outbox.enqueue(&reading)?;
+                        }
+                        Err(_) => eprintln!("SNMP reading unavailable for printer {}", printer.printer_id),
+                    }
                 }
+            } else {
+                eprintln!("SNMP credential not configured; polling skipped");
             }
-        } else {
-            eprintln!("SNMP credential not configured; polling skipped");
+            outbox.mark_run()?;
+            next_poll = Instant::now() + Duration::from_secs(cfg.interval_seconds);
         }
 
-        outbox.mark_run()?;
         if let Some(ref secret) = token {
-            if upload_pending(&cfg, secret, &mut outbox).is_err() {
-                eprintln!("Upload unavailable; queued readings retained");
+            attempt_upload(&cfg, secret, &mut outbox, &mut upload_retry)?;
+        } else if once {
+            eprintln!("Collector token not configured; queued samples retained");
+        }
+
+        if once {
+            println!("Outbox pending: {}", outbox.pending()?);
+            break;
+        }
+        // Upload retry scheduling runs independently of the (possibly 24-hour)
+        // SNMP polling interval, but never performs network retries in a tight loop.
+        thread::sleep(Duration::from_secs(5));
+    }
+    Ok(())
+}
+
+fn attempt_upload(
+    cfg: &CollectorConfig,
+    token: &str,
+    outbox: &mut Outbox,
+    policy: &mut UploadRetryPolicy,
+) -> Result<(), CollectorError> {
+    if !policy.ready(Instant::now()) {
+        return Ok(());
+    }
+    match upload_pending(cfg, token, outbox) {
+        Ok(acked) => {
+            policy.on_success(Instant::now());
+            if acked > 0 {
+                println!("Confirmed {acked} queued samples; {} remaining", outbox.pending()?);
             }
         }
-        println!("Outbox pending: {}", outbox.pending()?);
-
-        if once { break; }
-        thread::sleep(Duration::from_secs(cfg.interval_seconds));
+        Err(error) => {
+            // A local SQLite or persisted payload failure needs explicit service
+            // supervision, not endless network retries masking corrupted storage.
+            if matches!(
+                &error,
+                CollectorError::Storage(_) | CollectorError::Io(_) | CollectorError::Json(_)
+            ) {
+                return Err(error);
+            }
+            let delay = policy.on_failure(Instant::now(), cfg.collector_id, &error);
+            eprintln!(
+                "Upload deferred: category={}, next attempt in approximately {} seconds; outbox preserved",
+                upload_error_kind(&error),
+                delay
+            );
+        }
     }
     Ok(())
 }

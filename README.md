@@ -17,6 +17,13 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Retentativas de upload do Collector — incremento 17 (parcial)
+
+- O daemon desacopla tentativas de transmissão do intervalo SNMP: verifica a fila em ciclos de 5 segundos, enviando lotes de até 100 amostras quando há janela de tentativa aberta.
+- Falhas de rede e respostas HTTP usam backoff exponencial a partir de 15 segundos, até 1 hora mais jitter determinístico; `429/503` respeitam `Retry-After` numérico até 6 horas. Erros HTTP de autorização/payload e ACK inválido têm intervalo mínimo de 15 minutos para evitar tempestades.
+- Um ACK só remove UUIDs reconhecidos e pertencentes ao lote enviado; ACK vazio, desconhecido ou repetido não confirma leituras. Falhas de armazenamento SQLite terminam o processo com erro para supervisão, sem fingir sucesso.
+- Ainda faltam backoff persistente após reinicialização, interpretação de `Retry-After` no formato data HTTP, conexão via proxy autenticado, alertas operacionais, testes de rede/hardware e quarentena supervisionada de amostras definitivamente rejeitadas. **NX-034/035/036/038 continuam parciais.**
+
 ### Outbox SQLite com capacidade limitada — incremento em desenvolvimento
 
 - Novo limite `max_pending_samples` (padrão 50000; faixa 1..1000000) configura a capacidade de amostras pendentes do Collector. O daemon tenta transmitir antes de coletar e pausa novas consultas ao atingir o teto, sem apagar leituras anteriores.

@@ -349,3 +349,18 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - React apresenta ocupação percentual, quantidade e limite; aviso acessível quando ≥80% e mensagem contextual ao atingir 100%, sem declarar falha ou disponibilidade física de impressoras.
 - Job CI `Collector console TypeScript build` executa instalação e build da UI desktop com TypeScript estrito, separadamente do portal principal.
 - **Ainda parcial:** sem build/instalador Tauri nativo, sem verificação de execução do serviço local, sem telemetria em tempo real do daemon, sem teste de UX automatizado, sem limite de bytes ou criptografia. NX-035, NX-038, NX-041 e NX-045 não aceitos integralmente.
+
+## Entrega 17 — Política de retentativas HTTP do Collector (14/10/2026)
+
+### Implementação parcial
+- `UploadRetryPolicy` separa elegibilidade de upload da cadência de polling SNMP; verificação do canal a cada 5s, janela de sucesso 10s, backoff exponencial com jitter 15s..1h+10% sob falha.
+- HTTP 408/425/429/5xx, rede e respostas incompletas entram em retentativa; 401/403 e demais 4xx não transitórios recebem retardo mínimo de 15min, sem alterar o conteúdo persistido. `429/503` respeitam `Retry-After` em segundos (máximo 6h).
+- ACK vazio, repetido ou com UUID externo é rejeitado. ACK parcial é aceito e remove apenas UUIDs efetivamente confirmados pelo servidor, sob transação local SQLite.
+- Falhas de SQLite ou JSON armazenado não são ignoradas pelo daemon: parada explícita para supervisão, sem exclusão automática de outbox. Logs usam categorias genéricas, sem credenciais/corpos de resposta.
+- Testes Rust acrescentados para jitter e limites, recuperação, rate limit, autorização, cabeçalho inválido, replay após reiniciar e ACK parcial/corrompido.
+
+### Limitações e aceitação
+- `NX-034`, `NX-035`, `NX-036`, `NX-038` continuam **PARCIAIS**, sem homologação do comportamento real em proxy, 48h offline, disco cheio, reinício da estação, credencial rotacionada ou firmware de impressora.
+- Política de retry ainda volátil, parser de Retry-After suporta apenas segundos, não HTTP-date. Com erro HTTP 422 de item antigo/sem permissão, a fila para naquele lote até intervenção; não há quarentena automática nem descarte.
+- A API Laravel limita leituras antigas a 14 dias. Faturamento nunca deve interpolar lacunas geradas por falhas de transporte.
+- Sem prometer integridade fim a fim até CI e testes de operação reais; `--once` só faz uma tentativa quando elegível.
