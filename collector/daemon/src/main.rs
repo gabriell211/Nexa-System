@@ -7,15 +7,32 @@ use std::{env, error::Error, thread, time::{Duration, Instant}};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
+    let migrate = args.len() == 5 && args[3] == "--migrate-encrypted-to";
     let restore = args.len() == 5 && args[3] == "--restore-quarantined";
     let list_quarantine = args.len() == 4 && args[3] == "--list-quarantined";
     let storage_status = args.len() == 4 && args[3] == "--storage-status";
     let once = args.len() == 4 && args[3] == "--once";
-    if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || storage_status || restore) {
-        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --storage-status | --restore-quarantined <sample-uuid>]");
+    if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || storage_status || restore || migrate) {
+        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --storage-status | --restore-quarantined <sample-uuid> | --migrate-encrypted-to <new-queue.sqlite>]");
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
+    if migrate {
+        // Never open or rewrite the source with the encrypted store routine.
+        // Stop the daemon first, use a NEW destination, and switch paths
+        // manually after inspecting the report. No network calls occur here.
+        let key = env::var("NEXA_COLLECTOR_DB_KEY_HEX")
+            .map_err(|_| "NEXA_COLLECTOR_DB_KEY_HEX is required for offline migration")?;
+        let report = Outbox::migrate_plaintext_to_encrypted(
+            &args[2], &args[4], cfg.max_pending_samples,
+            cfg.max_pending_payload_bytes, cfg.max_sqlite_files_bytes, &key,
+        )?;
+        println!(
+            "Encrypted migration verified: pending={} quarantined={} metadata_records={}. Source remains intact. Change DB path and verify the new database before restarting the service.",
+            report.pending, report.quarantined, report.state_entries,
+        );
+        return Ok(());
+    }
     // A configured key is mandatory to reopen an encrypted database. Legacy
     // plaintext databases are never migrated in-place.
     let mut outbox = match env::var("NEXA_COLLECTOR_DB_KEY_HEX") {
