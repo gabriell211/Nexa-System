@@ -10,7 +10,7 @@ type Category = 'hardware'|'communication'|'maintenance'|'supplies'|'other';
 interface Alert {
   id:number;printer_id:number;customer_id:number;ticket_id:number|null;
   code:string;category:Category;severity:Severity;status:Status;
-  origin:'operator';title:string;description:string|null;created_at:string;
+  origin:'operator'|'telemetry';telemetry_anchor_id:number|null;title:string;description:string|null;created_at:string;
   customer?:{id:number;name:string}|null;
   printer?:{id:number;manufacturer:string;model:string}|null;
   ticket?:{id:number;subject:string;status:string}|null;
@@ -155,7 +155,7 @@ function AlertDetail({id,onClose,onChanged}:{id:number;onClose:()=>void;onChange
         <h3>{data.title}</h3>
         <p>{data.description||'Sem detalhes adicionais.'}</p>
         <p><strong>{statusLabels[data.status]}</strong> · {severityLabels[data.severity]} · Código {data.code}</p>
-        <p className="stock-footnote">Origem: registrado por operador ·
+        <p className="stock-footnote">Origem: {data.origin==='telemetry'?'intervalo de leituras identificado pelo servidor':'registrado por operador'} ·
           Impressora: {data.printer?.manufacturer} {data.printer?.model}</p>
         {data.ticket&&<p>Chamado vinculado: #{data.ticket.id} — {data.ticket.subject}</p>}
         {(data.status==='active'||data.status==='acknowledged')&&!data.ticket_id&&
@@ -237,7 +237,7 @@ export function AlertsPage() {
           <th>Número</th><th>Ocorrência</th><th>Impressora</th>
           <th>Criticidade</th><th>Estado</th><th>Ações</th>
         </tr></thead><tbody>{listing.data.data.map(a=><tr key={a.id}>
-          <td>#{a.id}</td><td><strong>{a.title}</strong><small>{a.code}</small></td>
+          <td>#{a.id}</td><td><strong>{a.title}</strong><small>{a.code} · {a.origin==='telemetry'?'Coleta sem dados recentes':'Registro manual'}</small></td>
           <td>{a.printer?.manufacturer} {a.printer?.model}</td>
           <td>{severityLabels[a.severity]}</td><td>{statusLabels[a.status]}</td>
           <td><button type="button" className="button ghost" onClick={()=>setSelected(a.id)}>

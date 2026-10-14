@@ -10,7 +10,7 @@ final class PrinterAlert extends Model
 {
     protected $fillable = [
         'tenant_id','customer_id','printer_id','ticket_id','created_by_user_id',
-        'origin','code','category','severity','status','title','description',
+        'origin','telemetry_anchor_id','code','category','severity','status','title','description',
         'acknowledged_at','resolved_at','ignored_at',
     ];
 

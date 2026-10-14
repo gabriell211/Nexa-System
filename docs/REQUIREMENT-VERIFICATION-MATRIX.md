@@ -138,10 +138,10 @@
 | NX-109 | Estoque, movimentação e reposição | NÃO COMPROVADO | Confirmação de recebimento pelo provedor ou usuário cliente autorizado. |
 | NX-110 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Tratamento de envio parcial, recebimento parcial, extravio, divergência e cancelamento. |
 | NX-111 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Rastreio por movimentação, técnico, cliente, unidade e impressora. |
-| NX-112 | Alertas e manutenções preventivas | NÃO COMPROVADO | Alertas de falha da impressora, de comunicação impressora/agente/servidor e de manutenção preventiva. |
+| NX-112 | Alertas e manutenções preventivas | PARCIAL — lacunas de amostragem, sem prova de desconexão física | Alertas de falha da impressora, de comunicação impressora/agente/servidor e de manutenção preventiva. |
 | NX-113 | Alertas e manutenções preventivas | PARCIAL — alertas manuais; E2E e homologação automática pendentes | Criticidade, categoria, origem, timestamps e estados ativo, reconhecido, vinculado, resolvido e ignorado. |
-| NX-114 | Alertas e manutenções preventivas | NÃO COMPROVADO | Atraso configurável antes do alerta de desconexão, para reduzir ruído de instabilidades curtas. |
-| NX-115 | Alertas e manutenções preventivas | NÃO COMPROVADO | Exigir comunicação estável antes de encerrar alerta automático de falha de conexão. |
+| NX-114 | Alertas e manutenções preventivas | PARCIAL — lacunas de amostragem, sem prova de desconexão física | Atraso configurável antes do alerta de desconexão, para reduzir ruído de instabilidades curtas. |
+| NX-115 | Alertas e manutenções preventivas | PARCIAL — lacunas de amostragem, sem prova de desconexão física | Exigir comunicação estável antes de encerrar alerta automático de falha de conexão. |
 | NX-116 | Alertas e manutenções preventivas | NÃO COMPROVADO | Regras por dias, páginas produzidas, nível de suprimento, fabricante, modelo, cliente e impressora. |
 | NX-117 | Alertas e manutenções preventivas | NÃO COMPROVADO | Exceções por equipamento e aplicação das regras em novos equipamentos que correspondam ao filtro. |
 | NX-118 | Alertas e manutenções preventivas | NÃO COMPROVADO | Histórico de manutenções preventivas com data realizada, peças, técnico e reinício do ciclo da regra. |
@@ -477,3 +477,11 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 - Não existe geração automática por SNMP/USB, regras de estabilidade, janelas de manutenção, silenciamento temporal, notificações ou detecção de falha por histórico. `NX-112/114/115/116/117/118/119/120/125` permanecem sem aceite.
 - Resolver/ignorar alerta é decisão explícita do operador com justificativa; encerrar chamado **não** significa prova de normalização do equipamento. Não inferir encerramento automático.
 - Novo `PrinterAlertTest` executa casos de deduplicação, vínculos cruzados, segregação de carteira, transições e origem; `portal/e2e/helpers/alert-workflow.ts` invocado por `operations.spec.ts` exercita cadastro cliente/impressora/chamado/alerta e vínculo no navegador, sem mocks. Aprovação depende do CI correspondente.
+
+## Lacunas de telemetria observada (14/10/2026)
+
+- `NX-112/114/115`: somente a subcapacidade **PARCIAL** de detectar intervalos sem novas leituras, deduplicar e normalizar após estabilidade observada. Ainda não é prova de falta de comunicação agente-servidor ou impressora-agente; não há heartbeat independente, SNMP trap, status de erro do fabricante ou inventário preventivo.
+- O motor é executado por comando agendado a cada cinco minutos, desligado por padrão e configurado via ambiente. Sem leitura inicial, sem alerta; replay de leituras antigas não reabre nem confirma normalização de um dispositivo.
+- `created_by_user_id` e `audit_entries.actor_user_id` podem ser nulos em eventos do sistema; a origem e a trilha permanecem explícitas, sem identidade fictícia de funcionário.
+- O monitor **não** fecha incidentes vinculados a chamados. Ignorados não se repetem para a mesma amostra-base. Recuperação exige duas leituras novas distintas após abertura, espaçadas pela janela configurada.
+- A matriz de 62 cenários QA e a homologação com impressoras reais permanecem pendentes; testes de feature não comprovam alcance real do dispositivo.

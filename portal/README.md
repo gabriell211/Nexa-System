@@ -121,3 +121,7 @@ Pendentes no Help Desk: SLA por calendário, anexos, ordens de serviço, peças/
 A nova rota `/alertas` expõe **observações humanas**, com severidade, código, categoria, deduplicação, estado e vínculo ao chamado da mesma impressora. Um incidente com o mesmo código e origem ainda aberto retorna o registro existente, sem duplicidade. O backend rejeita vinculação entre empresas/clientes/impressoras distintos e audita cada mudança com autor e motivo. O formulário de `/chamados` agora também permite selecionar a impressora.
  
 Na mesma sessão autenticada por dispositivo, o Playwright acrescenta um fluxo completo de cliente → impressora → chamado → alerta → vínculo → resolução → logout em Chromium desktop e mobile. Isso **não** equivale a geração automática de alertas por telemetria nem prova compatibilidade SNMP, regras preventivas, SLA ou notificações.
+
+## Aviso sobre lacunas automáticas de coleta (entrega 13)
+
+A UI diferencia `operator` de `telemetry`: a segunda origem significa **apenas ausência de leituras recentes registrada pelo servidor**, não prova de impressora offline. Configure `NEXA_TELEMETRY_GAP_ENABLED=true` somente após conferir a periodicidade real de coleta. Requer `php artisan schedule:run` com cron externo a cada minuto, ou `schedule:work` no ambiente supervisionado, além de configuração de tolerância e janela de recuperação. Sem isso, a regra não executa. Alertas associados a chamados não são encerrados automaticamente.
