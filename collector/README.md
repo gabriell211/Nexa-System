@@ -277,3 +277,15 @@ Ao executar o heartbeat autenticado, o daemon pode enviar `watchdog: {recent_inc
 O portal, na página **Agentes de coleta**, mostra `Watchdog (último relatório)` e sua data. Essa informação pode estar **desatualizada**: se o circuito bloquear a inicialização, o daemon não estará rodando para enviar um heartbeat novo; não se deve apresentar o último relatório como saúde em tempo real. A ausência de relato nunca significa que não houve travamentos.
 
 Limites: sem streaming/push de alertas de abertura de circuito, sem serviço central buscando arquivos privados em hosts remotos, sem testes Tauri nativos com serviço real, sem controle administrativo remoto de restart/reset e sem segurança de keychain de sistema. A visualização não substitui logs e diagnóstico in loco; NX-039 e NX-041 continuam PARCIAIS.
+
+## Incidentes administrativos por ausência de heartbeat — entrega 32
+
+O backend pode criar alertas **de comunicação com o Collector**, sem transformar ausência de telemetria em defeito físico da impressora. São registros de `collector_health_incidents`, separados de `printer_alerts` e de `TELEMETRY_GAP`.
+
+Habilitação explícita de operação: configure `NEXA_COLLECTOR_HEALTH_ALERTS_ENABLED=true` e opcionalmente `NEXA_COLLECTOR_HEALTH_SILENCE_SECONDS=300` no ambiente protegido do **backend Laravel**. Rode `php artisan nexa:alerts:check-collectors` ou configure o scheduler Laravel para executar a tarefa de 1 em 1 minuto. O limiar deve ficar entre 60 e 86400 segundos e a tarefa é serializada pelo scheduler com `withoutOverlapping`. O padrão é **desabilitado** até ajuste dos intervalos para a instalação.
+
+A tarefa só abre alertas para agentes previamente conectados, ativos, com clientes/tenants ativos e `heartbeat_at` anterior ao limite. A checagem de concorrência usa lock no registro e índice parcial de unicidade: um incidente ativo por agente. A API grava o horário da última comunicação recebida pelo servidor, não o horário relatado pelo endpoint local. Um heartbeat subsequente, posterior à abertura do incidente, resolve; desativação/revogação fecha por `deactivated`, nunca por falsa recuperação. Leituras/upload de amostras isolados não resolvem silêncio do heartbeat.
+
+O portal administrativo em **Agentes de coleta** exibe o incidente ativo, histórico paginado e estado de resolução, respeitando tenant e carteira do técnico. O endpoint `GET /api/v1/collector-health-incidents` aceita `status`, `customer_id`, `collector_agent_id`, `page` e `per_page` validados. O serviço não envia email, SMS ou push e não identifica a causa do silêncio. Agentes ainda não instalados permanecem `no_heartbeat`, sem abrir automaticamente um incidente.
+
+**Não homologado:** scheduler real da implantação, limitação de latência ponta-a-ponta, monitoramento de instalação inicial, notificações para os operadores, recuperação sob queda de energia e estado dos dispositivos físicos. `NX-039/041` seguem PARCIAIS.

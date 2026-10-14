@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\V1\BrowserAuthController;
 use App\Http\Controllers\Api\V1\CollectorIngestController;
 use App\Http\Controllers\Api\V1\CollectorHeartbeatController;
 use App\Http\Controllers\Api\V1\CollectorAgentController;
+use App\Http\Controllers\Api\V1\CollectorHealthIncidentController;
 use App\Http\Controllers\Api\V1\CostCenterController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\CustomerDepartmentController;
@@ -83,6 +84,7 @@ $registerBackoffice = static function (): void {
 
     Route::middleware('nexa.roles:owner,admin,manager,supervisor,technician')->group(static function (): void {
         Route::get('/collector-agents', CollectorAgentController::class);
+        Route::get('/collector-health-incidents', CollectorHealthIncidentController::class);
         Route::get('/alerts', [PrinterAlertController::class, 'index']);
         Route::get('/alerts/{alert}', [PrinterAlertController::class, 'show']);
         Route::post('/alerts', [PrinterAlertController::class, 'store']);

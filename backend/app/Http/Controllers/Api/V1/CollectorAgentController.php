@@ -26,7 +26,7 @@ final class CollectorAgentController extends Controller
         $threshold=max(60,min(86400,$threshold));
 
         $query=CollectorAgent::query()->where('tenant_id',$tenant->id)
-            ->with('customer:id,name')
+            ->with(['customer:id,name','activeHealthIncident:id,collector_agent_id,status,detected_at,last_heartbeat_at'])
             ->when(isset($filters['customer_id']),fn($q)=>$q->where('customer_id',$filters['customer_id']));
         if (!$this->portfolio->hasFullAccess($request)) {
             $query->whereIn('customer_id',$this->portfolio->assignedIds($request));
@@ -50,6 +50,7 @@ final class CollectorAgentController extends Controller
                 'last_upload_at'=>$agent->last_seen_at?->toIso8601String(),
                 'heartbeat_state'=>$state,
                 'heartbeat_tolerance_seconds'=>$threshold,
+                'communication_incident'=>$agent->activeHealthIncident?->only(['id','status','detected_at','last_heartbeat_at']),
                 'watchdog_recent_incidents'=>$agent->watchdog_recent_incidents,
                 'watchdog_circuit_open_reported'=>$agent->watchdog_circuit_open_reported,
                 'watchdog_reported_at'=>$agent->watchdog_reported_at?->toIso8601String(),
