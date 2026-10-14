@@ -21,6 +21,7 @@ struct CollectorSnapshot {
     quarantine_preview: Vec<QuarantinedReading>,
     queue_capacity: Option<u64>,
     payload_bytes_retained: Option<u64>,
+    payload_encryption_enabled: Option<bool>,
     payload_bytes_limit: Option<u64>,
     sqlite_footprint: Option<SqliteFootprint>,
     delivery: Option<DeliveryDiagnostics>,
@@ -41,6 +42,7 @@ fn get_snapshot() -> CollectorSnapshot {
         quarantine_preview: Vec::new(),
         queue_capacity: None,
         payload_bytes_retained: None,
+        payload_encryption_enabled: None,
         payload_bytes_limit: None,
         sqlite_footprint: None,
         delivery: None,
@@ -73,13 +75,24 @@ fn get_snapshot() -> CollectorSnapshot {
     if let Ok(path) = env::var("NEXA_COLLECTOR_DB") {
         // Read-only dashboard; no daemon lifecycle commands or credential exposure.
         if std::path::Path::new(&path).exists() {
-            let opened = if let Some((samples, payload_bytes, file_bytes)) = capacity_limits {
-                Outbox::open_with_disk_guard(&path, samples, payload_bytes, file_bytes)
-            } else {
-                Outbox::open(&path)
+            let (samples, payload_bytes, file_bytes) = capacity_limits.unwrap_or((
+                50_000, 64 * 1024 * 1024, 512 * 1024 * 1024,
+            ));
+            let opened = match env::var("NEXA_COLLECTOR_DB_KEY_HEX") {
+                Ok(key) => Outbox::open_encrypted_disk_guard(
+                    &path, samples, payload_bytes, file_bytes, &key,
+                ),
+                Err(env::VarError::NotPresent) => Outbox::open_with_disk_guard(
+                    &path, samples, payload_bytes, file_bytes,
+                ),
+                Err(_) => {
+                    snapshot.error = Some("Chave de criptografia local inválida.".into());
+                    return snapshot;
+                }
             };
             match opened {
                 Ok(outbox) => {
+                    snapshot.payload_encryption_enabled = Some(outbox.payload_encryption_enabled());
                     snapshot.queue_pending = outbox.pending().ok();
                     match outbox.sqlite_footprint() {
                         Ok(footprint) => snapshot.sqlite_footprint = Some(footprint),
@@ -97,7 +110,15 @@ fn get_snapshot() -> CollectorSnapshot {
                     }
                     snapshot.last_run = outbox.last_run().ok().flatten();
                 }
-                Err(_) => snapshot.error = Some("Não foi possível consultar a fila local.".into()),
+                Err(error) => snapshot.error = Some(match error {
+                    nexa_collector_core::CollectorError::EncryptionRequired =>
+                        "A fila é criptografada e exige NEXA_COLLECTOR_DB_KEY_HEX.".into(),
+                    nexa_collector_core::CollectorError::EncryptionMigrationRequired =>
+                        "Banco legado com dados: migração cifrada in-place bloqueada para proteger leituras.".into(),
+                    nexa_collector_core::CollectorError::Crypto =>
+                        "Chave de criptografia incorreta ou dados locais sem integridade.".into(),
+                    _ => "Não foi possível consultar a fila local.".into(),
+                }),
             }
         }
     }
