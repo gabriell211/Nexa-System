@@ -73,3 +73,24 @@ O arquivo SQLite mantém `delivery_diagnostics` na tabela `state`: `last_success
 Ao iniciar, o daemon restaura os atrasos futuros usando UTC persistido convertido a um timer monotônico, limitado a 6 horas. Um JSON ou timestamp de estado danificado é tratado como erro local explícito; não se descarta outbox nem se contorna o bloqueio silenciosamente. Um ACK real atualiza a data de sucesso, e uma fila vazia pode limpar falhas antigas sem fabricar um upload.
 
 O console mostra a ocupação e este diagnóstico em leitura local manual. O build React do console é testado em CI, mas **Tauri nativo, instaladores, supervisor Windows/systemd/launchd, recuperação da energia, permissões de acesso ao arquivo SQLite e compatibilidade com hardware permanecem sem homologação**. A mudança é de observabilidade e retomada do backoff, não de disponibilidade garantida.
+
+## Quarentena de amostras recusadas (incremento 19)
+
+**Problema coberto:** a API rejeita todo lote que contenha qualquer leitura inválida (`422`), inclusive uma medição coletada há mais de 14 dias. Retentar o mesmo lote sem revisão bloquearia medições posteriores.
+
+**Fluxo:** o Collector tenta um lote de até 100 leituras. Se o servidor responder `422`, envia **apenas a primeira amostra desse lote**. Se o backend confirmar o UUID, somente essa amostra sai da outbox; as demais continuam pendentes. Se a amostra isolada também receber `422`, ela é movida atomicamente para `quarantined_readings` com a carga original, UUID, timestamp e código de origem genérico. O próximo ciclo tenta a seguinte, sem apagar ou inventar dados. Falhas `401/403/429/5xx`, perda de rede ou ACK inválido seguem a política anterior e não geram quarentena.
+
+A cota `max_pending_samples` soma **amostras pendentes + isoladas**; uma quarentena cheia bloqueia novas coletas, exigindo ação administrativa. Um UUID já isolado não pode ser enfileirado novamente por outra ação e cada transição usa uma transação SQLite; restauração não altera a origem histórica da leitura.
+
+Para inspecionar localmente (sem credenciais de API):
+```sh
+nexa-collector-daemon config.local.json queue.sqlite --list-quarantined
+```
+Para recuperar **um UUID** depois de analisar/corrigir o problema (executar com o serviço parado e backup do SQLite):
+```sh
+nexa-collector-daemon config.local.json queue.sqlite --restore-quarantined <UUID>
+```
+
+O Console Tauri mostra os 25 primeiros UUIDs, data, impressora e motivo sem exibir payload dos contadores ou segredos. Os comandos não removem leitura isolada, exceto a transferência segura para a fila pendente; excluir uma amostra definitivamente exigiria um fluxo futuro de revisão/auditoria, ainda não implementado.
+
+**Atenção:** um `422` não significa necessariamente que uma impressora está offline; pode indicar mudança de contrato, data inválida, equipamento desativado ou outra regra de validação. Amostras com mais de 14 dias continuarão rejeitadas se restauradas sem um processo de conciliação aprovado. Não há criptografia em repouso, limite de disco em bytes, exportação auditada nem homologação física. A coluna `payload` do SQLite precisa ser protegida por ACL do sistema operacional.
