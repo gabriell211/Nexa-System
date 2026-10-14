@@ -30,6 +30,9 @@ $credentials = Join-Path $root 'credentials'
 $config = Join-Path $root 'config.json'
 $installDir = Join-Path $env:ProgramFiles 'NexaCollector'
 $exe = Join-Path $installDir 'nexa-collector-daemon.exe'
+if ((Test-Path -LiteralPath $root) -or (Test-Path -LiteralPath $exe)) {
+    throw 'An existing collector data directory or executable was found; refusing to overwrite files or inherited ACLs. Use a reviewed upgrade procedure.'
+}
 
 # Protect the service files and secrets from ordinary users. Use well-known
 # SIDs to avoid failures with localized Windows account display names.
