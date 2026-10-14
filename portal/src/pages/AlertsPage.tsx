@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Bell, BellOff, CheckCircle2, Link2, Plus, Search, ShieldAlert, X } from 'lucide-react';
+import { CheckCircle2, Link2, Plus, ShieldAlert, X } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
 import type { Page, Printer } from '../types';
 
@@ -137,7 +137,7 @@ function AlertDetail({id,onClose,onChanged}:{id:number;onClose:()=>void;onChange
     : data?.status==='acknowledged'||data?.status==='linked'
       ? (['resolved','ignored'] as const) : [];
   const availableTickets=(tickets.data?.data??[]).filter(t=>
-    t.customer_id===data?.customer_id && t.printer_id===data.printer_id &&
+    data!==undefined && t.customer_id===data.customer_id && t.printer_id===data.printer_id &&
     !['closed','resolved'].includes(t.status)
   );
   function transition(e:FormEvent<HTMLFormElement>){e.preventDefault();mutateStatus.mutate();}
