@@ -57,3 +57,11 @@ Ainda faltam: limite real em bytes, criptografia em repouso, retenção autoriza
 O Console local lê `max_pending_samples` do JSON validado e conta leituras pendentes no SQLite existente. Mostra indicador de ocupação, limite total e aviso a partir de 80% ou ao atingir o teto. Não expõe segredo, não consulta conteúdo de impressão, nem inventa conectividade de serviço/impressora. Atualização por botão de leitura do banco; **não** é telemetria contínua ou status real de processo. A interface permanece somente leitura.
 
 O CI agora verifica TypeScript e bundle React do console, mas **não** compila Tauri nativamente, assina instalador, executa serviços Windows/Linux/macOS nem faz ensaio de hardware.
+
+## Transporte HTTP e retentativas (incremento 17, sem homologação)
+
+O daemon agora tenta enviar a outbox independentemente de `interval_seconds` da coleta: a cada 5 segundos verifica a janela de envio e, depois de ACK, espera no mínimo 10 segundos antes da próxima tentativa. Para falha de rede, 408/425/429, 5xx e protocolos inválidos, aplica backoff com jitter; erros 4xx não transitórios (inclusive 401/403 e 422) e ACK inconsistente são reduzidos a uma tentativa no mínimo a cada 15 minutos. Em 429 e 503 o `Retry-After` em segundos prevalece se maior, limitado a 6 horas; valores com data absoluta HTTP ainda usam o backoff padrão. O reinício do serviço reseta apenas o contador de retentativas em memória; as leituras permanecem na outbox.
+
+O ACK pode ser parcial, mas não vazio, duplicado nem conter UUID fora do lote efetivamente enviado. Confirmações válidas removem somente UUIDs listados; requisições malformadas nunca removem registros. Falhas ao ler/gravar a SQLite ou decodificar registros persistidos provocam saída com erro e exigem supervisor, sem descarte silencioso. Log de erro informa somente categoria e retardo, nunca cabeçalhos de autenticação, token ou corpo da resposta.
+
+**Limites:** não existe serviço OS/supervisor nativo instalado, persistência da janela de backoff entre reinicializações, teste físico de proxy/queda prolongada, armazenamento cifrado, quota real em bytes, isolamento de amostras inválidas (422) ou validação integral dos cenários QA. Em especial, leituras com mais de 14 dias são recusadas pela API atual e precisam de política operacional explícita, nunca de exclusão automática sem auditoria.
