@@ -555,3 +555,17 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 ### Pendências de aceite
 - O Collector não consegue informar abertura do circuito enquanto está desligado; telemetria remota é **último relato**, não monitoramento contínuo. Falta mecanismo de alerta assíncrono quando heartbeat atrasa e política central de notificação.
 - Sem teste E2E nativo com Tauri aberto e serviço real, alerta recebido sob interrupção de rede, redelivery de status e equipamentos físicos. `NX-039/041` continuam PARCIAIS, assim como o escopo NX/QA integral.
+
+## Entrega 32 — incidentes administrativos por silêncio de heartbeat (14/10/2026)
+
+### Incremento verificável
+- Backend `CollectorHeartbeatMonitor` e comando `nexa:alerts:check-collectors`, com scheduler de 1 min/sem sobreposição, opt-in via `NEXA_COLLECTOR_HEALTH_ALERTS_ENABLED=true`, tolerância 60..86400 segundos (padrão 300). Excesso de silêncio do heartbeat **autenticado** é distinto de falha SNMP e ausência de leituras no dispositivo.
+- `collector_health_incidents` é uma tabela própria com FK para agente, tenant e cliente, status `active/resolved/closed`, data anterior do heartbeat, timestamp da detecção e razão de encerramento. Índice parcial exclusivo bloqueia dois incidentes `active` por agente; locks serializam transições e mantêm eventos auditados com `origin=scheduled-heartbeat-check`.
+- Recusa alertar agente nunca conectado, revogado ou de organização inativa; só considera heartbeat anteriormente observado e efetivamente vencido. Uma nova comunicação **posterior à abertura e recente** resolve; desativação fecha com razão `deactivated`, sem afirmar saúde recuperada. O upload de leituras não promove recuperação.
+- Endpoint `/collector-health-incidents` protegido por autenticação multi-tenant, papéis de suporte e carteira de clientes; `collector-agents` expõe alerta ativo sem dados de segredo. Portal React apresenta alerta de comunicação por agente, filtros ativo/histórico e navegação paginada.
+- Testes de integração Laravel cobrem ausência inicial, deduplicação, recuperação, reabertura, revogação/cliente/tenant inativo, opt-in e limiar inválido, auditoria, tenant/portfólio e histórico. Seguem obrigatórios CI SQLite/PostgreSQL, React e navegador.
+
+### Restrições de aceite
+- Alertas são **registros administrativos dentro do Nexa System**, não emails/push. Scheduler da instalação deve estar funcionando para atualização; sem agendamento efetivo, incidentes não surgem automaticamente.
+- Silêncio do heartbeat não prova impressora offline, fim do processo nem perda de credenciais; o diagnóstico precisa cruzar outros sinais. Agente nunca conectado aparece como `no_heartbeat` na lista, mas não é alertado por ausência desde a criação. Falta observabilidade no período de instalação.
+- Nenhum teste real de implantação em rede/Windows/Linux/macOS ou integração com impressoras físicas. `NX-039/041` e QA ponta-a-ponta permanecem PARCIAIS.
