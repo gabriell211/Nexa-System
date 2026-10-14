@@ -13,6 +13,7 @@ type CollectorSnapshot = {
   interval_seconds: number | null;
   printers: PrinterInfo[];
   queue_pending: number | null;
+  queue_capacity: number | null;
   last_run: string | null;
   error: string | null;
 };
@@ -44,6 +45,14 @@ export default function App() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  const queuePending = snapshot?.queue_pending ?? 0;
+  const queueCapacity = snapshot?.queue_capacity ?? 0;
+  const queueObserved = snapshot?.queue_pending !== null && snapshot?.queue_pending !== undefined
+    && snapshot?.queue_capacity !== null && snapshot?.queue_capacity !== undefined && queueCapacity > 0;
+  const queuePercent = queueObserved ? Math.min(100, Math.round(queuePending / queueCapacity * 100)) : null;
+  const queueFull = queueObserved && queuePending >= queueCapacity;
+  const queueWarning = queueObserved && queuePending >= queueCapacity * 0.8;
 
   const menu: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
     { id: "overview", label: "Visão geral", icon: LayoutDashboard },
@@ -105,10 +114,34 @@ export default function App() {
                 <Metric icon={Printer} title="Impressoras" value={snapshot ? String(snapshot.printers.length) : "—"}
                   description="Equipamentos configurados" />
                 <Metric icon={Database} title="Fila de envio" value={snapshot?.queue_pending === null || snapshot === null ? "—" : String(snapshot.queue_pending)}
-                  description="Amostras aguardando ACK" />
+                  description={queueObserved
+                    ? `Amostras pendentes de ${queueCapacity.toLocaleString("pt-BR")} permitidas`
+                    : "Amostras aguardando ACK"} />
                 <Metric icon={Activity} title="Última execução" value={snapshot?.last_run ? "Registrada" : "Sem registro"}
                   description={formatDate(snapshot?.last_run ?? null)} />
               </section>
+              {queueObserved && (
+                <section className="panel queue-panel" aria-label="Ocupação da fila">
+                  <div className="panel-title"><h2>Capacidade de armazenamento local</h2>
+                    <span>{queuePercent}% da capacidade configurada</span></div>
+                  <div className="queue-body">
+                    <div className="queue-track" role="progressbar" aria-label="Fila de amostras pendentes"
+                      aria-valuemin={0} aria-valuemax={queueCapacity} aria-valuenow={queuePending}>
+                      <div className={queueFull ? "queue-fill full" : queueWarning ? "queue-fill warning" : "queue-fill"}
+                        style={{ width: `${queuePercent}%` }} />
+                    </div>
+                    <p>{queuePending.toLocaleString("pt-BR")} / {queueCapacity.toLocaleString("pt-BR")} amostras ainda sem confirmação.</p>
+                  </div>
+                </section>
+              )}
+              {queueWarning && (
+                <div className="notice warning" role="status">
+                  {queueFull
+                    ? "A fila atingiu o limite. Se o serviço estiver ativo, novas consultas SNMP são suspensas até a confirmação de leituras pendentes."
+                    : "A fila está próxima do limite. Verifique a conectividade do serviço pelos logs e a confirmação de uploads no servidor."}
+                  {" "}O console mostra apenas o estado persistido; não comprova a conectividade do equipamento.
+                </div>
+              )}
               <section className="panel">
                 <div className="panel-title"><h2>Estado operacional</h2><span>Informações verificáveis</span></div>
                 <div className="detail-grid">
@@ -146,6 +179,7 @@ export default function App() {
               <div className="config-rows">
                 <Info icon={Network} label="Endpoint da API" value={snapshot?.endpoint ?? "Não configurado"} />
                 <Info icon={Activity} label="Intervalo de coleta" value={snapshot?.interval_seconds ? snapshot.interval_seconds + " segundos" : "Não configurado"} />
+                <Info icon={Database} label="Capacidade da fila" value={snapshot?.queue_capacity ? `${snapshot.queue_capacity.toLocaleString("pt-BR")} amostras` : "Não configurado"} />
                 <Info icon={ShieldCheck} label="Identificador do coletor" value={snapshot?.collector_id ?? "Não configurado"} />
               </div>
               <div className="notice">Tokens de acesso e comunidades SNMP nunca são carregados ou exibidos nesta interface.</div>

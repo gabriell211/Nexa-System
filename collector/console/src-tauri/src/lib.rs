@@ -17,6 +17,7 @@ struct CollectorSnapshot {
     interval_seconds: Option<u64>,
     printers: Vec<PrinterInfo>,
     queue_pending: Option<u64>,
+    queue_capacity: Option<u64>,
     last_run: Option<String>,
     error: Option<String>,
 }
@@ -30,6 +31,7 @@ fn get_snapshot() -> CollectorSnapshot {
         interval_seconds: None,
         printers: Vec::new(),
         queue_pending: None,
+        queue_capacity: None,
         last_run: None,
         error: None,
     };
@@ -41,10 +43,11 @@ fn get_snapshot() -> CollectorSnapshot {
                 snapshot.collector_id = Some(config.collector_id.to_string());
                 snapshot.endpoint = Some(config.api_url);
                 snapshot.interval_seconds = Some(config.interval_seconds);
+                snapshot.queue_capacity = Some(config.max_pending_samples);
                 snapshot.printers = config.printers.into_iter().map(|p| PrinterInfo {
                     printer_id: p.printer_id,
                     ip: p.ip.to_string(),
-                    oid: p.marker_counter_oid.iter().map(u32::to_string).collect::<Vec<_>>().join("."),
+                    oid: p.marker_counter_oid.iter().map(u64::to_string).collect::<Vec<_>>().join("."),
                 }).collect();
             }
             Err(_) => snapshot.error = Some("Configuração não encontrada ou inválida.".into()),

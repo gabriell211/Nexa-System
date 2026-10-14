@@ -51,3 +51,9 @@ O token continua vindo do ambiente do serviço e deve ser protegido pelo SO. O H
 Defina `max_pending_samples` de 1 a 1000000 em `config.local.json`. O padrão para arquivos antigos é 50000. O teto é por **quantidade de amostras**, não por bytes: **não** equivale a cota física de armazenamento. O daemon confere o limite antes de cada consulta SNMP, preserva pendências e retoma após ACK; se a internet cair por muito tempo, haverá lacuna de *novas coletas*, sem perda silenciosa dos registros já enfileirados. Em caso de erro de gravação, o processo falha explicitamente, sem publicar sucesso falso.
 
 Ainda faltam: limite real em bytes, criptografia em repouso, retenção autorizada, alerta observável de fila saturada, recuperação de disco cheio, backoff específico por código HTTP e testes de desligamento abrupto/hardware. Portanto NX-035 e NX-045 permanecem parciais.
+
+## Visualização de capacidade no Console (implementação parcial)
+
+O Console local lê `max_pending_samples` do JSON validado e conta leituras pendentes no SQLite existente. Mostra indicador de ocupação, limite total e aviso a partir de 80% ou ao atingir o teto. Não expõe segredo, não consulta conteúdo de impressão, nem inventa conectividade de serviço/impressora. Atualização por botão de leitura do banco; **não** é telemetria contínua ou status real de processo. A interface permanece somente leitura.
+
+O CI agora verifica TypeScript e bundle React do console, mas **não** compila Tauri nativamente, assina instalador, executa serviços Windows/Linux/macOS nem faz ensaio de hardware.

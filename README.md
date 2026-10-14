@@ -23,6 +23,11 @@
 - Identificadores UUID repetidos com conteúdo distinto geram erro em vez de aceitação silenciosa; retransmissões idênticas permanecem idempotentes.
 - **Limite de quantidade não limita bytes em disco**, não substitui criptografia em repouso, backoff, retenção supervisionada nem homologação em campo. NX-035/NX-045 continuam parciais.
 
+### Estado local da fila no Nexa Collector Console — incremento parcial
+
+- Tela desktop apresenta fila pendente/capacidade configurada, barra de ocupação e avisos de saturação sem afirmar conectividade física ou saúde real do serviço.
+- CI adicional executa TypeScript estrito e build React do Console. **Build nativo Tauri e operação em campo ainda pendentes.**
+
 ### Heartbeat independente por agente — entrega 14
 
 - Endpoint `POST /api/v1/collector/heartbeat` autenticado pelo mesmo token individual do coletor, com hora registrada exclusivamente pelo servidor. O relógio `heartbeat_at` é **independente** de `last_seen_at` (último upload de leituras).
