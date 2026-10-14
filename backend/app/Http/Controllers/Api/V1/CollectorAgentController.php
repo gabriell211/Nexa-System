@@ -50,6 +50,9 @@ final class CollectorAgentController extends Controller
                 'last_upload_at'=>$agent->last_seen_at?->toIso8601String(),
                 'heartbeat_state'=>$state,
                 'heartbeat_tolerance_seconds'=>$threshold,
+                'watchdog_recent_incidents'=>$agent->watchdog_recent_incidents,
+                'watchdog_circuit_open_reported'=>$agent->watchdog_circuit_open_reported,
+                'watchdog_reported_at'=>$agent->watchdog_reported_at?->toIso8601String(),
             ];
         }));
     }
