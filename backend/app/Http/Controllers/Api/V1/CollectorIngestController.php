@@ -4,10 +4,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\CollectorIngestRequest;
-use App\Models\CollectorAgent;
-use App\Models\Customer;
-use App\Models\Tenant;
 use App\Models\Printer;
+use App\Services\CollectorAuthenticator;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Routing\Controller;
@@ -16,28 +14,13 @@ use Illuminate\Validation\ValidationException;
 
 final class CollectorIngestController extends Controller
 {
+    public function __construct(private readonly CollectorAuthenticator $authenticator) {}
+
     public function __invoke(CollectorIngestRequest $request): JsonResponse
     {
-        $token = $request->bearerToken();
-        if (!$token || strlen($token) !== 64 || !ctype_xdigit($token)) {
-            abort(401, 'Collector authentication required.');
-        }
-        $agent = CollectorAgent::query()
-            ->where('token_hash', hash('sha256', $token))
-            ->where('active', true)
-            ->first();
-        if (!$agent || $agent->collector_id !== $request->validated('collector_id')) {
-            abort(401, 'Invalid collector credentials.');
-        }
-
-        $tenantActive = Tenant::query()
-            ->whereKey($agent->tenant_id)->where('active', true)->exists();
-        $customerActive = Customer::query()
-            ->where('tenant_id', $agent->tenant_id)
-            ->whereKey($agent->customer_id)->where('active', true)->exists();
-        if (!$tenantActive || !$customerActive) {
-            abort(403, 'Collector organization or customer is inactive.');
-        }
+        $agent = $this->authenticator->authenticate(
+            $request, $request->validated('collector_id')
+        );
 
         $samples = $request->validated('samples');
         $printerIds = collect($samples)->pluck('printer_id')->unique()->values();

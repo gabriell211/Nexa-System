@@ -60,14 +60,14 @@
 | NX-031 | Agente local e comunicação | NÃO COMPROVADO | Descoberta de impressoras USB, com suporte condicionado ao sistema operacional, drivers e fabricante. |
 | NX-032 | Agente local e comunicação | NÃO COMPROVADO | Configuração de credenciais por impressora com armazenamento cifrado, nunca na interface ou em logs. |
 | NX-033 | Agente local e comunicação | PARCIAL — sem aceite E2E | Coleta configurável de contadores, capacidade, consumíveis, eventos, dados de identificação e estado. |
-| NX-034 | Agente local e comunicação | NÃO COMPROVADO | Intervalos separados de consulta, descoberta, heartbeat e upload, com jitter, timeout e backoff. |
+| NX-034 | Agente local e comunicação | PARCIAL — heartbeat agente e horário de upload separados; saúde completa pendente | Intervalos separados de consulta, descoberta, heartbeat e upload, com jitter, timeout e backoff. |
 | NX-035 | Agente local e comunicação | PARCIAL — sem aceite E2E | Fila de envio persistente, criptografada, limitada em disco, reenvio ordenado e deduplicação no backend. |
 | NX-036 | Agente local e comunicação | PARCIAL — sem aceite E2E | Envio por HTTPS/TLS usando apenas conexão iniciada pelo agente; compatibilidade com proxy autenticado. |
 | NX-037 | Agente local e comunicação | NÃO COMPROVADO | Canal alternativo de transporte por e-mail SMTP/POP3 somente se autorizado e implementado com cifragem, autenticação e limites. |
 | NX-038 | Agente local e comunicação | NÃO COMPROVADO | Diagnóstico local, teste de comunicação, teste de SNMP, validação de IP e logs sanitizados. |
 | NX-039 | Agente local e comunicação | NÃO COMPROVADO | Monitoramento e recuperação de serviços travados com supervisor, sem loop infinito de reinicialização. |
 | NX-040 | Agente local e comunicação | NÃO COMPROVADO | Atualização automática controlada, assinatura/verificação de artefatos, rollback e política de versões mínimas. |
-| NX-041 | Agente local e comunicação | NÃO COMPROVADO | Monitoramento de pontos instalados com data de última comunicação, versão, rede e estado. |
+| NX-041 | Agente local e comunicação | PARCIAL — heartbeat agente e horário de upload separados; saúde completa pendente | Monitoramento de pontos instalados com data de última comunicação, versão, rede e estado. |
 | NX-042 | Agente local e comunicação | NÃO COMPROVADO | Reinstalação e recuperação dos dados locais sem replicar leituras já recebidas. |
 | NX-043 | Agente local e comunicação | NÃO COMPROVADO | Configuração remota segura limitada aos agentes do próprio provedor e a usuários autorizados. |
 | NX-044 | Agente local e comunicação | NÃO COMPROVADO | Identificação de duplicidade de agentes ou colisão de identidade de impressora. |
@@ -281,7 +281,7 @@
 | NX-252 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Descoberta manual de sub-rede local/remota por broadcast ou intervalo com seleção múltipla e resumo de falhas. |
 | NX-253 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Busca automática por intervalos autorizados com frequência de descoberta configurável entre 6 e 168 horas. |
 | NX-254 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Cadastro remoto de impressora por IP vinculado ao ponto de instalação com aguardando descoberta e validação. |
-| NX-255 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Estados e telemetria separados do coletor, upload de dados, atualização e supervisor. |
+| NX-255 | Operação da plataforma, SaaS e cobrança do provedor | PARCIAL — heartbeat agente e horário de upload separados; saúde completa pendente | Estados e telemetria separados do coletor, upload de dados, atualização e supervisor. |
 | NX-256 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Coleta offline com pacotes cifrados e compactados na origem, integridade e eliminação após confirmação no servidor. |
 | NX-257 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Monitoramento de conexão com detalhes por ponto, número de impressoras, serviços, erros e sugestões de diagnóstico. |
 | NX-258 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Captura USB ponto a ponto: host obrigatoriamente presente, correção de identificação/porta/driver e teste real por modelo. |
@@ -485,3 +485,11 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 - `created_by_user_id` e `audit_entries.actor_user_id` podem ser nulos em eventos do sistema; a origem e a trilha permanecem explícitas, sem identidade fictícia de funcionário.
 - O monitor **não** fecha incidentes vinculados a chamados. Ignorados não se repetem para a mesma amostra-base. Recuperação exige duas leituras novas distintas após abertura, espaçadas pela janela configurada.
 - A matriz de 62 cenários QA e a homologação com impressoras reais permanecem pendentes; testes de feature não comprovam alcance real do dispositivo.
+
+## Heartbeat independente do agente (14/10/2026)
+
+- `NX-034`: intervalos próprios de heartbeat (60s padrão, configurável de 30 a 3600s), timeout de HTTP e jitter determinístico; não existem intervalos separados completos de descoberta, atualizações e supervisão, nem retry exponencial.
+- `NX-041`: painel `/agentes` apresenta heartbeat recente/atrasado/nunca registrado/revogado e última entrega de contadores. Falta versão real do daemon, IP/rede diagnosticados, métricas de qualidade e gestão de instalações.
+- `NX-255`: `heartbeat_at` e `last_seen_at` são sinais diferentes. Telemetria do serviço de atualização, travamentos de supervisor, descoberta e falhas específicas do dispositivo ainda não estão implementadas.
+- Autenticação do endpoint ocorre com token de máquina individual, UUID registrado e tenant/cliente ativos. Revogação e isolamento por empresa/carteira são testados. O servidor ignora timestamps de origem cliente.
+- E2E Chromium exercita a tela, enquanto testes Laravel validam comunicação e isolamento do endpoint. O E2E não instala o daemon em máquinas Windows, Linux ou macOS e não comprova saúde de uma impressora física.

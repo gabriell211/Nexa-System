@@ -5,6 +5,8 @@ use App\Http\Controllers\Api\V1\AuditEntryController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BrowserAuthController;
 use App\Http\Controllers\Api\V1\CollectorIngestController;
+use App\Http\Controllers\Api\V1\CollectorHeartbeatController;
+use App\Http\Controllers\Api\V1\CollectorAgentController;
 use App\Http\Controllers\Api\V1\CostCenterController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\CustomerDepartmentController;
@@ -80,6 +82,7 @@ $registerBackoffice = static function (): void {
     });
 
     Route::middleware('nexa.roles:owner,admin,manager,supervisor,technician')->group(static function (): void {
+        Route::get('/collector-agents', CollectorAgentController::class);
         Route::get('/alerts', [PrinterAlertController::class, 'index']);
         Route::get('/alerts/{alert}', [PrinterAlertController::class, 'show']);
         Route::post('/alerts', [PrinterAlertController::class, 'store']);
@@ -102,7 +105,8 @@ $registerBackoffice = static function (): void {
 };
 
 Route::prefix('v1')->group(function () use ($registerBackoffice): void {
-    Route::post('/collector/ingest', CollectorIngestController::class)->middleware('throttle:120,1');
+    Route::post('/collector/ingest', CollectorIngestController::class)->middleware(['nexa.bearer','throttle:120,1']);
+    Route::post('/collector/heartbeat', CollectorHeartbeatController::class)->middleware(['nexa.bearer','throttle:120,1']);
 
     // Transitional non-browser API. Issuing new bearer credentials is disabled
     // by default; existing explicitly issued tokens remain scoped to a tenant.

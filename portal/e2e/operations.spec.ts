@@ -59,6 +59,13 @@ test('secure login, customers, tickets, stock and logout (real browser)', async 
     await expect(page.getByRole('heading',{name:'Chamados técnicos'})).toBeVisible();
   });
 
+  await test.step('Read separate agent heartbeat and upload diagnostics from real API', async () => {
+    await page.goto('/agentes');
+    await expect(page.getByRole('heading',{name:'Agentes de coleta'})).toBeVisible();
+    await expect(page.getByText('Heartbeat do serviço e última entrega de contadores são sinais independentes.')).toBeVisible();
+    await expect(page.getByText('Nenhum agente registrado nesta carteira.')).toBeVisible();
+  });
+
   await runAlertWorkflow(page);
 
   await test.step('Invalidate server session and reject stale browser reload', async () => {

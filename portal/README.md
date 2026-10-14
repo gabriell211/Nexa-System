@@ -125,3 +125,7 @@ Na mesma sessão autenticada por dispositivo, o Playwright acrescenta um fluxo c
 ## Aviso sobre lacunas automáticas de coleta (entrega 13)
 
 A UI diferencia `operator` de `telemetry`: a segunda origem significa **apenas ausência de leituras recentes registrada pelo servidor**, não prova de impressora offline. Configure `NEXA_TELEMETRY_GAP_ENABLED=true` somente após conferir a periodicidade real de coleta. Requer `php artisan schedule:run` com cron externo a cada minuto, ou `schedule:work` no ambiente supervisionado, além de configuração de tolerância e janela de recuperação. Sem isso, a regra não executa. Alertas associados a chamados não são encerrados automaticamente.
+
+## Agentes de coleta — diagnóstico de heartbeat (entrega 14)
+
+A rota `/agentes` utiliza a API de agentes da empresa e apresenta, de forma separada, último heartbeat autenticado e último upload de contadores. Um agente com heartbeat recente não é necessariamente uma impressora com comunicação SNMP bem-sucedida. Estados `no_heartbeat`, `late` e `revoked` representam ausência observada de comunicação ou revogação da credencial, não diagnóstico conclusivo do host. Dados filtrados por carteira e atualizados pela API a cada minuto.
