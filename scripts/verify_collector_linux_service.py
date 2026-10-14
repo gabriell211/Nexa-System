@@ -45,6 +45,10 @@ assert "STALL_TIMEOUT: Duration = Duration::from_secs(180)" in watchdog
 assert "std::process::exit(WATCHDOG_EXIT_CODE)" in watchdog
 assert "supervised_mode && !once" in daemon
 assert "watcher.progressed()" in daemon
+assert "monitor.heartbeat_progressed()" in daemon
+assert "ProgressState::HeartbeatStalled" in watchdog
+assert "ProgressState::MainStalled" in watchdog
+assert "progress_watchdog::start_watchdog(Arc::clone(monitor))" in daemon
 assert "StateDirectoryMode=0700" in unit
 assert "install -o root -g root -m 0644" in installer
 assert "install -d -o root -g root -m 0700 /etc/nexa-collector/credentials" in installer

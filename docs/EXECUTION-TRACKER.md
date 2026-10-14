@@ -514,3 +514,16 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Não é watchdog nativo `sd_notify`/SCM heartbeat, e não detecta a thread de heartbeat travada isoladamente. Reinício abrupto pode ocorrer em host lento/sobrecarregado e requer validação dos limites em campo.
 - Não há teste E2E real de matar thread, recuperação física de energia, indisponibilidade SNMP massiva ou corrupção de WAL. macOS launchd ainda pode reiniciar continuamente, embora com throttling.
 - `NX-039` permanece PARCIAL, pois exige política de reinícios, liveness de todos os componentes, testes de boot e validação operacional. `NX-041` também permanece PARCIAL.
+
+## Entrega 29 — supervisionar heartbeat e processamento como workers independentes (14/10/2026)
+
+### Implementado
+- `ProgressWatchdog` passa a guardar timestamps monotônicos separados `main` e `heartbeat` e reporta causas distintas `MainStalled` ou `HeartbeatStalled`. Nenhum worker tem acesso à atualização do checkpoint do outro na execução normal.
+- Checkpoint de heartbeat renovado após cada tentativa HTTP concluída (inclui indisponibilidade de rede) e após cada segundo de sono interrompível. Intervalos de heartbeat longos não causam falsos travamentos.
+- Watchdog é armado depois de `on_ready` e executado apenas em modo de serviço supervisionado; termina com `exit(70)` em 180 s sem liveness de qualquer um dos workers, sem exclusão/ACK automático de registros SQLite.
+- Testes unitários Rust para ambos os workers, teste de limite exato, startup, independência e stop; verificações estáticas Linux, Windows e macOS exigem wiring real dos dois sinais.
+
+### Ainda parcial
+- Isso detecta ausência de progresso das threads, **não sucesso do heartbeat HTTP nem saúde da impressora**. Falhas de rede retornando erro normalmente não disparam reinício.
+- Sem induzir deadlock efetivo ou matar uma das threads sob um sistema operacional real; não está homologado em host com serviços ativos ou dispositivos físicos.
+- Sem política completa de circuito aberto para macOS launchd, sem auditoria central de reinícios e alertas de saúde do collector por componente. NX-039/041 permanecem PARCIAIS.

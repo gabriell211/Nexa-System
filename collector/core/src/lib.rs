@@ -1760,10 +1760,15 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let db = temp.path().join("queue.sqlite");
         let first = sample_with_meter(10);
-        let second = sample_with_meter(11);
-        let third = sample_with_meter(12);
+        let mut second = sample_with_meter(11);
+        let mut third = sample_with_meter(12);
+        // A fresh Utc::now() per sample can serialize to different fractional
+        // second lengths on Windows, making this byte quota test flaky.
+        second.collected_at = first.collected_at;
+        third.collected_at = first.collected_at;
         let each = serde_json::to_string(&first).unwrap().len() as u64;
         assert_eq!(serde_json::to_string(&second).unwrap().len() as u64, each);
+        assert_eq!(serde_json::to_string(&third).unwrap().len() as u64, each);
         let mut outbox = Outbox::open_with_limits(&db, 4, each * 2 - 1).unwrap();
         assert!(outbox.enqueue(&first).unwrap());
         assert!(matches!(

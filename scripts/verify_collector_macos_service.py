@@ -42,6 +42,10 @@ watchdog = (root / "collector/daemon/src/progress_watchdog.rs").read_text()
 assert "std::process::exit(WATCHDOG_EXIT_CODE)" in watchdog
 assert "supervised_mode && !once" in daemon
 assert "watcher.progressed()" in daemon
+assert "monitor.heartbeat_progressed()" in daemon
+assert "ProgressState::HeartbeatStalled" in watchdog
+assert "ProgressState::MainStalled" in watchdog
+assert "progress_watchdog::start_watchdog(Arc::clone(monitor))" in daemon
 
 assert "dscl . -create /Users/_nexacollector" in installer
 assert "dscl . -create /Groups/_nexacollector" in installer
