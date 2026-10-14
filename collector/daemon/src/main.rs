@@ -15,7 +15,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
-    let mut outbox = Outbox::open_with_limits(&args[2], cfg.max_pending_samples, cfg.max_pending_payload_bytes)?;
+    let mut outbox = Outbox::open_with_disk_guard(
+        &args[2], cfg.max_pending_samples, cfg.max_pending_payload_bytes,
+        cfg.max_sqlite_files_bytes,
+    )?;
     // Operator-only commands do not start SNMP polling or heartbeat workers.
     if list_quarantine {
         for item in outbox.quarantined_readings(100)? {
@@ -74,8 +77,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         if Instant::now() >= next_poll {
-            if outbox.at_capacity()? {
-                eprintln!("Outbox saturated; new SNMP samples deferred until confirmed uploads release space");
+            let disk_limited = outbox.disk_soft_limit_reached()?;
+            if disk_limited {
+                eprintln!("SQLite physical file footprint reached configured soft guard; SNMP polling deferred; ACKs remain enabled");
+            } else if outbox.at_capacity()? {
+                eprintln!("Outbox count/payload budget saturated; new SNMP samples deferred");
             } else if let Ok(community) = env::var("NEXA_SNMP_COMMUNITY") {
                 for printer in &cfg.printers {
                     if outbox.at_capacity()? {
@@ -86,7 +92,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                         Ok(reading) => {
                             match outbox.enqueue(&reading) {
                                 Ok(_) => {}
-                                Err(CollectorError::OutboxFull { .. } | CollectorError::OutboxBytesFull { .. }) => {
+                                Err(CollectorError::OutboxFull { .. }
+                                    | CollectorError::OutboxBytesFull { .. }
+                                    | CollectorError::SqliteSoftLimit { .. }) => {
                                     eprintln!("Outbox at configured retention capacity; new reading not persisted; further SNMP polling deferred");
                                     break;
                                 }
@@ -99,7 +107,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             } else {
                 eprintln!("SNMP credential not configured; polling skipped");
             }
-            outbox.mark_run()?;
+            // Avoid even nonessential state writes while physical storage is
+            // above the safety threshold. Upload ACKs can still be processed.
+            if !disk_limited {
+                outbox.mark_run()?;
+            }
             next_poll = Instant::now() + Duration::from_secs(cfg.interval_seconds);
         }
 
@@ -110,7 +122,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if once {
-            println!("Outbox pending: {}, quarantined: {}, retained payload bytes: {}", outbox.pending()?, outbox.quarantined_count()?, outbox.retained_payload_bytes()?);
+            println!("Outbox pending: {}, quarantined: {}, retained payload bytes: {}, SQLite file bytes: {}", outbox.pending()?, outbox.quarantined_count()?, outbox.retained_payload_bytes()?, outbox.sqlite_footprint()?.total_bytes);
             break;
         }
         // Upload retry scheduling runs independently of the (possibly 24-hour)
