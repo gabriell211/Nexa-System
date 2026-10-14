@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 tauri-build = "2.7.0"
 
 [dependencies]
+chrono = "0.4"
 nexa-collector-core = { path = "../../core" }
 serde = { version = "1", features = ["derive"] }
 tauri = "2.12.0"
