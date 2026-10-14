@@ -604,7 +604,7 @@ impl Outbox {
                     return Err(CollectorError::SampleConflict);
                 }
                 let encrypted = cipher.seal(&plaintext, &id)?;
-                if cipher.open(&encrypted, &id)? != *plaintext {
+                if cipher.open(&encrypted, &id)?.as_str() != plaintext.as_str() {
                     return Err(CollectorError::Crypto);
                 }
                 copy.execute(
@@ -634,7 +634,7 @@ impl Outbox {
                     return Err(CollectorError::SampleConflict);
                 }
                 let encrypted = cipher.seal(&plaintext, &id)?;
-                if cipher.open(&encrypted, &id)? != *plaintext {
+                if cipher.open(&encrypted, &id)?.as_str() != plaintext.as_str() {
                     return Err(CollectorError::Crypto);
                 }
                 copy.execute(
@@ -672,10 +672,6 @@ impl Outbox {
                 return Err(CollectorError::Configuration("migration row count mismatch".into()));
             }
         }
-        copy.execute(
-            "UPDATE state SET value = 'complete'
-             WHERE key = 'migration_status' AND value = 'incomplete'", [],
-        )?;
         copy.commit()?;
         let destination_check: String = destination.connection.query_row(
             "PRAGMA quick_check(1)", [], |row| row.get(0),
@@ -684,6 +680,14 @@ impl Outbox {
             return Err(CollectorError::Configuration(
                 "encrypted destination integrity check failed".into()
             ));
+        }
+        // Publish a complete DB only AFTER row-count, AEAD and SQLite checks.
+        let marked = destination.connection.execute(
+            "UPDATE state SET value = 'complete'
+             WHERE key = 'migration_status' AND value = 'incomplete'", [],
+        )?;
+        if marked != 1 {
+            return Err(CollectorError::MigrationIncomplete);
         }
         source_lock.commit()?;
         Ok(report)
