@@ -469,7 +469,8 @@ mod tests {
     fn rejects_insecure_server_endpoint() {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "http://example.test".into(),
-            interval_seconds: 300, heartbeat_interval_seconds: 60, authorized_subnets: vec!["192.168.1.0/24".into()],
+            interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000,
+            authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![],
         };
         assert!(cfg.validate().is_err());
