@@ -67,7 +67,7 @@ fn run_application(
         // Never open or rewrite the source with the encrypted store routine.
         // Stop the daemon first, use a NEW destination, and switch paths
         // manually after inspecting the report. No network calls occur here.
-        let key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX")?
+        let key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX", windows_service_mode)?
             .ok_or("NEXA_COLLECTOR_DB_KEY_HEX is required for offline migration")?;
         let report = Outbox::migrate_plaintext_to_encrypted(
             &args[2], &args[4], cfg.max_pending_samples,
@@ -81,7 +81,7 @@ fn run_application(
     }
     // In service mode, missing DB key must never silently create plaintext
     // storage. Legacy manually launched collectors keep opt-in compatibility.
-    let db_key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX")?;
+    let db_key = load_secret("NEXA_COLLECTOR_DB_KEY_HEX", windows_service_mode)?;
     if supervised_mode && db_key.is_none() {
         return Err("systemd collector requires a database encryption credential".into());
     }
