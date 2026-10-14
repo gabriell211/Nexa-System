@@ -550,9 +550,7 @@ impl Outbox {
         old_hex_key: &str,
         new_hex_key: &str,
     ) -> Result<MigrationReport, CollectorError> {
-        let old_bytes = old_hex_key.to_ascii_lowercase();
-        let new_bytes = new_hex_key.to_ascii_lowercase();
-        if old_bytes == new_bytes {
+        if old_hex_key.eq_ignore_ascii_case(new_hex_key) {
             return Err(CollectorError::Configuration(
                 "the new encryption key must differ from the old key".into(),
             ));
@@ -1242,6 +1240,179 @@ mod tests {
     use super::*;
     const TEST_DB_KEY: &str = "ce7af92eab45e368f57e0998d3fcb36c9dc3ec6a8857352a24ef106952841eb0";
     const OTHER_DB_KEY: &str = "cafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00d";
+
+    #[test]
+    fn offline_key_rotation_preserves_uuid_quarantine_timestamps_and_retry_history() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old_path = tmp.path().join("old-encrypted.sqlite");
+        let new_path = tmp.path().join("rotated.sqlite");
+        let pending = sample_with_meter(12_345_678);
+        let rejected = sample_with_meter(87_654_321);
+        let diagnostics = DeliveryDiagnostics {
+            last_success_at: None,
+            last_failure_at: Some(Utc::now().to_rfc3339()),
+            last_error_kind: Some("http-rejected".into()),
+            next_attempt_at: Some((Utc::now() + chrono::Duration::minutes(30)).to_rfc3339()),
+            consecutive_failures: 3,
+        };
+        let old_ciphertext: String;
+        {
+            let mut original = Outbox::open_encrypted_disk_guard(
+                &old_path, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY,
+            ).unwrap();
+            original.enqueue(&pending).unwrap();
+            original.enqueue(&rejected).unwrap();
+            original.quarantine(rejected.sample_id, "individually-rejected-422").unwrap();
+            original.save_delivery_diagnostics(&diagnostics).unwrap();
+            original.mark_run().unwrap();
+            old_ciphertext = original.connection.query_row(
+                "SELECT payload FROM outbox LIMIT 1", [], |row| row.get(0),
+            ).unwrap();
+        }
+
+        let report = Outbox::rotate_encryption_key_offline(
+            &old_path, &new_path, 10, 16384, 512 * 1024 * 1024,
+            TEST_DB_KEY, OTHER_DB_KEY,
+        ).unwrap();
+        assert_eq!(report.pending, 1);
+        assert_eq!(report.quarantined, 1);
+        assert_eq!(report.state_entries, 2);
+
+        let source = Outbox::open_encrypted_disk_guard(
+            &old_path, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY,
+        ).unwrap();
+        assert_eq!(source.pending().unwrap(), 1);
+        assert_eq!(source.quarantined_count().unwrap(), 1);
+        assert_eq!(source.next_batch(1).unwrap()[0].meter_total, Some(12_345_678));
+        drop(source);
+
+        assert!(matches!(
+            Outbox::open_encrypted_disk_guard(
+                &new_path, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+            ),
+            Err(CollectorError::Crypto)
+        ));
+        let mut rotated = Outbox::open_encrypted_disk_guard(
+            &new_path, 10, 16384, 512 * 1024 * 1024, OTHER_DB_KEY,
+        ).unwrap();
+        assert_eq!(rotated.next_batch(1).unwrap()[0].sample_id, pending.sample_id);
+        assert_eq!(rotated.quarantined_readings(10).unwrap()[0].sample_id, rejected.sample_id.to_string());
+        assert_eq!(rotated.delivery_diagnostics().unwrap().consecutive_failures, 3);
+        assert_eq!(rotated.delivery_diagnostics().unwrap().last_error_kind, diagnostics.last_error_kind);
+        assert!(rotated.last_run().unwrap().is_some());
+        let new_ciphertext: String = rotated.connection.query_row(
+            "SELECT payload FROM outbox LIMIT 1", [], |row| row.get(0),
+        ).unwrap();
+        assert_ne!(old_ciphertext, new_ciphertext);
+        assert!(!new_ciphertext.contains("12345678"));
+        assert!(rotated.restore_quarantined(rejected.sample_id).unwrap());
+        rotated.acknowledge(&[pending.sample_id, rejected.sample_id]).unwrap();
+        assert_eq!(rotated.retained().unwrap(), 0);
+    }
+
+    #[test]
+    fn key_rotation_rejects_wrong_old_key_and_same_key_without_writing_destination() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("secure.sqlite");
+        let target = tmp.path().join("new.sqlite");
+        let reading = sample_with_meter(349);
+        {
+            let db = Outbox::open_encrypted_disk_guard(
+                &source, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+            ).unwrap();
+            db.enqueue(&reading).unwrap();
+        }
+        assert!(matches!(
+            Outbox::rotate_encryption_key_offline(
+                &source, &target, 10, 16384, 512 * 1024 * 1024,
+                OTHER_DB_KEY, TEST_DB_KEY,
+            ),
+            Err(CollectorError::Crypto)
+        ));
+        assert!(!target.exists());
+        assert!(matches!(
+            Outbox::rotate_encryption_key_offline(
+                &source, &target, 10, 16384, 512 * 1024 * 1024,
+                TEST_DB_KEY, TEST_DB_KEY,
+            ),
+            Err(CollectorError::Configuration(_))
+        ));
+        assert!(!target.exists());
+        assert_eq!(
+            Outbox::open_encrypted_disk_guard(
+                &source, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+            ).unwrap().next_batch(1).unwrap()[0].sample_id,
+            reading.sample_id,
+        );
+    }
+
+    #[test]
+    fn key_rotation_refuses_existing_destination_and_plaintext_source() {
+        let tmp = tempfile::tempdir().unwrap();
+        let old = tmp.path().join("old.sqlite");
+        let target = tmp.path().join("destination.sqlite");
+        {
+            let db = Outbox::open_encrypted_disk_guard(
+                &old, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+            ).unwrap();
+            db.enqueue(&sample_with_meter(7)).unwrap();
+        }
+        std::fs::write(&target, b"existing-data").unwrap();
+        assert!(matches!(
+            Outbox::rotate_encryption_key_offline(
+                &old, &target, 10, 16384, 512 * 1024 * 1024,
+                TEST_DB_KEY, OTHER_DB_KEY,
+            ),
+            Err(CollectorError::Io(_))
+        ));
+        assert_eq!(std::fs::read(&target).unwrap(), b"existing-data");
+        std::fs::remove_file(&target).unwrap();
+        let plain = tmp.path().join("plain.sqlite");
+        {
+            let db = Outbox::open(&plain).unwrap();
+            db.enqueue(&sample_with_meter(8)).unwrap();
+        }
+        assert!(matches!(
+            Outbox::rotate_encryption_key_offline(
+                &plain, &target, 10, 16384, 512 * 1024 * 1024,
+                TEST_DB_KEY, OTHER_DB_KEY,
+            ),
+            Err(CollectorError::EncryptionRequired)
+        ));
+        assert!(!target.exists());
+    }
+
+    #[test]
+    fn corrupted_source_ciphertext_never_marks_rotated_target_complete() {
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source.sqlite");
+        let target = tmp.path().join("target.sqlite");
+        {
+            let db = Outbox::open_encrypted_disk_guard(
+                &source, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY
+            ).unwrap();
+            db.enqueue(&sample_with_meter(9)).unwrap();
+            db.connection.execute("UPDATE outbox SET payload='enc:v1:tampered'", []).unwrap();
+        }
+        assert!(matches!(
+            Outbox::rotate_encryption_key_offline(
+                &source, &target, 10, 16384, 512 * 1024 * 1024,
+                TEST_DB_KEY, OTHER_DB_KEY,
+            ),
+            Err(CollectorError::Crypto)
+        ));
+        assert!(matches!(
+            Outbox::open_encrypted_disk_guard(
+                &target, 10, 16384, 512 * 1024 * 1024, OTHER_DB_KEY,
+            ),
+            Err(CollectorError::MigrationIncomplete)
+        ));
+        assert_eq!(
+            Outbox::open_encrypted_disk_guard(
+                &source, 10, 16384, 512 * 1024 * 1024, TEST_DB_KEY,
+            ).unwrap().pending().unwrap(), 1
+        );
+    }
 
     #[test]
     fn offline_migration_preserves_pending_quarantine_and_retry_state_without_plaintext() {
