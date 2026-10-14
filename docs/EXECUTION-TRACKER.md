@@ -527,3 +527,18 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Isso detecta ausência de progresso das threads, **não sucesso do heartbeat HTTP nem saúde da impressora**. Falhas de rede retornando erro normalmente não disparam reinício.
 - Sem induzir deadlock efetivo ou matar uma das threads sob um sistema operacional real; não está homologado em host com serviços ativos ou dispositivos físicos.
 - Sem política completa de circuito aberto para macOS launchd, sem auditoria central de reinícios e alertas de saúde do collector por componente. NX-039/041 permanecem PARCIAIS.
+
+## Entrega 30 — diário de incidentes e proteção contra crash-loop do watchdog (14/10/2026)
+
+### Implementado e passível de validação
+- `collector/daemon/src/recovery_guard.rs`: diário JSON versionado, limitado a 32 incidentes de watchdog, somente horário UTC e identidade do worker; sem leitura de fila nem segredos. Grava em `<queue.sqlite>.watchdog.json`, ao lado da base, com `sync_all` e permissões iniciais `0600` no Unix.
+- `progress_watchdog.rs` persiste o incidente antes de executar `exit(70)`. Mesmo em falha de escrita, sai para permitir recuperação pelo gerenciador.
+- No startup supervisionado, 3 eventos nos últimos 30 minutos abrem circuito e encerram serviço **com status de sucesso**, impedindo reinícios automáticos em loop com as políticas atuais. Erro ao ler JSON (corrompido, formato inesperado, caminho que é symlink) bloqueia startup de forma fail-closed.
+- Comandos offline `--watchdog-status` e `--reset-watchdog-circuit` consultam e reconhecem o bloqueio sem abrir/alterar a outbox ou contatar a API; reset mantém histórico temporal.
+- Tests Rust incluem 3 subprocessos realmente finalizados por watchdog, código 70, retenção do diário e outbox inalterada. Outros testes cobrem limiar, recuperação por reset, expiração de janela, corrupção e worker inválido. Validadores das três plataformas foram atualizados.
+
+### Critérios ainda parciais
+- O circuito conta somente mortes registradas pelo watchdog. `SIGKILL`, crash externo, `ENOSPC`, morte do OS ou problema de energia podem continuar criando loops controlados apenas pelo supervisor; falta um circuito abrangente para quaisquer crashes.
+- O diário não recebe transação SQLite ou gravação atômica em todas as plataformas; JSON parcialmente gravado é bloqueado e exige operador. Não existe telemetria remota de incidentes nem garantia de durabilidade de `fsync` em diretório; proteção de dados em repouso cobre payloads e não o diário.
+- O teste em subprocesso confirma o exit local, **não** comprova o efetivo reinício/stop pelo systemd, SCM ou launchd sob sistema real. Necessária homologação de serviço no host e testes com impressoras reais.
+- `NX-039` permanece PARCIAL; o conjunto de 324 NX e 62 QA ainda não foi homologado.
