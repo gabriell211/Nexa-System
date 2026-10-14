@@ -1,19 +1,18 @@
 # Nexa System — matriz de rastreabilidade verificável
 
-**Data da análise:** 2026-10-12.
+**Data da revisão de evidências:** 2026-10-14.
 **Fonte de verdade funcional:** [README principal](../README.md).
-**Branch em análise:** `feat/foundation-admin-portal-20261009`.
+**Base verificada:** `main` após PR #8; console PR #9 em validação separada.
 **Regra:** nenhum requisito abaixo significa "CONCLUÍDO" sem prova do fluxo integral em execução real, incluindo autorização, persistência, erros e UI.
 
-## Achados iniciais da auditoria estática
+## Estado verificável da implementação parcial
 
-- `main` ainda contém somente o esqueleto inicial; a expansão está em PR #1 como **Draft**, ainda não em release.
-- Trabalho comprovadamente existente na branch: Laravel API multi-tenant, portal React, migrations, autenticação web por sessão, Collector inicial Rust, organização de clientes e histórico de instalação de impressoras.
-- Módulos operacionais abrangentes **sem evidência de implementação final**: estoque com razão contábil, suprimentos, alertas, chamados/SLA, contratos, fechamento/faturamento, relatórios completos, ERP/webhooks, SaaS/billing, portal do cliente.
-- CSRF foi exercitado na suíte Laravel de testes, mas não houve teste E2E em browser real com middleware de CSRF habilitado sob `APP_ENV=production`.
-- A homologação Windows/Linux/macOS e modelos/firmwares de impressoras reais não foi feita no ambiente do CI.
-- O último CI completo antes desta matriz reportou **35 testes / 170 assertions**, PostgreSQL e SQLite, build do React, Docker e Rust. Isso representa testes existentes, não os 62 QA funcionais.
-- Não há evidência de testes de carga, restauração de backup, failover, isolamento sob concorrência real nem OWASP DAST.
+- A `main` contém API Laravel multiempresa, portal operacional React, clientes e localizações, carteira por usuário, impressoras e alocações temporais, estoque com razão e lotes, suprimentos, remessas, chamados, incidentes manuais, lacunas de telemetria e heartbeat próprio do Collector.
+- O PR #8 agregou **limite em quantidade de amostras da fila SQLite** com bloqueio de novas consultas quando cheia; no CI #38593490953 todos os 8 jobs passaram. Isso não comprova segurança do armazenamento em repouso nem limites de tamanho em disco.
+- O PR #9 adiciona exibição local da ocupação no Tauri/React e job de build específico do console. A validação completa desse PR só deve ser declarada após todos os jobs concluírem.
+- Os testes reais em Chromium desktop e viewport móvel já cobrem algumas jornadas; não equivalem aos 62 cenários QA integrais nem à validação em equipamentos físicos.
+- Os testes SQLite/PostgreSQL, concorrência de estoque, integração HTTP e builds representam apenas o comportamento exercitado. Não há homologação de instaladores Windows/Linux/macOS, dispositivos/firmwares físicos, recuperações completas de desastre, criptografia local da outbox ou OWASP DAST.
+- Faltam módulos completos de contratos, faturamento, relatórios fiscais, portal do cliente, integrações ERP e políticas de operação real; os módulos já iniciados também possuem limitações específicas no tracker.
 
 ## Critérios para marcar concluído
 
@@ -61,17 +60,17 @@
 | NX-032 | Agente local e comunicação | NÃO COMPROVADO | Configuração de credenciais por impressora com armazenamento cifrado, nunca na interface ou em logs. |
 | NX-033 | Agente local e comunicação | PARCIAL — sem aceite E2E | Coleta configurável de contadores, capacidade, consumíveis, eventos, dados de identificação e estado. |
 | NX-034 | Agente local e comunicação | PARCIAL — heartbeat agente e horário de upload separados; saúde completa pendente | Intervalos separados de consulta, descoberta, heartbeat e upload, com jitter, timeout e backoff. |
-| NX-035 | Agente local e comunicação | PARCIAL — sem aceite E2E | Fila de envio persistente, criptografada, limitada em disco, reenvio ordenado e deduplicação no backend. |
+| NX-035 | Agente local e comunicação | PARCIAL — fila SQLite limitada por amostras, sem criptografia nem limite em bytes | Fila de envio persistente, criptografada, limitada em disco, reenvio ordenado e deduplicação no backend. |
 | NX-036 | Agente local e comunicação | PARCIAL — sem aceite E2E | Envio por HTTPS/TLS usando apenas conexão iniciada pelo agente; compatibilidade com proxy autenticado. |
 | NX-037 | Agente local e comunicação | NÃO COMPROVADO | Canal alternativo de transporte por e-mail SMTP/POP3 somente se autorizado e implementado com cifragem, autenticação e limites. |
-| NX-038 | Agente local e comunicação | NÃO COMPROVADO | Diagnóstico local, teste de comunicação, teste de SNMP, validação de IP e logs sanitizados. |
+| NX-038 | Agente local e comunicação | PARCIAL — console de fila/configuração somente leitura, sem diagnóstico de SNMP e logs completos | Diagnóstico local, teste de comunicação, teste de SNMP, validação de IP e logs sanitizados. |
 | NX-039 | Agente local e comunicação | NÃO COMPROVADO | Monitoramento e recuperação de serviços travados com supervisor, sem loop infinito de reinicialização. |
 | NX-040 | Agente local e comunicação | NÃO COMPROVADO | Atualização automática controlada, assinatura/verificação de artefatos, rollback e política de versões mínimas. |
 | NX-041 | Agente local e comunicação | PARCIAL — heartbeat agente e horário de upload separados; saúde completa pendente | Monitoramento de pontos instalados com data de última comunicação, versão, rede e estado. |
 | NX-042 | Agente local e comunicação | NÃO COMPROVADO | Reinstalação e recuperação dos dados locais sem replicar leituras já recebidas. |
 | NX-043 | Agente local e comunicação | NÃO COMPROVADO | Configuração remota segura limitada aos agentes do próprio provedor e a usuários autorizados. |
 | NX-044 | Agente local e comunicação | NÃO COMPROVADO | Identificação de duplicidade de agentes ou colisão de identidade de impressora. |
-| NX-045 | Agente local e comunicação | NÃO COMPROVADO | Política de retenção de dados na borda, limites de memória/CPU e suporte a clientes com conexão intermitente. |
+| NX-045 | Agente local e comunicação | PARCIAL — backpressure por quantidade; retenção, recursos e espaço físico pendentes | Política de retenção de dados na borda, limites de memória/CPU e suporte a clientes com conexão intermitente. |
 | NX-046 | Agente local e comunicação | NÃO COMPROVADO | Inventário e diagnóstico de compatibilidade de hardware sem declarar homologado um modelo não testado. |
 | NX-047 | Parque, ciclo de vida e impressoras | PARCIAL — sem aceite E2E | Parque completo, impressoras por cliente, novas impressoras e impressoras com monitoramento duplicado. |
 | NX-048 | Parque, ciclo de vida e impressoras | PARCIAL — sem aceite E2E | Cadastro de fabricante, modelo, série, IP, MAC, patrimônio, responsável, proprietário, localização e departamento. |
