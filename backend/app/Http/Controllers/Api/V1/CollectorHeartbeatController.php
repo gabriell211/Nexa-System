@@ -22,10 +22,12 @@ final class CollectorHeartbeatController extends Controller
         // Only the server clock is authoritative. Never accept a client-supplied
         // timestamp or infer connectivity from SNMP/meters.
         $now=now('UTC');
-        DB::table('collector_agents')
+        $updated=DB::table('collector_agents')
             ->where('id',$agent->id)->where('active',true)->update([
                 'heartbeat_at'=>$now,'updated_at'=>$now,
             ]);
+
+        if ($updated!==1) abort(401,'Collector has been revoked.');
 
         return response()->json([
             'acknowledged'=>true,

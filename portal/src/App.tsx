@@ -14,6 +14,7 @@ import { ShipmentsPage } from './pages/ShipmentsPage';
 import { SuppliesPage } from './pages/SuppliesPage';
 import { TicketsPage } from './pages/TicketsPage';
 import { AlertsPage } from './pages/AlertsPage';
+import { CollectorsPage } from './pages/CollectorsPage';
 import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
 import type {
   AuditEntry, Credentials, CurrentUser, Customer, CustomerPayload, Dashboard,
@@ -151,6 +152,10 @@ function Shell({ token, identity, onLogout }: {
         <NavLink to="/clientes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Users size={19}/> Clientes</NavLink>
         <NavLink to="/parque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><PrinterIcon size={19}/> Parque de impressoras</NavLink>
         {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
+          <NavLink to="/agentes" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
+            <Activity size={19}/> Agentes de coleta
+          </NavLink>}
+        {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
           <NavLink to="/chamados" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
             <ClipboardCheck size={19}/> Chamados
           </NavLink>}
@@ -187,6 +192,8 @@ function Shell({ token, identity, onLogout }: {
           <Route path="/clientes" element={<CustomersPage token={token} canWrite={canWrite} />} />
           <Route path="/clientes/:id/unidades" element={<CustomerOrganizationPage token={token} canWrite={canWrite} />} />
           <Route path="/parque" element={<PrintersPage token={token} canWrite={canWrite} />} />
+          {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
+            <Route path="/agentes" element={<CollectorsPage />} />}
           {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
             <Route path="/chamados" element={<TicketsPage canReopen={canWrite||identity.role==='supervisor'} />} />}
           {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
