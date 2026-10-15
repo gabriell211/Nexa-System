@@ -35,6 +35,14 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Indicadores de recebimento líquido e capacidade para reposição — incremento 56 (parcial)
+
+- Pedidos de compra agora informam **quantidade pedida, recebida bruta (histórica), devolução pendente, devolução concluída, quantidade líquida retida, pendência líquida e lacuna estimada de reposição** por linha e por pedido. Todos os cálculos vêm de recebimentos conciliados e devoluções reais existentes, sem lançamento adicional.
+- Uma devolução **concluída** libera capacidade para conciliar mercadoria substituta no mesmo pedido aprovado, enquanto devoluções pendentes ou canceladas não liberam capacidade. A guarda transacional rejeita associação cujo `recebido bruto - devolvido concluído + novo recebimento` supere a quantidade aprovada. Idempotência por recebimento permanece intacta e notas/lotes originais não são apagados.
+- Estoque → Compras exibe totais e estado derivado (aguardando recebimento, parcial, devolução pendente, reposição necessária ou quantidade líquida integral). **Retido líquido não equivale a saldo físico atual**: outras movimentações podem consumir ou transferir materiais. A lacuna de reposição é **estimativa operacional** a partir de quantidades, não comprovação de substituição ou envio do fornecedor.
+- Testes Laravel cobrem retorno pendente/cancelado, retorno concluído, repetição de conciliação, nova nota substituta, totais brutos/líquidos e ausência de novos movimentos durante associação. Playwright executa o mesmo fluxo no navegador. O aceite depende do CI deste PR.
+- Permanecem **PARCIAIS**: não existe atribuição fiscal de nota substituta à nota devolvida, emissão de NF-e de devolução, crédito/conta a pagar, autorização de substituição pelo fornecedor ou homologação logística externa.
+
 ### Devoluções supervisionadas ao fornecedor por lote — incremento 55 (parcial)
 
 - Em Estoque → Compras, o operador pode solicitar devolução vinculada a um recebimento conciliado, incluindo pedido, nota, lote original, quantidade e motivo. A solicitação inicialmente fica pendente e **não** movimenta o estoque.
