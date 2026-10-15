@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Reconciliação automática de webhook precoce — incremento 37 (parcial)
+
+- Webhooks Resend **com assinatura válida** recebidos antes da persistência do UUID da resposta HTTPS não são descartados: os campos mínimos (hash do ID Svix, UUID, tipo e classificação sanitizada de bounce) ficam em estado `pending`, sem destinatário, assunto, corpo nem credencial.
+- Assim que uma notificação original ou reenvio salva seu UUID, o backend tenta reconciliar eventos pendentes desse UUID. Uma tarefa `nexa:mail:reconcile-resend-webhooks` complementa essa ação a cada minuto, cobrindo corridas entre o webhook e a confirmação de envio.
+- A consulta de pendências prioriza somente UUIDs **já associados** a alguma mensagem persistida, evitando que eventos desconhecidos bloqueiem a fila; lote de até 100 por rodada (configurável 1..500). Pendências não correlacionadas expiram após **72 horas** (1..168 configurável), mantendo o hash para bloquear processamento duplicado posterior.
+- Entrega/devolução/reclamação mantêm precedência segura; a auditoria só registra eventos efetivamente aplicados. Falha de reconciliação imediata não altera indevidamente o resultado do envio: a tarefa agendada tenta reparar posteriormente. Testes cobrem chegada antes da API, notificação e replay, recuperação agendada, starvation, expiração, duplicidade e configuração desativada.
+- Nenhum e-mail é reenviado nesse processo. Ainda faltam testes com webhook e domínio Resend reais, resistência sob concorrência elevada, monitoramento/alerta de pendências e homologação operacional. NX-039/041 permanecem PARCIAIS.
+
 ### Resend opt-in: webhook assinado e eventos de entrega — incremento 36 (parcial)
 
 - O backend agora oferece um adaptador de saída `NEXA_COLLECTOR_MAIL_DRIVER=resend` para a **API HTTPS do Resend**, com token provisionado em segredo, idempotency key por tentativa e captura do UUID de e-mail retornado. Sem opt-in, o Laravel Mail genérico continua funcionando e **não é associado automaticamente a webhooks**.
