@@ -35,6 +35,19 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Gestão de fornecedores e histórico fiscal — incremento 47 (parcial)
+
+- Fornecedores existentes agora são pesquisáveis por nome/código com paginação, filtros ativo/inativo e isolamento estrito por tenant/carteira. O portal de Estoque ganhou a seção **Fornecedores**, com cadastro, edição, ativação e desativação; não há exclusão física, para preservar vínculos com recebimentos e notas.
+- Nome, e-mail, documento e situação podem ser alterados mediante Form Request e permissão de estoque; o código existente permanece imutável. A atualização é transacional e auditada apenas quando os dados mudam. Recebimento documentado verifica o fornecedor ativo sob lock transacional para serializar desativações concorrentes.
+- Testes Laravel cobrem filtros, paginação, auditoria, validação, isolamento multiempresa, papéis/carteira e o bloqueio de novas entradas quando o fornecedor está inativo. Playwright cobre cadastro, busca, edição e desativação no navegador. **A validação do incremento 47 depende do CI do respectivo PR.**
+- NX-099, NX-284 e NX-285 seguem **PARCIAIS**: faltam importação em massa, pedidos de compra, conciliação fiscal, qualificação de fornecedores, integração externa e homologação de recebimentos reais.
+
+### Propostas de reposição revisadas por duas pessoas — incremento 46 (parcial)
+
+- API e portal mantêm rascunhos de reposição com UUID idempotente, data limite, responsável, itens sugeridos ou manuais, quantidade ajustável e item de segurança. Um segundo usuário autorizado pode aprovar; alterações usam controle de versão, e sugestões desatualizadas exigem novo planejamento.
+- Aprovar não cria automaticamente compra, movimento de estoque nem remessa. O teste Playwright foi corrigido para selecionar os controles por rótulos acessíveis exatos; o CI dessa correção foi aprovado em 15/10/2026.
+- NX-105, NX-106 e NX-107 seguem **PARCIAIS**: não existe ciclo completo de previsão por intervalo, demanda por modelo/cliente, compras e execução automática/confirmada de entregas associadas ao plano.
+
 ### Políticas e necessidades de reposição — incremento 45 (parcial)
 
 - A API e o portal configuram limites crítico, de segurança, mínimo e alvo por item/local, inclusive quando ainda não há saldo. A lista paginada calcula disponibilidade conservadora após reservas e lotes vencidos, classifica a necessidade e sugere a quantidade até o alvo. Itens ou locais inativos não geram sugestão.
