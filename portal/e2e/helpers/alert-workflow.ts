@@ -30,6 +30,7 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
     await expect(history.getByText('Nenhuma leitura encontrada para o período.')).toBeVisible();
     await history.getByLabel('Data inicial').fill('2026-10-14');
     await history.getByLabel('Data final').fill('2026-10-15');
+    await expect(history.getByRole('button',{name:'Prévia de incrementos'})).toBeEnabled();
     await history.getByRole('button',{name:'Prévia de incrementos'}).click();
     await expect(history.getByRole('heading',{name:'Incrementos observados — não faturáveis'})).toBeVisible();
     await expect(history.getByText(/Dados insuficientes para comparar/)).toBeVisible();
