@@ -142,6 +142,9 @@ final class CollectorIncidentNotificationTest extends TestCase
 
         $otherAgent->update(['active'=>false]);
         $this->travel(62)->minutes();
+        // Keep the already-recovered independent tenant online. Otherwise
+        // 62 minutes of silence rightfully creates a new incident there.
+        $agent->update(['heartbeat_at'=>now('UTC')]);
         $this->artisan('nexa:alerts:check-collectors')->assertSuccessful();
         $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
         Mail::assertSent(CollectorHealthIncidentMail::class,1);
