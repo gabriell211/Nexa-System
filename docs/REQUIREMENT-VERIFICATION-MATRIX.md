@@ -540,3 +540,8 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 
 - NX-099/NX-107/NX-286: a conciliação associa recebimentos reais do razão já persistidos a linhas aprovadas de pedidos de compra. Diferenças de custo têm justificativa e uma entrada só pode pertencer a uma compra. Quantidades não ultrapassam a linha aprovada e a tentativa repetida não gera outro movimento.
 - Continua PARCIAL: não comprova validação tributária de NF-e, origem fiscal, estorno e devolução, financiamento, envio automático ao fornecedor ou aceite real de mercadorias.
+
+## Evidências parciais da Entrega 55 — retorno ao fornecedor (15/10/2026)
+
+- NX-099/NX-107/NX-286: solicitação auditada e revisada por segunda pessoa, com vínculo a compra, nota, lote e baixa física do mesmo lote; cancelamento pendente sem baixa.
+- Ainda parciais: NF-e de devolução, nota de crédito, transporte externo, compensação financeira, retorno confirmado pelo fornecedor e homologação em campo.
