@@ -545,3 +545,8 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 
 - NX-099/NX-107/NX-286: solicitação auditada e revisada por segunda pessoa, com vínculo a compra, nota, lote e baixa física do mesmo lote; cancelamento pendente sem baixa.
 - Ainda parciais: NF-e de devolução, nota de crédito, transporte externo, compensação financeira, retorno confirmado pelo fornecedor e homologação em campo.
+
+## Entrega 56 — lacuna de reposição após devolução (15/10/2026)
+
+- NX-099/NX-107/NX-286: read-model mostra quantidade histórica recebida, devoluções concluídas/pendentes, quantidade líquida e necessidade operacional estimada de reposição. Uma devolução concluída libera nova conciliação de entrada substituta dentro da mesma cota aprovada; pendente/cancelada não libera.
+- Continua PARCIAL: dados não comprovam estoque físico disponível, compromisso do fornecedor de substituir, nota fiscal de devolução/substituição, repasse financeiro ou estorno/contabilidade tributária.
