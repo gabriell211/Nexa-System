@@ -138,7 +138,7 @@ final class StockSupplierReturnService
                 'source_location_id' => $locationId,
                 'destination_location_id' => null,
                 'quantity' => $return->quantity,
-                'reason' => 'Devolução ao fornecedor #'.$return->id.': '.$return->reason,
+                'reason' => $return->reason,
             ], (int) $lot->id);
             if (!$movement->wasRecentlyCreated) {
                 abort(409, 'O identificador de baixa física já havia sido utilizado.');
