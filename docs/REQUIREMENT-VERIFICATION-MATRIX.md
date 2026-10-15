@@ -124,7 +124,7 @@
 | NX-096 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Configuração granular de quais suprimentos geram alerta e sugestões de troca por impressora. |
 | NX-097 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Preparar motor estatístico determinístico; qualquer futuro uso de IA deverá ser isolado, validado e opcional. |
 | NX-098 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Estoque da empresa, depósitos, técnicos e cada localidade do cliente, com posições de saldo separadas. |
-| NX-099 | Estoque, movimentação e reposição | PARCIAL — fornecedor e lote de entrada; sem rastreamento pós-entrada | Cadastro de fornecedores, nota fiscal/documento, lote, custo, validade e entrada unitária ou em massa. |
+| NX-099 | Estoque, movimentação e reposição | PARCIAL — fornecedor, pedidos de compra supervisionados e lote de entrada; sem conciliação fiscal entre pedido e recebimento | Cadastro de fornecedores, nota fiscal/documento, lote, custo, validade e entrada unitária ou em massa. |
 | NX-100 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Transferência provedor → técnico, provedor → cliente, técnico → cliente, cliente → técnico e devolução ao provedor. |
 | NX-101 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Movimento transacional com origem/destino, saldo antes/depois, autorização, justificativa e trilha de auditoria. |
 | NX-102 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Bloqueio de saldo negativo e de consumo concorrente da mesma unidade; reservas para chamados e reposições. |
@@ -132,7 +132,7 @@
 | NX-104 | Estoque, movimentação e reposição | PARCIAL — políticas e necessidades por item/local; sem pedido de compra ou aceite operacional | Controle de estoque mínimo, crítico, segurança e sugestão de compra. |
 | NX-105 | Estoque, movimentação e reposição | PARCIAL — proposta com prazo manual; sem periodicidade, previsão por modelo/cliente ou demanda | Programação de reposição por intervalo, clientes, modelos, tipos e demanda prevista. |
 | NX-106 | Estoque, movimentação e reposição | PARCIAL — quantidade ajustável, item de segurança e itens manuais em plano auditado com segunda aprovação; sem aceite físico | Revisão da sugestão com ajuste de quantidades, item de segurança e inserção manual de itens. |
-| NX-107 | Estoque, movimentação e reposição | PARCIAL — lista paginada, responsável, prazo e revisão; sem estado de envio/recebimento vinculado ao plano | Lista de reposições programadas com data limite, responsável e estado de envio/recebimento. |
+| NX-107 | Estoque, movimentação e reposição | PARCIAL — planejamento, reservas, progresso de remessas e pedidos vinculados; sem integração automática externa ou aceite físico | Lista de reposições programadas com data limite, responsável e estado de envio/recebimento. |
 | NX-108 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Baixa no estoque de origem ao confirmar envio e entrada no estoque da unidade ao confirmar recebimento. |
 | NX-109 | Estoque, movimentação e reposição | NÃO COMPROVADO | Confirmação de recebimento pelo provedor ou usuário cliente autorizado. |
 | NX-110 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Tratamento de envio parcial, recebimento parcial, extravio, divergência e cancelamento. |
@@ -530,3 +530,8 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 
 - NX-099/NX-286: recebimento documentado com cabeçalho, 1 a 30 linhas, idempotência por UUID e conteúdo, reversão transacional total, registro real de estoque e lotes via ledger existente. O teste com uma segunda linha inválida precisa comprovar rollback de saldo, lote, documento e auditoria; E2E valida duas linhas pelo navegador.
 - Não há homologação fiscal com notas reais, XML NF-e, anexos ou assinatura, contas a pagar, código de barras e conferência física automatizada. Nunca marcar esses requisitos como completos apenas com CI verde.
+
+## Entrega 53 — pedidos de compra, aprovação independente e cota compartilhada (15/10/2026)
+
+- NX-099/NX-105/NX-107: fluxo supervisionado com pedido do fornecedor vinculado a linhas de uma proposta aprovada e valores inteiros em centavos. A segunda aprovação controla quantidade combinada entre compras aprovadas e remessas reservadas, com locks transacionais e isolamento de empresa.
+- Matriz e readme continuam PARCIAIS: não existe pedido realmente transmitido ao fornecedor, sistema de compras financeiro completo, pagamento, importação NF-e, conciliação da entrada com compra ou confirmação física. CI valida o incremento, não o processo fiscal em campo.
