@@ -34,6 +34,7 @@ use App\Http\Controllers\Api\V1\StockCountController;
 use App\Http\Controllers\Api\V1\StockReorderPolicyController;
 use App\Http\Controllers\Api\V1\StockReplenishmentPlanController;
 use App\Http\Controllers\Api\V1\StockPlanShipmentController;
+use App\Http\Controllers\Api\V1\StockPurchaseOrderController;
 use App\Http\Controllers\Api\V1\ServiceTicketController;
 use App\Http\Controllers\Api\V1\PrinterAlertController;
 use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
@@ -79,6 +80,8 @@ $registerBackoffice = static function (): void {
         Route::get('/stock/balances', StockBalanceController::class);
         Route::get('/stock/reorder-needs', [StockReorderPolicyController::class, 'index']);
         Route::get('/stock/replenishment-plans', [StockReplenishmentPlanController::class, 'index']);
+        Route::get('/stock/purchase-orders', [StockPurchaseOrderController::class, 'index']);
+        Route::get('/stock/purchase-orders/{order}', [StockPurchaseOrderController::class, 'show']);
         Route::get('/stock/replenishment-plans/{plan}', [StockReplenishmentPlanController::class, 'show']);
         Route::get('/stock/lots', StockLotController::class);
         Route::get('/stock/movements', [StockMovementController::class, 'index']);
@@ -103,6 +106,8 @@ $registerBackoffice = static function (): void {
         Route::put('/stock/reorder-policies/{item}/{location}', [StockReorderPolicyController::class, 'upsert']);
         Route::delete('/stock/reorder-policies/{item}/{location}', [StockReorderPolicyController::class, 'destroy']);
         Route::post('/stock/replenishment-plans', [StockReplenishmentPlanController::class, 'store']);
+        Route::post('/stock/purchase-orders', [StockPurchaseOrderController::class, 'store']);
+        Route::post('/stock/purchase-orders/{order}/cancel', [StockPurchaseOrderController::class, 'cancel']);
         Route::post('/stock/replenishment-plans/{plan}/items/{line}/reserve-shipment', [StockPlanShipmentController::class, 'store']);
         Route::patch('/stock/replenishment-plans/{plan}', [StockReplenishmentPlanController::class, 'update']);
     });
@@ -111,6 +116,7 @@ $registerBackoffice = static function (): void {
         Route::post('/stock/counts/{count}/approve', [StockCountController::class, 'approve']);
         Route::post('/stock/counts/{count}/reject', [StockCountController::class, 'reject']);
         Route::post('/stock/replenishment-plans/{plan}/approve', [StockReplenishmentPlanController::class, 'approve']);
+        Route::post('/stock/purchase-orders/{order}/approve', [StockPurchaseOrderController::class, 'approve']);
         Route::post('/stock/replenishment-plans/{plan}/cancel', [StockReplenishmentPlanController::class, 'cancel']);
     });
 
