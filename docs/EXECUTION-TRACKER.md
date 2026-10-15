@@ -765,3 +765,10 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Serviço de conciliação calcula capacidade pelo `SUM(recebido) - SUM(devoluções concluídas)`; devoluções pendentes e canceladas não liberam cota. Reposição documentada após devolução física pode ser conciliada com o mesmo pedido, mantendo todo o histórico bruto e os lançamentos anteriores.
 - Portal Compras informa as métricas e explica que líquido retido não é saldo físico. Testes de API e Playwright cobrem devolução, pendência, cancelamento, nova entrada conciliada, limites, ausência de movimentação extra e fechamento líquido.
 - **Dependente da aprovação CI do PR #46**. Sem documento fiscal de substituição vinculado, contato com fornecedor, estorno de custos, substituição contratual ou aceite operacional em campo. Requisitos relacionados permanecem parciais.
+
+## Entrega 57 — acompanhamento externo de substituições (15/10/2026)
+
+- Novas tabelas stock_supplier_replacement_cases e events: chave composta tenant/devolução concluída, responsável membro ativo, prazo, estado de resposta do fornecedor, versão e histórico append-only com UUID/hash por evento. Todos os vínculos de usuários e da devolução são restritos à mesma empresa.
+- Create/GET paginados/detalhe e POST de eventos permitem follow-up de almoxarifado, reagendamento supervisionado, confirmação por referência externa e encerramento sem resolução. Confirmação/encerramento exigem gestão diferente do autor da abertura; versão impede atualização perdida e duplicações idempotentes retornam 200.
+- Portal mostra prazo, responsabilidade, atrasos e histórico de contatos. E2E cobre criação de acompanhamento por operador e confirmação por gestor sem escrita no ledger; Laravel Feature cobre escopo, UUID, versões, permissões, evidência e ausência de estoque fictício.
+- Requisitos afetados ainda PARCIAIS: sem anexos oficiais, validação externa da resposta, remessa de substituição rastreada, integração ERP/financeiro/fiscal ou aceite físico. CI do PR #47 deve ser aprovado antes do merge.
