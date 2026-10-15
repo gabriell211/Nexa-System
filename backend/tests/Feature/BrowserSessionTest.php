@@ -51,6 +51,34 @@ final class BrowserSessionTest extends TestCase
             ->assertJsonPath('role', 'owner');
     }
 
+    public function test_csrf_handshakes_do_not_consume_browser_login_attempts(): void
+    {
+        $tenant = Tenant::query()->create(['name' => 'Provider', 'slug' => 'provider']);
+        $user = $this->userFor($tenant);
+
+        for ($attempt = 0; $attempt < 6; $attempt++) {
+            $this->getJson('/api/v1/browser/auth/csrf')->assertOk();
+        }
+
+        $this->login($user, 'provider');
+    }
+
+    public function test_browser_login_still_limits_repeated_attempts(): void
+    {
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $this->postJson('/api/v1/browser/auth/login', [
+                'email' => 'unknown@example.test', 'password' => 'invalid-password',
+                'tenant' => 'provider',
+            ])->assertUnprocessable();
+        }
+
+        $this->postJson('/api/v1/browser/auth/login', [
+            'email' => 'unknown@example.test', 'password' => 'invalid-password',
+            'tenant' => 'provider',
+        ])->assertStatus(429);
+        $this->getJson('/api/v1/browser/auth/csrf')->assertOk();
+    }
+
     public function test_session_auth_scopes_backoffice_and_blocks_other_tenant(): void
     {
         $one = Tenant::query()->create(['name' => 'One', 'slug' => 'one']);

@@ -30,6 +30,7 @@ use App\Http\Controllers\Api\V1\StockSupplierController;
 use App\Http\Controllers\Api\V1\StockCompatibilityController;
 use App\Http\Controllers\Api\V1\StockDocumentedReceiptController;
 use App\Http\Controllers\Api\V1\StockCountController;
+use App\Http\Controllers\Api\V1\StockReorderPolicyController;
 use App\Http\Controllers\Api\V1\ServiceTicketController;
 use App\Http\Controllers\Api\V1\PrinterAlertController;
 use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
@@ -71,6 +72,7 @@ $registerBackoffice = static function (): void {
         Route::get('/stock/operators', StockOperatorController::class);
         Route::get('/stock/locations', [StockLocationController::class, 'index']);
         Route::get('/stock/balances', StockBalanceController::class);
+        Route::get('/stock/reorder-needs', [StockReorderPolicyController::class, 'index']);
         Route::get('/stock/lots', StockLotController::class);
         Route::get('/stock/movements', [StockMovementController::class, 'index']);
         Route::get('/stock/shipments', [StockShipmentController::class, 'index']);
@@ -89,6 +91,8 @@ $registerBackoffice = static function (): void {
         Route::post('/stock/shipments/{shipment}/receive', [StockShipmentController::class, 'receive']);
         Route::post('/stock/shipments/{shipment}/close', [StockShipmentController::class, 'close']);
         Route::post('/stock/counts', [StockCountController::class, 'store']);
+        Route::put('/stock/reorder-policies/{item}/{location}', [StockReorderPolicyController::class, 'upsert']);
+        Route::delete('/stock/reorder-policies/{item}/{location}', [StockReorderPolicyController::class, 'destroy']);
     });
 
     Route::middleware('nexa.roles:owner,admin,manager')->group(static function (): void {
@@ -127,7 +131,7 @@ Route::prefix('v1')->group(function () use ($registerBackoffice): void {
 
     // Transitional non-browser API. Issuing new bearer credentials is disabled
     // by default; existing explicitly issued tokens remain scoped to a tenant.
-    Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+    Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:5,1,legacy-login:');
     Route::name('machine.')->middleware(['nexa.bearer', 'auth:sanctum', 'nexa.tenant', 'nexa.portfolio'])->group(
         static function () use ($registerBackoffice): void {
             Route::get('/auth/me', [AuthController::class, 'me']);
@@ -138,8 +142,8 @@ Route::prefix('v1')->group(function () use ($registerBackoffice): void {
 
     Route::prefix('browser')->name('browser.')->middleware('web')->group(
         static function () use ($registerBackoffice): void {
-            Route::get('/auth/csrf', [BrowserAuthController::class, 'csrf'])->middleware('throttle:120,1');
-            Route::post('/auth/login', [BrowserAuthController::class, 'login'])->middleware('throttle:5,1');
+            Route::get('/auth/csrf', [BrowserAuthController::class, 'csrf'])->middleware('throttle:120,1,browser-csrf:');
+            Route::post('/auth/login', [BrowserAuthController::class, 'login'])->middleware('throttle:5,1,browser-login:');
 
             Route::middleware(['auth:web', 'nexa.browser-tenant', 'nexa.portfolio'])->group(
                 static function () use ($registerBackoffice): void {

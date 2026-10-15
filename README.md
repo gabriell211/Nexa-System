@@ -35,6 +35,12 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Políticas e necessidades de reposição — incremento 45 (parcial)
+
+- A API e o portal configuram limites crítico, de segurança, mínimo e alvo por item/local, inclusive quando ainda não há saldo. A lista paginada calcula disponibilidade conservadora após reservas e lotes vencidos, classifica a necessidade e sugere a quantidade até o alvo. Itens ou locais inativos não geram sugestão.
+- A edição e remoção são auditadas e limitadas à empresa, aos papéis de estoque e à carteira completa. Nenhuma compra ou remessa é criada automaticamente. Ainda faltam aprovação da sugestão, fornecedores/pedidos, planejamento periódico e validação operacional de NX-104 a NX-107.
+- O limite de login do navegador agora tem contador separado do handshake CSRF, preservando a proteção contra tentativas repetidas durante os fluxos reais do portal.
+
 ### Contagem física supervisionada e navegação paginada — incremento 44 (parcial)
 
 - O estoque registra uma contagem física por item/local com UUID idempotente, saldo esperado e último movimento observados. Uma segunda pessoa com papel de gestão aprova ou rejeita com justificativa; a aprovação gera ajuste no razão e auditoria dentro da transação. Saldo alterado, inclusive quando retorna ao número anterior, impede aprovar uma contagem antiga. Reservas não podem ser anuladas e perdas com lotes conhecidos aguardam contagem específica por lote.

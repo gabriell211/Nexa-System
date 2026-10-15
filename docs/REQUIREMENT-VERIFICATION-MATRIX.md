@@ -129,7 +129,7 @@
 | NX-101 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Movimento transacional com origem/destino, saldo antes/depois, autorização, justificativa e trilha de auditoria. |
 | NX-102 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Bloqueio de saldo negativo e de consumo concorrente da mesma unidade; reservas para chamados e reposições. |
 | NX-103 | Estoque, movimentação e reposição | PARCIAL — contagem agregada com segunda aprovação e ajuste no razão; perdas de lote, devoluções e reconciliação física pendentes | Inventário físico, ajuste supervisionado, perdas, baixas, devoluções e histórico contábil de estoque. |
-| NX-104 | Estoque, movimentação e reposição | NÃO COMPROVADO | Controle de estoque mínimo, crítico, segurança e sugestão de compra. |
+| NX-104 | Estoque, movimentação e reposição | PARCIAL — políticas e necessidades por item/local; sem pedido de compra ou aceite operacional | Controle de estoque mínimo, crítico, segurança e sugestão de compra. |
 | NX-105 | Estoque, movimentação e reposição | NÃO COMPROVADO | Programação de reposição por intervalo, clientes, modelos, tipos e demanda prevista. |
 | NX-106 | Estoque, movimentação e reposição | NÃO COMPROVADO | Revisão da sugestão com ajuste de quantidades, item de segurança e inserção manual de itens. |
 | NX-107 | Estoque, movimentação e reposição | NÃO COMPROVADO | Lista de reposições programadas com data limite, responsável e estado de envio/recebimento. |
