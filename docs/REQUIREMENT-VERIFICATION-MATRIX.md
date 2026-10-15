@@ -499,3 +499,10 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 - `NX-039/041` continuam **PARCIAIS**: eventos do provedor somente são associados a UUIDs recebidos e autenticados pela integração Resend e não demonstram disponibilidade da impressora.
 - Corrigida a expiração indiscriminada do backlog. Eventos correlacionáveis a `collector_incident_notifications` ou `collector_notification_replays` não expiram só pela idade quando o scheduler ficou parado. Eventos desconhecidos além da retenção expiram e mantêm deduplicação.
 - Regressões Laravel simulam parada por 73 horas tanto para mensagem original quanto para replay autorizado, sem duplicar registros de auditoria ou modificar outros alvos. Aceite em ambiente de produção, interleaving de workers e entrega SMTP/Resend real permanecem pendentes.
+
+## Últimos contadores reais na listagem do parque (15/10/2026 — entrega 40)
+
+- `NX-041` e itens de exibição de contadores continuam **PARCIAIS**: a lista de impressoras autorizadas ganha `latest_reading` proveniente exclusivamente de `printer_readings`, por coleta mais recente e desempate por ID. Sem amostra não se exibe zero nem se afirma que o equipamento esteja online.
+- Backend faz eager loading de uma leitura por dispositivo na página, sem N+1; timestamp da coleta é diferente do recebimento. `BIGINT` é serializado como string para precisão na API e no frontend.
+- Testes feature incluem amostras fora de ordem, empate, nulos, carteira de operador, isolamento entre empresas e limite de consultas; Playwright valida o estado sem coleta em um equipamento novo.
+- Sem comprovação de coleta física, suporte completo SNMP/USB, toner, contadores por função, janelas de faturamento ou aceite completo do README/QA.

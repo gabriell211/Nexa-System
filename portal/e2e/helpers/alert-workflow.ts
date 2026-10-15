@@ -22,6 +22,8 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
     await dialog.locator('#printer-model').fill(model);
     await dialog.getByRole('button',{name:'Salvar impressora'}).click();
     await expect(page.getByText('Kyocera '+model,{exact:true})).toBeVisible();
+    await expect(page.getByRole('row',{name:new RegExp('Kyocera '+model)})
+      .getByText('Sem leituras registradas')).toBeVisible();
   });
 
   await test.step('Open a ticket for the same printer from the ticket form',async()=>{

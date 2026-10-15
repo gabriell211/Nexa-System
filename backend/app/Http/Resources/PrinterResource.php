@@ -28,6 +28,20 @@ final class PrinterResource extends JsonResource
                 'id' => $this->customer->id,
                 'name' => $this->customer->name,
             ]),
+            'latest_reading' => $this->whenLoaded('latestReading', fn (): ?array =>
+                $this->latestReading
+                    ? [
+                        'meter_total' => $this->latestReading->meter_total === null
+                            ? null : (string) $this->latestReading->meter_total,
+                        'meter_mono' => $this->latestReading->meter_mono === null
+                            ? null : (string) $this->latestReading->meter_mono,
+                        'meter_color' => $this->latestReading->meter_color === null
+                            ? null : (string) $this->latestReading->meter_color,
+                        'collected_at' => $this->latestReading->collected_at?->toIso8601String(),
+                        'received_at' => $this->latestReading->received_at?->toIso8601String(),
+                    ]
+                    : null
+            ),
             'readings' => $this->whenLoaded('readings', fn () => $this->readings->map(
                 fn ($reading): array => $reading->only([
                     'sample_id', 'meter_total', 'meter_mono',

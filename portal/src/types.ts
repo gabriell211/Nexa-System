@@ -37,6 +37,13 @@ export interface Printer {
   status: string;
   active: boolean;
   customer?: { id: number; name: string };
+  latest_reading?: {
+    meter_total: string | null;
+    meter_mono: string | null;
+    meter_color: string | null;
+    collected_at: string;
+    received_at: string;
+  } | null;
   current_assignment?: { id: number; location_id: number; department_id: number | null;
     cost_center_id: number | null; assigned_at: string; location?: { id: number; name: string } } | null;
   created_at: string;
