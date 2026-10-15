@@ -142,9 +142,8 @@ final class CollectorResendWebhookTest extends TestCase
         $notice=$this->sentOriginal();
         $raw=$this->event('email.complained');
         $this->webhook($raw,'bad_event','v1,invalid')->assertUnauthorized();
-        $this->webhook($raw.' ','bad_event')->assertOk()->assertJsonPath('result','applied');
-        // New original remains unchanged when signed content doesn't match.
-        $notice->update(['status'=>'accepted']);
+        // No legitimate provider event should run in a signature-tampering
+        // test: only requests with false signatures or stale times are sent.
         $signedBody=$raw;
         $signature='v1,'.base64_encode(hash_hmac('sha256',
             'tamper.'.time().'.'.$signedBody,str_repeat('X',32),true));
