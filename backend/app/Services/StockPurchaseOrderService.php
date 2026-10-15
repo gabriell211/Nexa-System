@@ -140,27 +140,33 @@ final class StockPurchaseOrderService
             }
 
             $lines = $order->lines()->orderBy('id')->get();
+            $lineIds = $lines->pluck('plan_line_id')->all();
+            $planLines = StockReplenishmentPlanItem::query()
+                ->where('tenant_id', $tenant->id)->where('plan_id', $plan->id)
+                ->whereIn('id', $lineIds)->with(['item:id,active','location:id,active'])
+                ->get()->keyBy('id');
+            $shipments = StockShipment::query()
+                ->where('tenant_id', $tenant->id)
+                ->whereIn('replenishment_plan_item_id', $lineIds)
+                ->selectRaw('replenishment_plan_item_id, SUM(quantity - cancelled_quantity) AS total')
+                ->groupBy('replenishment_plan_item_id')
+                ->pluck('total', 'replenishment_plan_item_id');
+            $purchases = StockPurchaseOrderLine::query()
+                ->join('stock_purchase_orders as orders', 'orders.id', '=', 'stock_purchase_order_lines.purchase_order_id')
+                ->where('stock_purchase_order_lines.tenant_id', $tenant->id)
+                ->where('orders.tenant_id', $tenant->id)
+                ->whereIn('stock_purchase_order_lines.plan_line_id', $lineIds)
+                ->where('orders.status', 'approved')
+                ->selectRaw('stock_purchase_order_lines.plan_line_id, SUM(stock_purchase_order_lines.quantity) AS total')
+                ->groupBy('stock_purchase_order_lines.plan_line_id')
+                ->pluck('total', 'stock_purchase_order_lines.plan_line_id');
             foreach ($lines as $line) {
-                $planLine = StockReplenishmentPlanItem::query()
-                    ->where('tenant_id', $tenant->id)->where('plan_id', $plan->id)
-                    ->findOrFail($line->plan_line_id);
-                if (!$planLine->item?->active || !$planLine->location?->active) {
+                $planLine = $planLines->get($line->plan_line_id);
+                if (!$planLine || !$planLine->item?->active || !$planLine->location?->active) {
                     abort(409, 'Material ou destino do plano ficou inativo.');
                 }
-                $shipped = (int) StockShipment::query()
-                    ->where('tenant_id', $tenant->id)
-                    ->where('replenishment_plan_item_id', $line->plan_line_id)
-                    ->selectRaw('COALESCE(SUM(quantity - cancelled_quantity), 0) AS total')
-                    ->value('total');
-                $approvedPurchases = (int) StockPurchaseOrderLine::query()
-                    ->join('stock_purchase_orders as orders', 'orders.id', '=', 'stock_purchase_order_lines.purchase_order_id')
-                    ->where('stock_purchase_order_lines.tenant_id', $tenant->id)
-                    ->where('orders.tenant_id', $tenant->id)
-                    ->where('stock_purchase_order_lines.plan_line_id', $line->plan_line_id)
-                    ->where('orders.status', 'approved')
-                    ->sum('stock_purchase_order_lines.quantity');
-
-                if ((int) $line->quantity + $shipped + $approvedPurchases > (int) $planLine->quantity) {
+                if ((int) $line->quantity + (int) ($shipments[$line->plan_line_id] ?? 0)
+                    + (int) ($purchases[$line->plan_line_id] ?? 0) > (int) $planLine->quantity) {
                     throw ValidationException::withMessages([
                         'items' => 'Quantidade já comprometida em remessas ou outros pedidos aprovados.',
                     ]);
