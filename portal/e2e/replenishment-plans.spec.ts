@@ -469,6 +469,63 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
         replacement_needed_quantity: 0, outstanding_quantity: 0,
         status: 'net_received',
       });
+
+      const returnsResponse = await warehouseRequest.get(apiRoot + '/stock/supplier-returns' +
+        '?purchase_order_id=' + orderId);
+      expect(returnsResponse.status()).toBe(200);
+      const returnList: { data: Array<{ id: number; status: string }> } = await returnsResponse.json();
+      const completedReturn = returnList.data.find(item => item.status === 'completed');
+      expect(completedReturn).toBeDefined();
+
+      await page.reload();
+      await page.getByRole('button', { name: 'Compras', exact: true }).click();
+      await page.getByRole('button', { name: 'Revisar pedido ' + orderId }).click();
+      const followups = page.getByRole('dialog')
+        .getByRole('region', { name: 'Acompanhamento de substituições' });
+      await followups.getByLabel('Devolução concluída *').selectOption(String(completedReturn!.id));
+      await followups.getByLabel('Buscar responsável pela substituição').fill('Contador E2E');
+      await followups.getByLabel('Responsável interno *').selectOption({ label: 'Contador E2E' });
+      await followups.getByLabel('Prazo de acompanhamento *').fill(dueOn);
+      await followups.getByLabel('Descrição do contato inicial *')
+        .fill('Solicitar protocolo para substituição e acompanhar prazo');
+      await followups.getByRole('button', { name: 'Abrir acompanhamento' }).click();
+      await expect(followups.getByRole('status').filter({ hasText: 'Nenhum recebimento foi registrado' }))
+        .toBeVisible();
+      expect(await paginatedTotal(owner.context().request, '/stock/movements'))
+        .toBe(countBeforeMatching);
+      const caseHeading = followups.getByRole('heading', { name: /^Histórico do acompanhamento #\d+$/ });
+      const caseId = Number((await caseHeading.textContent())?.match(/\d+/)?.[0]);
+      expect(caseId).toBeGreaterThan(0);
+
+      await owner.reload();
+      await owner.getByRole('button', { name: 'Compras', exact: true }).click();
+      await owner.getByRole('button', { name: 'Revisar pedido ' + orderId }).click();
+      const ownerFollowups = owner.getByRole('dialog')
+        .getByRole('region', { name: 'Acompanhamento de substituições' });
+      await ownerFollowups.getByRole('button', { name: 'Abrir acompanhamento ' + caseId }).click();
+      await ownerFollowups.getByLabel('Atualização *')
+        .selectOption('supplier_confirmed');
+      await ownerFollowups.getByLabel('Descrição da atualização *')
+        .fill('Fornecedor respondeu formalmente e confirmou substituição futura');
+      await ownerFollowups.getByLabel('Referência documental do fornecedor *')
+        .fill('PROTOCOLO-E2E-' + suffix);
+      await ownerFollowups.getByRole('button', { name: 'Registrar atualização' }).click();
+      await expect(ownerFollowups.getByRole('status').filter({
+        hasText: 'sem movimentação de estoque',
+      })).toBeVisible();
+      const confirmation = await owner.context().request.get(
+        apiRoot + '/stock/supplier-replacements/' + caseId,
+      );
+      expect(confirmation.status()).toBe(200);
+      const confirmationBody: { data: { status: string; supplier_reference: string;
+        events: Array<{ action: string }> } } = await confirmation.json();
+      expect(confirmationBody.data).toMatchObject({
+        status: 'supplier_confirmed', supplier_reference: 'PROTOCOLO-E2E-' + suffix,
+      });
+      expect(confirmationBody.data.events.map(event => event.action))
+        .toEqual(['opened','supplier_confirmed']);
+      expect(await paginatedTotal(owner.context().request, '/stock/movements'))
+        .toBe(countBeforeMatching);
     });
 
   } finally {
