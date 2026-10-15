@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardList, Plus, Trash2, X } from 'lucide-react';
 import { ApiError, api, queryString, readableError } from '../api';
 import { PagedEntitySelect } from '../components/PagedEntitySelect';
+import { ApprovedPlanShipmentPanel } from './ApprovedPlanShipmentPanel';
 import type { Page } from '../types';
 
 type PlanStatus = 'draft' | 'approved' | 'cancelled';
@@ -19,7 +20,8 @@ interface PlanLine {
   id: number; item_id: number; location_id: number; policy_id: number | null;
   origin: 'suggested' | 'manual';
   available_quantity: number | null; suggested_quantity: number | null;
-  quantity: number; safety_item: boolean; note: string | null;
+  quantity: number; allocated_quantity: number; remaining_quantity: number;
+  safety_item: boolean; note: string | null;
   item: ItemOption; location: LocationOption;
 }
 interface Plan {
@@ -326,21 +328,25 @@ function PlanDetails({ id, token, role, userId, onClose, onChanged }: {
         role={role} userId={userId} onChanged={onChanged} onReload={reload} /> : <>
         <p><strong>Observações:</strong> {plan.notes || '—'}</p>
         <div className="table-wrap"><table><thead><tr><th>Material</th><th>Local</th><th>Origem</th>
-          <th>Quantidade</th><th>Segurança</th><th>Nota</th></tr></thead><tbody>
+          <th>Quantidade</th><th>Alocado</th><th>Restante</th><th>Segurança</th><th>Nota</th></tr></thead><tbody>
           {plan.items.map(line => <tr key={line.id}><td><strong>{line.item.sku}</strong><small>{line.item.name}</small></td>
             <td>{line.location.name}</td><td>{line.origin === 'suggested' ? 'Sugerido' : 'Manual'}</td>
             <td>{line.quantity.toLocaleString('pt-BR')} {line.item.unit}</td>
+            <td>{line.allocated_quantity.toLocaleString('pt-BR')}</td>
+            <td>{line.remaining_quantity.toLocaleString('pt-BR')}</td>
             <td>{line.safety_item ? 'Sim' : 'Não'}</td><td>{line.note || '—'}</td></tr>)}
           </tbody></table></div>
         {plan.status === 'approved' ? <p><strong>Aprovada por:</strong> {plan.approved_by?.name ?? '—'} em {displayDateTime(plan.approved_at)}.
           {plan.review_note && <> <strong>Nota:</strong> {plan.review_note}</>}</p> :
           <p><strong>Cancelada por:</strong> {plan.cancelled_by?.name ?? '—'} em {displayDateTime(plan.cancelled_at)}.
             <strong> Motivo:</strong> {plan.cancel_reason ?? '—'}</p>}
+        {plan.status === 'approved' && <ApprovedPlanShipmentPanel planId={plan.id} lines={plan.items}
+          token={token} onChanged={onChanged} />}
         {plan.status === 'approved' && ['owner', 'admin', 'manager'].includes(role) &&
           <ApprovedPlanCancel key={`${plan.version}-${reloadKey}`} plan={plan} token={token}
             onChanged={onChanged} onReload={reload} />}
       </>}
-      <p className="stock-hint">A proposta registra a decisão de reposição. Expedição, recebimento e compra são operações separadas.</p>
+      <p className="stock-hint">A aprovação exige revisão humana. A reserva de uma remessa é manual; expedição e recebimento permanecem operações separadas.</p>
     </>}
   </section></div>;
 }
