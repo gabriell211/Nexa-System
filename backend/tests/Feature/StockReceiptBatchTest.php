@@ -220,4 +220,53 @@ final class StockReceiptBatchTest extends TestCase
         $this->as($secondOwnerToken)->postJson($route, $payload)->assertUnprocessable();
         $this->assertDatabaseCount('stock_receipt_batches', 1);
     }
+
+    public function test_batch_history_is_paginated_searchable_and_isolated(): void
+    {
+        extract($this->setupStock());
+        $first = $this->payload($supplier, $itemA, $itemB, $location);
+        $oldId = $this->as($token)->postJson('/api/v1/stock/receipt-batches', [
+            ...$first, 'invoice_reference' => 'NF-ALPHA-2026',
+        ])->assertCreated()->json('data.id');
+
+        $newId = $this->as($token)->postJson('/api/v1/stock/receipt-batches', [
+            ...$first,
+            'request_id' => (string) Str::uuid(),
+            'invoice_reference' => 'NF-BETA-2026',
+        ])->assertCreated()->json('data.id');
+
+        $this->as($token)->getJson('/api/v1/stock/receipt-batches?per_page=1')
+            ->assertOk()->assertJsonPath('meta.total', 2)
+            ->assertJsonPath('data.0.id', $newId)
+            ->assertJsonPath('data.0.supplier.code', 'BULK-SUP');
+        $this->as($token)->getJson('/api/v1/stock/receipt-batches?per_page=1&page=2')
+            ->assertOk()->assertJsonPath('data.0.id', $oldId);
+        $this->as($token)->getJson('/api/v1/stock/receipt-batches?q=alpha')
+            ->assertOk()->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.invoice_reference', 'NF-ALPHA-2026');
+        $this->as($token)->getJson("/api/v1/stock/receipt-batches?supplier_id={$supplier}")
+            ->assertOk()->assertJsonPath('meta.total', 2);
+        $this->as($token)->getJson('/api/v1/stock/receipt-batches?supplier_id=999999')
+            ->assertOk()->assertJsonCount(0, 'data');
+        $this->as($token)->getJson('/api/v1/stock/receipt-batches?per_page=101')
+            ->assertUnprocessable();
+        $this->as($token)->getJson('/api/v1/stock/receipt-batches?q='.str_repeat('a', 101))
+            ->assertUnprocessable();
+
+        $other = Tenant::query()->create([
+            'name' => 'Other', 'slug' => 'bulk-history-other',
+        ]);
+        [, $otherToken] = $this->token($other);
+        $this->as($otherToken)->getJson('/api/v1/stock/receipt-batches')
+            ->assertOk()->assertJsonCount(0, 'data');
+        $this->as($otherToken)->getJson("/api/v1/stock/receipt-batches/{$newId}")
+            ->assertNotFound();
+        $this->as($token)->getJson("/api/v1/stock/receipt-batches/{$newId}")
+            ->assertOk()->assertJsonCount(2, 'data.lines')
+            ->assertJsonPath('data.lines.0.receipt.movement.item.sku', 'BULK-B');
+
+        $this->assertDatabaseCount('stock_receipt_batches', 2);
+        $this->assertDatabaseCount('stock_receipt_details', 4);
+    }
+
 }

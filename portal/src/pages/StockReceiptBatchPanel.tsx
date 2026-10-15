@@ -85,6 +85,7 @@ export function StockReceiptBatchPanel({ token }: { token: string | null }) {
       setRequestId(crypto.randomUUID());
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['stock-receipts'] }),
+        queryClient.invalidateQueries({ queryKey: ['stock-receipt-batches'] }),
         queryClient.invalidateQueries({ queryKey: ['stock-list'] }),
         queryClient.invalidateQueries({ queryKey: ['stock-reorder-needs'] }),
         queryClient.invalidateQueries({ queryKey: ['plan-reorder-needs'] }),

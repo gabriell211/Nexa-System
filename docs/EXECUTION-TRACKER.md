@@ -712,3 +712,10 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - O formulário de estoque recebeu modo de nota com múltiplos itens, campos monetários em centavos, busca remota de itens/fornecedores/locais, identificação de operação que muda somente com mudança real do formulário e confirmação humana explícita. O histórico de entradas continua usando o endpoint existente.
 - Cobertura Laravel: dois itens, ordem das linhas, lotes, saldos, auditoria, replay após desativação do fornecedor, rejeição de payload divergente, rollback provocado pela segunda linha, limites 0/31, cadastro de outra empresa, usuário sem permissão, carteira restrita. Cobertura Playwright: uma nota com dois SKUs e dois movimentos, persistidos depois de recarregar a interface.
 - CI e operação externa ainda requerem evidência. Sem hardware, NF-e, rastreamento fiscal, anexos, vinculação a planos de compra, homologação PostgreSQL de concorrência multiworker ou aceite final; NX-099 e NX-286 permanecem PARCIAIS.
+
+## Entrega 50 — histórico agrupado de notas de recebimento (15/10/2026)
+
+- Criada a listagem GET /api/v1/stock/receipt-batches com filtros de referência de documento (q), fornecedor, página e tamanho restritos, com tenant e carteira completa. A listagem traz apenas cabeçalho, data, fornecedor e quantidade de linhas; o detalhe GET por ID recupera suas entradas documentadas, com lotes e destinos em consultas eager-loaded.
+- Portal de estoque mostra pesquisa de notas em lote, paginação e janela de consulta por linha. Ao confirmar uma nota em lote, a lista é invalidada e atualizada sem recarregar a página; lançamentos unitários não aparecem artificialmente como lote.
+- Novos testes Laravel cobrem dois lotes, buscas case-insensitive, paginação, ordenação, fornecedor, isolamento de empresa e limites de validação; o cenário E2E existente foi ampliado para consultar e abrir a nota criada.
+- Nenhuma edição retroativa de nota, exclusão fiscal, vínculo a ordem de compra ou aprovação automática foi introduzido. Estado ainda PARCIAL até integração do CI e homologação fiscal.

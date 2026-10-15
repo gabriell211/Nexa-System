@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, queryString, readableError } from '../api';
 import { PagedEntitySelect } from '../components/PagedEntitySelect';
 import { StockReceiptBatchPanel } from './StockReceiptBatchPanel';
+import { StockReceiptBatchHistoryPanel } from './StockReceiptBatchHistoryPanel';
 import { centsFromBrazilianValue, currencyFromCents } from '../utils/currency';
 import type { Page } from '../types';
 
@@ -204,6 +205,7 @@ export function StockReceiptsPanel({ token }: { token: string | null }) {
         </button>
       </form>
     </div>
+    <StockReceiptBatchHistoryPanel token={token} />
     <StockReceiptBatchPanel token={token} />
   </section>;
 }
