@@ -368,6 +368,7 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       expect(reconciled.status()).toBe(200);
       const bodyReconciled: { data: { items: Array<{
         received_quantity: number; outstanding_quantity: number; cost_divergence: boolean;
+        receipts: Array<{ purchase_receipt_match_id: number }>;
       }> } } = await reconciled.json();
       expect(bodyReconciled.data.items[0]).toMatchObject({
         received_quantity: 1, outstanding_quantity: 1, cost_divergence: true,
@@ -378,9 +379,8 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       await page.getByRole('button', { name: 'Revisar pedido ' + orderId }).click();
       const warehouseReturns = page.getByRole('dialog')
         .getByRole('region', { name: 'Devoluções ao fornecedor' });
-      await warehouseReturns.getByLabel('Recebimento e lote *').selectOption({
-        label: manualSku + ' — ' + invoice + ' · ' + lot + ' ·1 disponíveis',
-      });
+      await warehouseReturns.getByLabel('Recebimento e lote *')
+        .selectOption(String(bodyReconciled.data.items[0].receipts[0].purchase_receipt_match_id));
       await warehouseReturns.getByLabel('Quantidade *').fill('1');
       await warehouseReturns.getByLabel('Motivo da devolução *')
         .fill('Lote físico avariado, devolução autorizada após inspeção');
