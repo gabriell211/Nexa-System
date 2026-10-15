@@ -35,6 +35,13 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Recebimento documentado em múltiplas linhas — incremento 49 (parcial)
+
+- Criada a API autenticada POST /api/v1/stock/receipt-batches e consulta GET /api/v1/stock/receipt-batches/{batch}, usando a infraestrutura do razão de estoque e dos lotes existentes. Uma nota pode ter até 30 linhas com SKU, destino, quantidade, lote, validade e custo próprios; fornecedor, documento e justificativa são comuns.
+- O lote inteiro é persistido em uma transação, com chave única por empresa e UUID, hash canônico da requisição/autor, UUID v5 determinístico por linha, locks de fornecedor e SKUs em ordem fixa e auditoria. Se qualquer linha falhar, movimentações, lotes, detalhes e cabeçalho são revertidos. Repetir UUID e conteúdo retorna o resultado original sem novo saldo, inclusive se o fornecedor for desativado depois. Mudanças com UUID existente são rejeitadas.
+- Interface web adicionada ao formulário de entradas com linhas dinâmicas e seletores paginados. A chave da operação permanece estável em tentativas sem alterações. Testes Laravel verificam atomicidade, idempotência, estados, tenant, carteira e validação; Playwright confere entrada real de duas linhas, histórico e quantidade exata de movimentos. **O resultado de CI do último commit da entrega deve ser verificado antes do merge.**
+- NX-099 e NX-286 ainda **PARCIAIS**: não há importação NF-e XML, verificação fiscal de validade do documento, upload/guarda de notas, controle de ordens de compra ou conferência automática por código de barras. Exige conferência humana do recebimento e migração de banco antes de uso.
+
 ### Entradas documentadas no portal — incremento 48 (parcial)
 
 - A aba **Entradas** do estoque registra recebimento real com fornecedor ativo, item, destino, documento fiscal, lote, quantidade, custo em centavos, validade opcional e justificativa. Os seletores de fornecedor/item/local usam busca remota paginada, sem limites artificiais às primeiras 100 opções.
