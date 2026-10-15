@@ -21,6 +21,7 @@ interface CollectorIncident {
   customer_id:number;customer:{id:number;name:string}|null;
   status:IncidentStatus;code:string;last_heartbeat_at:string;
   detected_at:string;resolved_at:string|null;resolution_reason:string|null;
+  email_accepted_count:number;email_unconfirmed_count:number;
 }
 const incidentStates:Record<IncidentStatus,string> = {
   active:'Sem heartbeat recente',resolved:'Heartbeat restabelecido',closed:'Cadastro/organização desativado',
@@ -132,7 +133,7 @@ export function CollectorsPage() {
         incidents.data.data.length===0?<p>Nenhum incidente registrado para este filtro.</p>:
         <div className="table-wrap"><table>
           <thead><tr><th>Collector</th><th>Cliente</th><th>Estado</th>
-            <th>Último heartbeat anterior</th><th>Detectado</th><th>Encerrado</th></tr></thead>
+            <th>Último heartbeat anterior</th><th>Detectado</th><th>Encerrado</th><th>Notificações</th></tr></thead>
           <tbody>{incidents.data.data.map(incident=><tr key={incident.id}>
             <td>#{incident.collector_agent_id}<small>{incident.collector_id??'—'}</small></td>
             <td>{incident.customer?.name??'—'}</td>
@@ -140,6 +141,8 @@ export function CollectorsPage() {
             <td>{dateOrUnknown(incident.last_heartbeat_at)}</td>
             <td>{dateOrUnknown(incident.detected_at)}</td>
             <td>{dateOrUnknown(incident.resolved_at)}</td>
+            <td>{incident.email_accepted_count} aceita(s) pelo transporte
+              {incident.email_unconfirmed_count>0?`, ${incident.email_unconfirmed_count} sem confirmação`:''}</td>
           </tr>)}</tbody>
         </table></div>}
       {incidents.data&&<div className="pagination">
