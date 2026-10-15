@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Notificações opt-in de incidentes por e-mail — incremento 33 (parcial)
+
+- Avisos iniciais por Laravel Mail somente a owners/admins ativos com e-mail verificado dentro do tenant; escalonamento após 60 minutos (configurável 15..10080) somente a owners.
+- O envio permanece DESABILITADO por padrão e exige ativação separada do monitor de heartbeat. O scheduler avalia o dispatcher a cada cinco minutos.
+- Histórico de tentativas persistente, único por incidente/destinatário/etapa, com estados attempting, accepted, failed ou skipped. Não há reenvio automático após falha ou resultado ambíguo, evitando duplicatas silenciosas.
+- E-mails contêm somente cliente, IDs administrativos e horários; não incluem credenciais, IP, SNMP nem leituras. O backend e portal exibem contagens agregadas sem endereços.
+- Accepted significa apenas retorno sem erro do transporte de e-mail, NUNCA confirmação de entrega real. Mailer log não envia e-mail. Não há testes reais SMTP, DSN, bounce, reinício de scheduler ou homologação física; NX-039/041 continuam PARCIAIS.
+
 ### Alertas administrativos de silêncio do Collector — incremento 32 (parcial)
 
 - Novo monitor administrativo agendado (`nexa:alerts:check-collectors`) detecta **ausência de heartbeat autenticado recebido pela API** após tolerância configurada; **não** conclui que a impressora ou SNMP estão offline. O monitor é explicitamente opt-in via `NEXA_COLLECTOR_HEALTH_ALERTS_ENABLED=true` e `NEXA_COLLECTOR_HEALTH_SILENCE_SECONDS` (60..86400; padrão 300 segundos).

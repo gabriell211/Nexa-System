@@ -5,6 +5,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 final class CollectorHealthIncident extends Model
 {
@@ -22,6 +23,11 @@ final class CollectorHealthIncident extends Model
     public function agent(): BelongsTo
     {
         return $this->belongsTo(CollectorAgent::class, 'collector_agent_id');
+    }
+
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(CollectorIncidentNotification::class,'collector_health_incident_id');
     }
 
     public function customer(): BelongsTo

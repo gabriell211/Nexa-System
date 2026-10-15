@@ -289,3 +289,13 @@ A tarefa só abre alertas para agentes previamente conectados, ativos, com clien
 O portal administrativo em **Agentes de coleta** exibe o incidente ativo, histórico paginado e estado de resolução, respeitando tenant e carteira do técnico. O endpoint `GET /api/v1/collector-health-incidents` aceita `status`, `customer_id`, `collector_agent_id`, `page` e `per_page` validados. O serviço não envia email, SMS ou push e não identifica a causa do silêncio. Agentes ainda não instalados permanecem `no_heartbeat`, sem abrir automaticamente um incidente.
 
 **Não homologado:** scheduler real da implantação, limitação de latência ponta-a-ponta, monitoramento de instalação inicial, notificações para os operadores, recuperação sob queda de energia e estado dos dispositivos físicos. `NX-039/041` seguem PARCIAIS.
+
+## Notificações e escalonamento por e-mail — entrega 33
+
+Configure explicitamente no backend Laravel NEXA_COLLECTOR_HEALTH_ALERTS_ENABLED=true e NEXA_COLLECTOR_NOTIFICATIONS_ENABLED=true, com NEXA_COLLECTOR_ESCALATION_MINUTES=60 (15..10080). Provisione MAIL_MAILER e MAIL_FROM_ADDRESS adequados em ambiente seguro; MAIL_MAILER=log NÃO envia correspondência real. O scheduler precisa executar o comando nexa:alerts:notify-collectors a cada cinco minutos. Sem scheduler ativo, não ocorre notificação automática.
+
+O aviso inicial é destinado somente a administradores/proprietários ativos com e-mail verificado no mesmo tenant; o escalonamento após o prazo é destinado somente a proprietários. Técnicos comuns, destinatários externos e contas não verificadas são excluídos. Até 50 responsáveis elegíveis por etapa podem ser considerados, ordenados por ID. O incidente precisa continuar ativo para ser enviado; nenhum e-mail pode concluir que impressoras estão offline.
+
+Cada tentativa é registrada na tabela collector_incident_notifications com idempotência por incidente/usuário/etapa e auditoria. O status accepted indica que o Laravel Mail terminou sem erro, NÃO garante recebimento na caixa postal. Falhas ficam registradas como transport_failure, sem texto bruto de exceções que possa conter segredos. Um envio com resultado ambíguo não é repetido automaticamente: investigue antes de qualquer tentativa manual. O envio e a gravação não são transacionais entre SMTP e banco, e existe pequena janela de corrida com resolução do incidente.
+
+O portal mostra contagens agregadas aceitas/sem confirmação por incidente e não expõe endereços dos usuários. PENDÊNCIAS: transporte SMTP real, testes de interrupção, DSN, bounces, confirmação de entrega, alertas push, preferências individuais e homologação em campo. NX-039 e NX-041 permanecem PARCIAIS.

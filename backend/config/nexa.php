@@ -12,6 +12,11 @@ return [
         // Detection threshold independent from the UI freshness badge.
         'silence_seconds'=>(int)env('NEXA_COLLECTOR_HEALTH_SILENCE_SECONDS',300),
     ],
+    'collector_notifications'=>[
+        // Explicit opt-in; mail transport must be configured outside source.
+        'enabled'=>(bool)env('NEXA_COLLECTOR_NOTIFICATIONS_ENABLED',false),
+        'escalation_minutes'=>(int)env('NEXA_COLLECTOR_ESCALATION_MINUTES',60),
+    ],
     'telemetry_gap' => [
         // Disabled until explicitly enabled by the installation operator.
         'enabled' => (bool) env('NEXA_TELEMETRY_GAP_ENABLED', false),
