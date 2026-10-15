@@ -513,3 +513,9 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 - Proteção na rota do backend e `CustomerPortfolio` impede leitura cruzada entre empresa, cliente e carteira. Paginação 1..100 e índice `printer_id,collected_at,id` impedem consultas sem limite.
 - Testes feature cobrem valores acima de 2^53, empates, coleções fora de ordem, intervalo de calendário inclusivo, limites de paginação e isolamento de multi-tenancy/carteira. E2E abre modal num cadastro real ainda sem amostras.
 - Não equivale a contador efetivamente consultado por SNMP/USB em campo, faturamento automático, níveis de suprimento, extrapolação de produção ou aceite dos demais itens NX/QA.
+
+## Prévia não faturável de incrementos observados (15/10/2026 — entrega 42)
+
+- NX de medições, monitoramento, produção/fechamento e faturamento permanecem **PARCIAIS**: implementada somente uma prévia conservadora, segregada por carteira e empresa, da **diferença não negativa entre amostras adjacentes válidas** dentro de até 31 dias UTC.
+- Quando há reset, canal não informado, dados contraditórios no mesmo timestamp ou menos de dois pontos comparáveis, o endpoint não inventa volume. Indica lacunas e inconclusões por canal; diferenças válidas são contadores observados, não volume total certificado.
+- Nenhum contrato, preço, fatura ou lançamento de estoque é criado ou atualizado. API marca `billing_ready=false` sem exceções. Testes SQLite/PostgreSQL e navegador de prévia vazia dão evidência parcial, **não** homologação de impressoras reais nem dos 62 cenários QA.
