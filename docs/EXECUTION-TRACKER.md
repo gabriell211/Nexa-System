@@ -569,3 +569,11 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Alertas são **registros administrativos dentro do Nexa System**, não emails/push. Scheduler da instalação deve estar funcionando para atualização; sem agendamento efetivo, incidentes não surgem automaticamente.
 - Silêncio do heartbeat não prova impressora offline, fim do processo nem perda de credenciais; o diagnóstico precisa cruzar outros sinais. Agente nunca conectado aparece como `no_heartbeat` na lista, mas não é alertado por ausência desde a criação. Falta observabilidade no período de instalação.
 - Nenhum teste real de implantação em rede/Windows/Linux/macOS ou integração com impressoras físicas. `NX-039/041` e QA ponta-a-ponta permanecem PARCIAIS.
+
+## Entrega 33 — notificações administrativas por e-mail, com escalonamento (14/10/2026)
+
+- Mailer de texto CollectorHealthIncidentMail, dispatcher CollectorIncidentNotifier e comando nexa:alerts:notify-collectors, agendado a cada cinco minutos com prevenção de sobreposição. Opt-in NEXA_COLLECTOR_NOTIFICATIONS_ENABLED=false por padrão, exige monitor habilitado.
+- Primeiro aviso aos owners/admins ativos e e-mails verificados do tenant; escalonamento após NEXA_COLLECTOR_ESCALATION_MINUTES (15..10080, padrão 60) apenas a owners. Registro único por incidente, destinatário e estágio, status attempting/accepted/failed/skipped.
+- Persistência e auditoria de cada resultado, com falhas sanitizadas e sem retransmissão automática sob resultado ambíguo. API de histórico fornece apenas contagens agregadas por incidente dentro do tenant/carteira; portal exibe aceite do transporte, não recebimento no inbox.
+- Testes Laravel Mail fake: opt-in, papéis/contas verificadas, idempotência, tempo de escalonamento, recuperação/encerramento, erros sanitizados e autorização.
+- Limitações: mailer log não entrega correspondência; sem validação SMTP real ou bounces, sem replay seguro, sem transação distribuída SMTP/DB, sem ensaio de queda de energia, scheduler real ou impressoras físicas. NX-039/041 e QA integrais continuam PARCIAIS.
