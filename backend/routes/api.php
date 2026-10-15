@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\V1\StockLotController;
 use App\Http\Controllers\Api\V1\StockSupplierController;
 use App\Http\Controllers\Api\V1\StockCompatibilityController;
 use App\Http\Controllers\Api\V1\StockDocumentedReceiptController;
+use App\Http\Controllers\Api\V1\StockReceiptBatchController;
 use App\Http\Controllers\Api\V1\StockCountController;
 use App\Http\Controllers\Api\V1\StockReorderPolicyController;
 use App\Http\Controllers\Api\V1\StockReplenishmentPlanController;
@@ -68,6 +69,7 @@ $registerBackoffice = static function (): void {
         Route::get('/stock/items', [StockItemController::class, 'index']);
         Route::get('/stock/suppliers', [StockSupplierController::class, 'index']);
         Route::get('/stock/receipts', [StockDocumentedReceiptController::class, 'index']);
+        Route::get('/stock/receipt-batches/{batch}', [StockReceiptBatchController::class, 'show']);
         Route::get('/stock/items/{item}/compatibilities', [StockCompatibilityController::class, 'index']);
         Route::get('/stock/items/{item}/compatibility-check', [StockCompatibilityController::class, 'check']);
         Route::get('/stock/operators', StockOperatorController::class);
@@ -86,6 +88,7 @@ $registerBackoffice = static function (): void {
         Route::post('/stock/suppliers', [StockSupplierController::class, 'store']);
         Route::patch('/stock/suppliers/{supplier}', [StockSupplierController::class, 'update']);
         Route::post('/stock/receipts', [StockDocumentedReceiptController::class, 'store']);
+        Route::post('/stock/receipt-batches', [StockReceiptBatchController::class, 'store']);
         Route::post('/stock/items/{item}/compatibilities', [StockCompatibilityController::class, 'store']);
         Route::delete('/stock/items/{item}/compatibilities/{compatibility}', [StockCompatibilityController::class, 'destroy']);
         Route::post('/stock/locations', [StockLocationController::class, 'store']);
