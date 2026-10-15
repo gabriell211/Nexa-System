@@ -5,6 +5,7 @@ namespace App\Services;
 
 use App\Models\StockItem;
 use App\Models\StockReplenishmentPlan;
+use App\Models\StockPurchaseOrderLine;
 use App\Models\StockReplenishmentPlanItem;
 use App\Models\StockShipment;
 use App\Models\Tenant;
@@ -68,8 +69,15 @@ final class StockPlanShipmentService
                 ->where('replenishment_plan_item_id', $lineId)
                 ->selectRaw('COALESCE(SUM(quantity - cancelled_quantity), 0) AS total')
                 ->value('total');
+            $purchased = (int) StockPurchaseOrderLine::query()
+                ->join('stock_purchase_orders as orders', 'orders.id', '=', 'stock_purchase_order_lines.purchase_order_id')
+                ->where('stock_purchase_order_lines.tenant_id', $tenantId)
+                ->where('orders.tenant_id', $tenantId)
+                ->where('stock_purchase_order_lines.plan_line_id', $lineId)
+                ->where('orders.status', 'approved')
+                ->sum('stock_purchase_order_lines.quantity');
             $quantity = (int) $data['quantity'];
-            if ($quantity > (int) $line->quantity - $committed) {
+            if ($quantity > (int) $line->quantity - $committed - $purchased) {
                 throw ValidationException::withMessages([
                     'quantity' => 'A quantidade excede o saldo aprovado ainda não reservado.',
                 ]);
