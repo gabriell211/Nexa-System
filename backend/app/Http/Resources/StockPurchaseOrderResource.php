@@ -4,12 +4,19 @@ declare(strict_types=1);
 namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
+use App\Support\StockPurchaseFulfillment;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 final class StockPurchaseOrderResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        $lineSummaries = $this->relationLoaded('lines')
+            ? $this->lines->mapWithKeys(static fn ($line): array => [
+                $line->id => StockPurchaseFulfillment::line($line),
+            ])
+            : null;
+
         return [
             'id' => (int) $this->id,
             'request_id' => $this->request_id,
@@ -33,15 +40,22 @@ final class StockPurchaseOrderResource extends JsonResource
                 static fn ($line): int => $line->quantity * $line->unit_cost_cents
             )),
             'items_count' => $this->whenCounted('lines'),
+            'fulfillment' => $this->whenLoaded('lines', fn () =>
+                StockPurchaseFulfillment::order($lineSummaries->values())),
             'items' => $this->whenLoaded('lines', fn () => $this->lines->map(
-                static fn ($line): array => [
+                fn ($line): array => [
                     'id' => (int) $line->id,
                     'plan_line_id' => (int) $line->plan_line_id,
                     'quantity' => (int) $line->quantity,
                     'unit_cost_cents' => (int) $line->unit_cost_cents,
                     'line_total_cents' => $line->quantity * $line->unit_cost_cents,
-                    'received_quantity' => (int) $line->receiptMatches->sum('quantity'),
-                    'outstanding_quantity' => max(0, (int) $line->quantity - (int) $line->receiptMatches->sum('quantity')),
+                    'received_quantity' => $lineSummaries[$line->id]['gross_received_quantity'],
+                    'gross_received_quantity' => $lineSummaries[$line->id]['gross_received_quantity'],
+                    'returned_quantity' => $lineSummaries[$line->id]['returned_quantity'],
+                    'pending_return_quantity' => $lineSummaries[$line->id]['pending_return_quantity'],
+                    'retained_quantity' => $lineSummaries[$line->id]['retained_quantity'],
+                    'replacement_needed_quantity' => $lineSummaries[$line->id]['replacement_needed_quantity'],
+                    'outstanding_quantity' => $lineSummaries[$line->id]['outstanding_quantity'],
                     'cost_divergence' => $line->receiptMatches->contains(
                         static fn ($match): bool => (int) $match->received_unit_cost_cents !== (int) $line->unit_cost_cents
                     ),
