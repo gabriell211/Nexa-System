@@ -14,6 +14,7 @@ final class StockReceiptBatchResource extends JsonResource
             'id' => (int) $this->id,
             'request_id' => $this->request_id,
             'supplier_id' => (int) $this->supplier_id,
+            'supplier' => $this->whenLoaded('supplier', static fn () => $this->supplier?->only(['id', 'code', 'name'])),
             'invoice_reference' => $this->invoice_reference,
             'line_count' => (int) $this->line_count,
             'created_at' => $this->created_at?->toIso8601String(),
