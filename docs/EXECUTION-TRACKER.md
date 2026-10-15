@@ -577,3 +577,16 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Persistência e auditoria de cada resultado, com falhas sanitizadas e sem retransmissão automática sob resultado ambíguo. API de histórico fornece apenas contagens agregadas por incidente dentro do tenant/carteira; portal exibe aceite do transporte, não recebimento no inbox.
 - Testes Laravel Mail fake: opt-in, papéis/contas verificadas, idempotência, tempo de escalonamento, recuperação/encerramento, erros sanitizados e autorização.
 - Limitações: mailer log não entrega correspondência; sem validação SMTP real ou bounces, sem replay seguro, sem transação distribuída SMTP/DB, sem ensaio de queda de energia, scheduler real ou impressoras físicas. NX-039/041 e QA integrais continuam PARCIAIS.
+
+## Entrega 34 — orçamento persistente de e-mails e reconciliação de devoluções (14/10/2026)
+
+### Implementação
+- Novo lock serializado em banco `collector_notification_rate_locks` protege reservas de tentativas concorrentes. Cotas de até 50 por execução, 20/tenant/hora e 100 globais/hora por padrão, validadas por comando e serviço, configuradas exclusivamente por ambiente de backend. Janela de 60 min depende de timestamps de reserva persistidos; tentativas `failed/attempting/skipped/returned/complaint` contam conservadoramente.
+- Em falta de capacidade, reserva não é criada e o aviso permanece apto a envio posterior quando o orçamento voltar; comandos imprimem total `deferred`. Antes da reserva verifica novamente estado de incidente, agente, cliente, tenant, papel e e-mail confirmado do destinatário.
+- Comando local `nexa:alerts:reconcile-collector-mail` permite classificar e auditar manualmente um envio anteriormente aceito como `returned` (hard/soft bounce) ou `complaint` após confirmação explícita de revisão. Não há retry; alterações repetidas são recusadas.
+- API e portal mostram apenas contagens por categoria, sem emails ou payloads; testes incluem orçamento por tenant e global, janela móvel, bloqueio por execução, falha contabilizada, entrada inválida e reconciliação.
+- O envio permanece DESATIVADO por padrão; `MAIL_MAILER=log` nunca confirma envio SMTP real.
+
+### Pendências de aceite
+- Sem ingestão autenticada de DSN/webhooks, sem prova de entrega real, sem reenvio após revisão, sem avaliação de concorrência em múltiplos processos com transporte SMTP real. Cotas globais se aplicam somente aos workers no mesmo banco de dados.
+- Teste unitário/feature não significa homologação de fornecedor de e-mail; precisa de infraestrutura e serviço operacional, medições em produção e limites de spam. NX-039/041 permanecem PARCIAIS.
