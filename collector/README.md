@@ -356,3 +356,18 @@ Cadastre no Resend o endpoint HTTPS `POST https://seu-backend.example/api/v1/web
 Cada tentativa de e-mail originária de Resend persiste o `provider_email_id` (UUID). A assinatura do evento não autoriza atribuir fatos a outro cliente: o serviço consulta **somente o UUID exato** da tentativa original ou reenvio. O ID Svix é armazenado unicamente como hash SHA-256 para deduplicar redelivery, mesmo após novas execuções do processo. Eventos fora de ordem nunca revertem `returned` ou `complaint` para `delivered`; reclamação prevalece sobre devolução. Eventos desconhecidos ou sem vínculo válido são reconhecidos sem alterar status, com resultado sanitizado. Auditoria guarda código de evento, estado anterior/final, tenant e tentativa identificada, nunca nome, endereço, mensagem de bounce ou corpo de webhook.
 
 **Atenção operacional:** o Resend pode disparar o webhook antes de o UUID da resposta de envio ser gravado na tentativa. Nesse caso o evento é classificado `unmatched`, sem retentativa automática desta versão: o operador deve investigar e solicitar novo replay válido do webhook no painel do provedor, com novo ID de evento. Falhas HTTP podem ser ambíguas; idempotency key limita repetições na API, mas o Nexa **não reexecuta automaticamente** envios com status incerto. O retorno de evento `delivered` confirma apenas o que o provedor reportou, não abertura/leitura por destinatário. Sem testes reais de Resend, DNS/domínio e webhook de produção; NX-039/041 permanecem PARCIAIS.
+
+## Reconciliação de eventos assinados recebidos antes do UUID — entrega 37
+
+Quando um evento do Resend assinado corretamente chega **antes de o backend salvar o `provider_email_id`**, o registro permanece como `pending` em `collector_mail_webhook_events`. O backend conserva somente o UUID do provedor, tipo de evento, hash único do ID Svix e categoria de devolução da lista permitida. **Não armazena** o JSON bruto, e-mail, assunto, erro completo ou detalhes do bounce. Eventos recebidos com assinatura inválida continuam recusados antes de qualquer escrita.
+
+Depois que a API Resend confirma o UUID de um envio original ou reenvio, o backend tenta aplicar imediatamente os eventos pendentes para aquele UUID. Uma tarefa complementar `php artisan nexa:mail:reconcile-resend-webhooks` é agendada de 1 em 1 minuto (somente quando `NEXA_COLLECTOR_MAIL_DRIVER=resend` e `NEXA_RESEND_WEBHOOKS_ENABLED=true`). Ela verifica correspondências já existentes, com consulta indexada e lote limitado. Eventos sem UUID conhecido **não bloqueiam** os de outras empresas. O comando não envia nenhuma mensagem.
+
+Configurações de backend:
+```dotenv
+NEXA_RESEND_RECONCILE_BATCH=100
+NEXA_RESEND_PENDING_HOURS=72
+```
+São aceitos lotes 1..500 e retenção de pendências 1..168 horas. Depois de expirar uma pendência não correlacionada, o sistema marca `expired`, **retém o hash** e não aplica automaticamente o evento se o UUID aparecer só após o prazo. Investigue atrasos operacionais antes de ajustar a retenção. Mantenha o Laravel Scheduler realmente ativo; sem ele, somente a tentativa imediata ocorre. Eventos entregues com atraso após reinício podem ser recuperados sem exigir replay do webhook pelo provedor quando dentro da janela.
+
+**Limites:** não é fila de mensagens genérica, não confirma recebimento em caixa postal nem reenvia e-mails. O estado `delivered` é uma informação assinada reportada pelo provedor. Persistência de hashes e metadados exige políticas futuras de retenção e limpeza auditada; falta carga concorrente de múltiplos processos, métricas centrais de atraso e testes com Resend em produção. NX-039/NX-041 seguem PARCIAIS.

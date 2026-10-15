@@ -19,6 +19,8 @@ return [
         'resend_api_key'=>env('NEXA_RESEND_API_KEY'),
         'resend_webhooks_enabled'=>(bool)env('NEXA_RESEND_WEBHOOKS_ENABLED',false),
         'resend_webhook_secret'=>env('NEXA_RESEND_WEBHOOK_SECRET'),
+        'resend_reconcile_batch'=>(int)env('NEXA_RESEND_RECONCILE_BATCH',100),
+        'resend_pending_hours'=>(int)env('NEXA_RESEND_PENDING_HOURS',72),
         'escalation_minutes'=>(int)env('NEXA_COLLECTOR_ESCALATION_MINUTES',60),
         'max_per_run'=>(int)env('NEXA_COLLECTOR_MAIL_MAX_PER_RUN',50),
         'max_per_tenant_hour'=>(int)env('NEXA_COLLECTOR_MAIL_MAX_PER_TENANT_HOUR',20),

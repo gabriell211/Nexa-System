@@ -80,13 +80,13 @@ final class CollectorResendWebhookTest extends TestCase
         ],$raw);
     }
 
-    private function sentOriginal(): CollectorIncidentNotification
+    private function sentOriginal(string $expected='accepted'): CollectorIncidentNotification
     {
         Http::fake(['https://api.resend.com/emails'=>Http::response(['id'=>self::EMAIL_ID],200)]);
         Mail::fake();
         $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
         $notice=CollectorIncidentNotification::query()->firstOrFail();
-        $this->assertSame('accepted',$notice->status);
+        $this->assertSame($expected,$notice->status);
         $this->assertSame(self::EMAIL_ID,$notice->provider_email_id);
         Mail::assertNothingSent();
         Http::assertSent(fn($request)=>
@@ -178,6 +178,124 @@ final class CollectorResendWebhookTest extends TestCase
         $this->assertSame('accepted',$notice->fresh()->status);
         $this->assertSame(0,DB::table('audit_entries')
             ->where('action','collector.notice.provider_returned')->count());
+    }
+
+    public function test_signed_early_delivery_is_applied_after_original_uuid_is_saved(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-15T12:00:00Z'));
+        $this->enabled();
+        [$tenant,$agent,$incident,$owner]=$this->fixture();
+        // The provider webhook arrives before the Resend HTTP response returns
+        // and before the app persists its message UUID.
+        $this->webhook($this->event('email.delivered'),'before_response')
+            ->assertOk()->assertJsonPath('result','unmatched');
+        $pending=DB::table('collector_mail_webhook_events')->first();
+        $this->assertSame('pending',$pending->outcome);
+        $this->assertSame(self::EMAIL_ID,$pending->provider_email_id);
+        $this->assertStringNotContainsString('private@example.test',json_encode($pending));
+
+        $notice=$this->sentOriginal('delivered');
+        $this->assertSame('delivered',$notice->fresh()->status);
+        $this->assertNotNull($notice->fresh()->provider_delivered_at);
+        $this->assertSame('applied',DB::table('collector_mail_webhook_events')->first()->outcome);
+        $this->webhook($this->event('email.delivered'),'before_response')
+            ->assertOk()->assertJsonPath('result','duplicate');
+        $this->assertSame(1,DB::table('audit_entries')
+            ->where('action','collector.notice.provider_delivered')->count());
+    }
+
+    public function test_unmatched_event_repaired_by_scheduled_sweep_after_delayed_uuid_save(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-15T12:00:00Z'));
+        $this->enabled();
+        [$tenant,$agent,$incident,$owner]=$this->fixture();
+        $notice=CollectorIncidentNotification::query()->create([
+            'tenant_id'=>$tenant->id,'collector_health_incident_id'=>$incident->id,
+            'recipient_user_id'=>$owner->id,'stage'=>'initial',
+            'status'=>'attempting','attempted_at'=>now('UTC'),
+        ]);
+        $this->webhook($this->event('email.bounced',self::EMAIL_ID,[
+            'bounce'=>['type'=>'Permanent','message'=>'private@example.test'],
+        ]),'early_bounce')->assertOk()->assertJsonPath('result','unmatched');
+        // An unrelated earlier pending event cannot starve the batch.
+        $this->webhook($this->event('email.complained',
+            'aa89ef10-c0b1-4d9a-8e12-235689ae0999'
+        ),'unrelated_bounce')->assertOk()->assertJsonPath('result','unmatched');
+        $notice->update(['status'=>'accepted','provider_email_id'=>self::EMAIL_ID]);
+        config()->set('nexa.collector_notifications.resend_reconcile_batch',1);
+        $this->artisan('nexa:mail:reconcile-resend-webhooks')->assertSuccessful();
+        $this->assertSame('returned',$notice->fresh()->status);
+        $this->assertSame('hard_bounce',$notice->fresh()->error_category);
+        $this->assertDatabaseHas('collector_mail_webhook_events',[
+            'event_hash'=>hash('sha256','resend:early_bounce'),'outcome'=>'applied',
+        ]);
+        $this->assertDatabaseHas('collector_mail_webhook_events',[
+            'event_hash'=>hash('sha256','resend:unrelated_bounce'),'outcome'=>'pending',
+        ]);
+        $this->artisan('nexa:mail:reconcile-resend-webhooks')->assertSuccessful();
+        $this->assertSame(1,DB::table('audit_entries')
+            ->where('action','collector.notice.provider_returned')->count());
+    }
+
+    public function test_verified_early_replay_event_is_reconciled_to_replay_not_original(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-15T12:00:00Z'));
+        $this->enabled();
+        [$tenant,$agent,$incident,$owner]=$this->fixture();
+        $original=CollectorIncidentNotification::query()->create([
+            'tenant_id'=>$tenant->id,'collector_health_incident_id'=>$incident->id,
+            'recipient_user_id'=>$owner->id,'stage'=>'initial',
+            'status'=>'failed','attempted_at'=>now('UTC')->subHours(2),
+        ]);
+        $this->webhook($this->event('email.complained',self::REPLAY_ID),'early_replay')
+            ->assertOk()->assertJsonPath('result','unmatched');
+        Http::fake(['https://api.resend.com/emails'=>Http::response(['id'=>self::REPLAY_ID],200)]);
+        $this->artisan('nexa:alerts:replay-collector-mail',[
+            'notification_id'=>(string)$original->id,
+            '--review-reference'=>'CASE-123',
+            '--confirm-not-accepted'=>true,
+        ])->assertSuccessful();
+        $replay=CollectorNotificationReplay::query()->firstOrFail();
+        $this->assertSame('complaint',$replay->fresh()->status);
+        $this->assertSame('failed',$original->fresh()->status);
+        $this->assertDatabaseHas('collector_mail_webhook_events',[
+            'event_hash'=>hash('sha256','resend:early_replay'),'outcome'=>'applied',
+            'target_type'=>'replay','target_id'=>$replay->id,
+        ]);
+    }
+
+    public function test_pending_events_expire_without_reprocessing_duplicate_or_saving_payload(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-15T12:00:00Z'));
+        $this->enabled();
+        $this->fixture();
+        $this->webhook($this->event('email.bounced'),'old_pending')
+            ->assertOk()->assertJsonPath('result','unmatched');
+        $this->travel(73)->hours();
+        $this->artisan('nexa:mail:reconcile-resend-webhooks')->assertSuccessful();
+        $this->assertDatabaseHas('collector_mail_webhook_events',[
+            'event_hash'=>hash('sha256','resend:old_pending'),
+            'outcome'=>'expired','provider_email_id'=>self::EMAIL_ID,
+        ]);
+        $this->webhook($this->event('email.bounced'),'old_pending')
+            ->assertOk()->assertJsonPath('result','duplicate');
+        $this->assertSame(1,DB::table('collector_mail_webhook_events')->count());
+    }
+
+    public function test_reconciliation_is_disabled_and_fails_closed_on_invalid_bounds(): void
+    {
+        $this->enabled();
+        $this->fixture();
+        config()->set('nexa.collector_notifications.resend_webhooks_enabled',false);
+        $this->artisan('nexa:mail:reconcile-resend-webhooks')->assertSuccessful();
+        config()->set('nexa.collector_notifications.resend_webhooks_enabled',true);
+        foreach (['resend_reconcile_batch'=>0,'resend_pending_hours'=>169] as $key=>$value) {
+            config()->set('nexa.collector_notifications.'.$key,$value);
+            $this->artisan('nexa:mail:reconcile-resend-webhooks')->assertFailed();
+            config()->set('nexa.collector_notifications.'.$key,
+                $key==='resend_reconcile_batch'?100:72);
+        }
+        $this->assertSame(0,DB::table('collector_mail_webhook_events')->count());
     }
 
     public function test_disabled_or_invalid_secret_fails_closed_before_processing(): void
