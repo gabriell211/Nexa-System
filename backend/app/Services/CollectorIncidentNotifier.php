@@ -178,6 +178,14 @@ final class CollectorIncidentNotifier
                     $stage
                 ),'nexa-collector-notice-'.$noticeId);
                 $this->complete($noticeId,'accepted',$now,$providerId);
+                if ($providerId!==null) {
+                    try {
+                        app(ResendWebhookProcessor::class)->reconcileForProviderEmailId($providerId);
+                     catch (\Throwable $error) {
+                        // A scheduled reconciliation sweep repairs transient DB races.
+                        logger()->warning('Collector provider event reconciliation deferred');
+                    }
+                }
                 $stats['accepted']++;
             } catch (\Throwable $error) {
                 // Never persist raw transport errors: SMTP exceptions can
