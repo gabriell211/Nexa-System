@@ -22,6 +22,8 @@ final class StockReceiptResource extends JsonResource
                 'destination_location_id'=>$this->movement->destination_location_id,
                 'item'=>$this->movement->relationLoaded('item')
                     ? $this->movement->item?->only(['id','sku','name']):null,
+                'destination'=>$this->movement->relationLoaded('destination')
+                    ? $this->movement->destination?->only(['id','name']):null,
             ]),
         ];
     }

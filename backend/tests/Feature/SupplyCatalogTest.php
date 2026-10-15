@@ -124,7 +124,11 @@ final class SupplyCatalogTest extends TestCase
         $this->withToken($token)->postJson('/api/v1/stock/receipts',$payload)
             ->assertCreated()->assertJsonPath('data.id',$first);
         $this->withToken($token)->getJson('/api/v1/stock/receipts')
-            ->assertOk()->assertJsonCount(1,'data');
+            ->assertOk()->assertJsonCount(1,'data')
+            ->assertJsonPath('data.0.supplier.code','DISTR-01')
+            ->assertJsonPath('data.0.movement.destination.id',$location)
+            ->assertJsonPath('data.0.movement.destination.name','Depósito A')
+            ->assertJsonPath('data.0.movement.item.sku','TK-001');
         $this->withToken($token)->postJson('/api/v1/stock/receipts',[
             ...$payload,'unit_cost_cents'=>9999,
         ])->assertUnprocessable();

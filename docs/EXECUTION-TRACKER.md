@@ -696,3 +696,11 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Serviço transacional bloqueia a linha de fornecedor para atualização, audita alterações reais e mantém todos os históricos: não há DELETE nem remoção de notas e lotes. A criação de recebimentos documentados também bloqueia o fornecedor ativo, coordenando a checagem com desativações concorrentes.
 - Portal Estoque ganhou aba Fornecedores com busca, filtro, cadastro, edição e ativação/desativação, usando sessão e CSRF existentes. Testes API cobrem filtro, paginação, atualização, no-op sem nova auditoria, validação, acesso de tenant estrangeiro, papéis/carteira e recusa de documento novo com fornecedor inativo; E2E desktop percorre a jornada de cadastro até desativação.
 - Status de validação: **a confirmar no CI do PR da entrega 47**. Não estão cobertos ainda a corrida PostgreSQL entre recebimento e desativação, fornecedores reais, pedidos de compra, importação de catálogos e homologação fiscal. NX-099/NX-284/NX-285 permanecem parciais, e todos os 324 requisitos/62 cenários continuam sem aceite integral.
+
+## Entrega 48 — registro de entradas documentadas no portal (15/10/2026)
+
+- A UI de estoque ganhou aba de **Entradas** com seleção remota paginada de fornecedor ativo, item e local ativos, além de nota, lote, validade UTC, custo unitário em centavos inteiros, quantidade e justificativa. O operador confirma o recebimento físico antes de enviar a transação existente na API.
+- Cada edição de campo gera novo UUID, e novas tentativas com os dados intactos preservam o UUID após resposta incerta. Na confirmação, saldo/histórico são atualizados e o formulário reinicia; a UI não inventa produção, compra ou entrada.
+- API de histórico agora inclui o nome do destino já carregado via eager loading; teste Laravel garante escopo e retorno. E2E Chromium cria cadastros reais de teste, registra entrada com lote e custo, valida histórico, incremento unitário de movimento/nota e persistência após recarga.
+- Refatorado o parser compartilhado de moeda para trabalhar com centavos inteiros sem floats na leitura do campo.
+- A validação CI do PR ainda está pendente. Requisitos NX-099, NX-101 e NX-286 seguem PARCIAIS: faltam entrada em massa, integração fiscal, anexos, conciliação e homologação em campo.

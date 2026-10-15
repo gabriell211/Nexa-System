@@ -6,10 +6,12 @@ import { StockCountsPanel } from './StockCountsPanel';
 import { ReorderNeedsPanel } from './ReorderNeedsPanel';
 import { ReplenishmentPlansPanel } from './ReplenishmentPlansPanel';
 import { StockSuppliersPanel } from './StockSuppliersPanel';
+import { StockReceiptsPanel } from './StockReceiptsPanel';
+import { centsFromBrazilianValue, currencyFromCents } from '../utils/currency';
 import type { Customer, Page } from '../types';
 
 type Kind = 'receipt' | 'transfer' | 'issue';
-type Section = 'balances' | 'reorder' | 'planning' | 'movements' | 'lots' | 'counts' | 'items' | 'locations' | 'suppliers';
+type Section = 'balances' | 'reorder' | 'planning' | 'movements' | 'lots' | 'counts' | 'items' | 'locations' | 'suppliers' | 'receipts';
 interface LotPosition { id:number; lot_id:number; item_id:number; item_sku:string; item_name:string; location_name:string; quantity:number; expires_on:string|null; expired:boolean; lot_number:string; unit_cost_cents:number; receipt_detail_id:number }
 interface StockItem { id: number; sku: string; name: string; category: string; unit: string; active: boolean }
 interface StockLocation {
@@ -44,15 +46,6 @@ function Pager({ value, onChange }: {
 }
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <div className="stock-field"><label>{label}{children}</label></div>;
-}
-
-function centsFromBrazilianValue(value: string): number | null {
-  if (!value.trim()) return null;
-  const normalized=value.trim().replace(',', '.');
-  if (!/^[0-9]{1,8}(?:\.[0-9]{1,2})?$/.test(normalized)) return null;
-  const [whole, fractional='']=normalized.split('.');
-  const cents=Number(whole)*100+Number(fractional.padEnd(2,'0'));
-  return Number.isSafeInteger(cents)&&cents<=1000000000 ? cents : null;
 }
 
 function NewItem({ token, onCreated }: { token: string | null; onCreated: () => Promise<void> }) {
@@ -256,7 +249,7 @@ export function InventoryPage({token, role, userId}: {
   const listings = {
     balances: '/stock/balances', movements: '/stock/movements', lots:'/stock/lots',
     reorder: '/stock/reorder-needs', planning: '/stock/replenishment-plans', counts: '/stock/counts',
-    items: '/stock/items', locations: '/stock/locations', suppliers: '/stock/suppliers',
+    items: '/stock/items', locations: '/stock/locations', suppliers: '/stock/suppliers', receipts: '/stock/receipts',
   };
   const listing = useQuery({
     queryKey: ['stock-list', section, page],
@@ -264,7 +257,7 @@ export function InventoryPage({token, role, userId}: {
       const url = listings[section] + queryString({page,per_page:25});
       return api<Page<Balance | Movement | LotPosition | StockItem | StockLocation>>(url, token);
     },
-    enabled: section !== 'counts' && section !== 'reorder' && section !== 'planning' && section !== 'suppliers',
+    enabled: section !== 'counts' && section !== 'reorder' && section !== 'planning' && section !== 'suppliers' && section !== 'receipts',
   });
   async function refresh() {
     setNotice('Operação registrada e auditada com sucesso.');
@@ -279,9 +272,9 @@ export function InventoryPage({token, role, userId}: {
       <p>Entradas, transferências e baixas por posição, com saldos independentes e histórico auditável.</p>
     </div><Warehouse size={36} color="#397cf7"/></div>
     <nav className="stock-tabs" aria-label="Gestão do estoque">
-      {(['balances','reorder','planning','lots','movements','counts','items','locations','suppliers'] as Section[]).map(value =>
+      {(['balances','reorder','planning','lots','movements','counts','items','locations','suppliers','receipts'] as Section[]).map(value =>
         <button key={value} className={'organization-tab' + (section===value?' selected':'')} onClick={()=>change(value)}>
-          {({balances:'Saldos',reorder:'Necessidades',planning:'Planejamento',lots:'Lotes',movements:'Movimentações',counts:'Contagens',items:'Itens',locations:'Locais',suppliers:'Fornecedores'} as Record<Section,string>)[value]}
+          {({balances:'Saldos',reorder:'Necessidades',planning:'Planejamento',lots:'Lotes',movements:'Movimentações',counts:'Contagens',items:'Itens',locations:'Locais',suppliers:'Fornecedores',receipts:'Entradas'} as Record<Section,string>)[value]}
         </button>)}
     </nav>
     {notice && <p role="status" className="notice success">{notice}</p>}
@@ -289,7 +282,8 @@ export function InventoryPage({token, role, userId}: {
     {section === 'reorder' && <ReorderNeedsPanel token={token} role={role} />}
     {section === 'planning' && <ReplenishmentPlansPanel token={token} role={role} userId={userId} />}
     {section === 'suppliers' && <StockSuppliersPanel token={token} />}
-    {section !== 'counts' && section !== 'reorder' && section !== 'planning' && section !== 'suppliers' && <section className="data-card stock-listing">
+    {section === 'receipts' && <StockReceiptsPanel token={token} />}
+    {section !== 'counts' && section !== 'reorder' && section !== 'planning' && section !== 'suppliers' && section !== 'receipts' && <section className="data-card stock-listing">
       {listing.isPending ? <div className="loading">Carregando estoque...</div> :
         listing.error ? <p role="alert" className="notice error">{readableError(listing.error)}</p> :
         listing.data.data.length===0 ? <div className="empty-state"><Package size={30}/><p>Nenhum registro nesta categoria.</p></div> :
@@ -314,7 +308,7 @@ export function InventoryPage({token, role, userId}: {
                 <td>{lot.lot_number}</td><td>{lot.location_name}</td>
                 <td><strong>{lot.quantity.toLocaleString('pt-BR')}</strong></td>
                 <td>{lot.expires_on ?? 'Indeterminada'} {lot.expired ? '· VENCIDO' : ''}</td>
-                <td>{new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(lot.unit_cost_cents/100)}</td>
+                <td>{currencyFromCents(lot.unit_cost_cents)}</td>
               </tr>;
             }
             if (section==='movements') {
@@ -337,7 +331,7 @@ export function InventoryPage({token, role, userId}: {
           })}</tbody></table></div>}
       {!listing.isPending && !listing.error && <Pager value={listing.data} onChange={setPage}/>}
     </section>}
-    {section !== 'counts' && section !== 'reorder' && section !== 'planning' && section !== 'suppliers' && <div className="stock-forms">
+    {section !== 'counts' && section !== 'reorder' && section !== 'planning' && section !== 'suppliers' && section !== 'receipts' && <div className="stock-forms">
       <MoveStock token={token} onCreated={refresh}/>
       <NewItem token={token} onCreated={refresh}/>
       <NewLocation token={token} onCreated={refresh}/>

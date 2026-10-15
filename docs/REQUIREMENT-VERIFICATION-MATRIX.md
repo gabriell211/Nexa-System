@@ -130,9 +130,9 @@
 | NX-102 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Bloqueio de saldo negativo e de consumo concorrente da mesma unidade; reservas para chamados e reposições. |
 | NX-103 | Estoque, movimentação e reposição | PARCIAL — contagem agregada com segunda aprovação e ajuste no razão; perdas de lote, devoluções e reconciliação física pendentes | Inventário físico, ajuste supervisionado, perdas, baixas, devoluções e histórico contábil de estoque. |
 | NX-104 | Estoque, movimentação e reposição | PARCIAL — políticas e necessidades por item/local; sem pedido de compra ou aceite operacional | Controle de estoque mínimo, crítico, segurança e sugestão de compra. |
-| NX-105 | Estoque, movimentação e reposição | NÃO COMPROVADO | Programação de reposição por intervalo, clientes, modelos, tipos e demanda prevista. |
-| NX-106 | Estoque, movimentação e reposição | NÃO COMPROVADO | Revisão da sugestão com ajuste de quantidades, item de segurança e inserção manual de itens. |
-| NX-107 | Estoque, movimentação e reposição | NÃO COMPROVADO | Lista de reposições programadas com data limite, responsável e estado de envio/recebimento. |
+| NX-105 | Estoque, movimentação e reposição | PARCIAL — proposta com prazo manual; sem periodicidade, previsão por modelo/cliente ou demanda | Programação de reposição por intervalo, clientes, modelos, tipos e demanda prevista. |
+| NX-106 | Estoque, movimentação e reposição | PARCIAL — quantidade ajustável, item de segurança e itens manuais em plano auditado com segunda aprovação; sem aceite físico | Revisão da sugestão com ajuste de quantidades, item de segurança e inserção manual de itens. |
+| NX-107 | Estoque, movimentação e reposição | PARCIAL — lista paginada, responsável, prazo e revisão; sem estado de envio/recebimento vinculado ao plano | Lista de reposições programadas com data limite, responsável e estado de envio/recebimento. |
 | NX-108 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Baixa no estoque de origem ao confirmar envio e entrada no estoque da unidade ao confirmar recebimento. |
 | NX-109 | Estoque, movimentação e reposição | NÃO COMPROVADO | Confirmação de recebimento pelo provedor ou usuário cliente autorizado. |
 | NX-110 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Tratamento de envio parcial, recebimento parcial, extravio, divergência e cancelamento. |
@@ -309,9 +309,9 @@
 | NX-281 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Rendimento calculado para SKU e impressora usando páginas entre trocas e rendimento nominal. |
 | NX-282 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Cobertura calculada como estimativa inferida de hipótese nominal (ex.: 5% padrão), nunca telemetria medida. |
 | NX-283 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Validação manual/algorítmica de trocas espúrias; IA opcional futura deve ser explicável, aferível e sem dependência obrigatória. |
-| NX-284 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Permitir cadastrar tipos, marcas, fornecedores e compatibilidades; bloquear exclusão de cadastro com histórico dependente. |
-| NX-285 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | SKU externo, cor, rendimento por compatibilidade, preço de venda e fornecedor associados a estoque e atendimentos. |
-| NX-286 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Entrada múltipla para estoque do provedor ou cliente, com nota fiscal e origem documental. |
+| NX-284 | Operação da plataforma, SaaS e cobrança do provedor | PARCIAL — cadastro de marca/categoria, fornecedor e compatibilidade; sem taxonomia completa e qualificação operacional | Permitir cadastrar tipos, marcas, fornecedores e compatibilidades; bloquear exclusão de cadastro com histórico dependente. |
+| NX-285 | Operação da plataforma, SaaS e cobrança do provedor | PARCIAL — cor, rendimento nominal e preço do SKU; sem SKU externo, rendimento por compatibilidade e vínculo por atendimento | SKU externo, cor, rendimento por compatibilidade, preço de venda e fornecedor associados a estoque e atendimentos. |
+| NX-286 | Operação da plataforma, SaaS e cobrança do provedor | PARCIAL — entrada documentada por linha, com fornecedor/lote/custo; sem entrada múltipla, XML/NF-e e validação fiscal | Entrada múltipla para estoque do provedor ou cliente, com nota fiscal e origem documental. |
 | NX-287 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Definir explicitamente compatibilidade ao criar SKU; vazio não pode significar todos os modelos inadvertidamente. |
 | NX-288 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Permitir avaliação de troca prematura por nível informado, estimativa ou eficiência e limiar por tipo. |
 | NX-289 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Falha de comunicação só gera alerta após carência configurada, com recuperação por três leituras estáveis como referência. |
@@ -519,3 +519,9 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 - NX de medições, monitoramento, produção/fechamento e faturamento permanecem **PARCIAIS**: implementada somente uma prévia conservadora, segregada por carteira e empresa, da **diferença não negativa entre amostras adjacentes válidas** dentro de até 31 dias UTC.
 - Quando há reset, canal não informado, dados contraditórios no mesmo timestamp ou menos de dois pontos comparáveis, o endpoint não inventa volume. Indica lacunas e inconclusões por canal; diferenças válidas são contadores observados, não volume total certificado.
 - Nenhum contrato, preço, fatura ou lançamento de estoque é criado ou atualizado. API marca `billing_ready=false` sem exceções. Testes SQLite/PostgreSQL e navegador de prévia vazia dão evidência parcial, **não** homologação de impressoras reais nem dos 62 cenários QA.
+
+## Evidências incrementais das entregas 46–48 (15/10/2026)
+
+- NX-105/106/107: planos de reposição com prazo, itens sugeridos e manuais, ajuste e segunda aprovação; Playwright corrigido passou no CI. Periodicidade, previsão por equipamentos e acompanhamento da execução do envio continuam fora de escopo.
+- NX-099/284/285: gestão de fornecedores buscável e auditada, sem exclusão do histórico; testes SQLite/PostgreSQL e navegador da Entrega 47 aprovados no PR #37. Não comprova cadastro fiscal homologado nem rendimento específico por modelo.
+- NX-101/286: formulário de recebimento documentado de uma linha utiliza o ledger já existente, mantém UUID em tentativas inalteradas e disponibiliza histórico com lote, custo e local. E2E da Entrega 48 e aceitação física/fiscal ainda dependem do CI e homologação. Não é importação de NF-e nem recebimento em massa.

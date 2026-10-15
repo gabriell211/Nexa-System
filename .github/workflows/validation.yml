@@ -206,7 +206,7 @@ jobs:
       - name: Run replenishment and supplier browser E2E
         if: matrix.suite == 'replenishment'
         working-directory: portal
-        run: npm run test:e2e -- e2e/replenishment-plans.spec.ts e2e/supplier-management.spec.ts --project=desktop-chromium
+        run: npm run test:e2e -- e2e/replenishment-plans.spec.ts e2e/supplier-management.spec.ts e2e/documented-receipts.spec.ts --project=desktop-chromium
       - name: Upload artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
