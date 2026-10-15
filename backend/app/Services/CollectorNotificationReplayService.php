@@ -145,7 +145,8 @@ final class CollectorNotificationReplayService
         }
 
         try {
-            Mail::to($reservation['email'])->send(new CollectorHealthIncidentMail(
+            $providerId=app(CollectorMailTransport::class)->send(
+                $reservation['email'],new CollectorHealthIncidentMail(
                 (string)$tenant->name,
                 (string)$customer->name,
                 (int)$incident->collector_agent_id,
@@ -153,8 +154,8 @@ final class CollectorNotificationReplayService
                 CarbonImmutable::parse($incident->last_heartbeat_at)->toIso8601String(),
                 CarbonImmutable::parse($incident->detected_at)->toIso8601String(),
                 $reservation['stage']
-            ));
-            $this->finish((int)$reservation['replay_id'],'accepted',null,$now);
+            ),'nexa-collector-replay-'.$reservation['replay_id']);
+            $this->finish((int)$reservation['replay_id'],'accepted',null,$now,$providerId);
             return 'accepted';
         } catch (\Throwable $error) {
             // Never log an SMTP exception, recipient address, or credentials.
@@ -163,13 +164,14 @@ final class CollectorNotificationReplayService
         }
     }
 
-    private function finish(int $id,string $status,?string $category,CarbonImmutable $now): void
+    private function finish(int $id,string $status,?string $category,CarbonImmutable $now,?string $providerId=null): void
     {
-        DB::transaction(static function () use ($id,$status,$category,$now): void {
+        DB::transaction(static function () use ($id,$status,$category,$now,$providerId): void {
             $record=CollectorNotificationReplay::query()->lockForUpdate()->findOrFail($id);
             if ($record->status!=='attempting') return;
             $record->status=$status;
             $record->accepted_at=$status==='accepted'?$now:null;
+            $record->provider_email_id=$providerId;
             $record->error_category=$category;
             $record->save();
             AuditEntry::query()->create([
