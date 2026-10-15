@@ -80,13 +80,13 @@ final class CollectorResendWebhookTest extends TestCase
         ],$raw);
     }
 
-    private function sentOriginal(): CollectorIncidentNotification
+    private function sentOriginal(string $expected='accepted'): CollectorIncidentNotification
     {
         Http::fake(['https://api.resend.com/emails'=>Http::response(['id'=>self::EMAIL_ID],200)]);
         Mail::fake();
         $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
         $notice=CollectorIncidentNotification::query()->firstOrFail();
-        $this->assertSame('accepted',$notice->status);
+        $this->assertSame($expected,$notice->status);
         $this->assertSame(self::EMAIL_ID,$notice->provider_email_id);
         Mail::assertNothingSent();
         Http::assertSent(fn($request)=>
@@ -194,7 +194,7 @@ final class CollectorResendWebhookTest extends TestCase
         $this->assertSame(self::EMAIL_ID,$pending->provider_email_id);
         $this->assertStringNotContainsString('private@example.test',json_encode($pending));
 
-        $notice=$this->sentOriginal();
+        $notice=$this->sentOriginal('delivered');
         $this->assertSame('delivered',$notice->fresh()->status);
         $this->assertNotNull($notice->fresh()->provider_delivered_at);
         $this->assertSame('applied',DB::table('collector_mail_webhook_events')->first()->outcome);
