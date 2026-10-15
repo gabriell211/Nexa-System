@@ -372,6 +372,38 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       expect(bodyReconciled.data.items[0]).toMatchObject({
         received_quantity: 1, outstanding_quantity: 1, cost_divergence: true,
       });
+
+      await page.reload();
+      await page.getByRole('button', { name: 'Compras', exact: true }).click();
+      await page.getByRole('button', { name: 'Revisar pedido ' + orderId }).click();
+      const warehouseReturns = page.getByRole('dialog')
+        .getByRole('region', { name: 'Devoluções ao fornecedor' });
+      await warehouseReturns.getByLabel('Recebimento e lote *').selectOption({
+        label: manualSku + ' — ' + invoice + ' · ' + lot + ' ·1 disponíveis',
+      });
+      await warehouseReturns.getByLabel('Quantidade *').fill('1');
+      await warehouseReturns.getByLabel('Motivo da devolução *')
+        .fill('Lote físico avariado, devolução autorizada após inspeção');
+      await warehouseReturns.getByRole('button', { name: 'Solicitar devolução para revisão' }).click();
+      await expect(warehouseReturns.getByRole('status').filter({ hasText: 'A baixa do lote depende' }))
+        .toBeVisible();
+      expect(await paginatedTotal(owner.context().request, '/stock/movements')).toBe(movementCount + 1);
+
+      await owner.reload();
+      await owner.getByRole('button', { name: 'Compras', exact: true }).click();
+      await owner.getByRole('button', { name: 'Revisar pedido ' + orderId }).click();
+      const reviewerReturns = owner.getByRole('dialog')
+        .getByRole('region', { name: 'Devoluções ao fornecedor' });
+      await reviewerReturns.getByRole('button', { name: /^Aprovar devolução \d+$/ }).click();
+      await expect(reviewerReturns.getByRole('status').filter({
+        hasText: 'baixa física vinculada ao lote de origem',
+      })).toBeVisible();
+      expect(await paginatedTotal(owner.context().request, '/stock/movements')).toBe(movementCount + 2);
+      const afterReturn = await owner.context().request.get(apiRoot + '/stock/purchase-orders/' + orderId);
+      expect(afterReturn.status()).toBe(200);
+      const returnedOrder: { data: { items: Array<{ receipts: Array<{ returned_quantity: number }> }> } } =
+        await afterReturn.json();
+      expect(returnedOrder.data.items[0].receipts[0].returned_quantity).toBe(1);
     });
 
   } finally {
