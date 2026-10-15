@@ -118,6 +118,11 @@ export function PrinterReadingHistoryPanel({ printer, token, onClose }: Props) {
         <button type="button" className="button ghost" onClick={() => {
           setStartDate(''); setEndDate(''); setPage(1); setPreviewRange(null);
         }}>Limpar período</button>
+        <button type="button" className="button primary"
+          disabled={!startDate || !endDate || invalid}
+          onClick={() => setPreviewRange({start:startDate,end:endDate})}>
+          Prévia de incrementos
+        </button>
       </div>
       {previewRange && <section className="meter-preview" aria-label="Prévia não faturável de incrementos">
         <h3>Incrementos observados — não faturáveis</h3>
