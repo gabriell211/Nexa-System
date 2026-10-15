@@ -12,6 +12,12 @@ interface ApprovedLine {
   quantity: number;
   allocated_quantity: number;
   remaining_quantity: number;
+  reserved_quantity: number;
+  in_transit_quantity: number;
+  received_quantity: number;
+  lost_quantity: number;
+  shipped_quantity: number;
+  cancelled_quantity: number;
 }
 interface LinkedShipment {
   id: number;
@@ -94,6 +100,16 @@ export function ApprovedPlanShipmentPanel({ planId, lines, token, onChanged }: {
       Reservar não movimenta estoque; expedição e recebimento são confirmados separadamente em Remessas.
     </p>
     <form onSubmit={submit}>
+      <div className="shipment-metrics" aria-label="Resumo logístico aprovado">
+        <div><strong>{lines.reduce((sum, line) => sum + line.reserved_quantity, 0).toLocaleString('pt-BR')}</strong>
+          <small>Reservado</small></div>
+        <div><strong>{lines.reduce((sum, line) => sum + line.in_transit_quantity, 0).toLocaleString('pt-BR')}</strong>
+          <small>Em trânsito</small></div>
+        <div><strong>{lines.reduce((sum, line) => sum + line.received_quantity, 0).toLocaleString('pt-BR')}</strong>
+          <small>Recebido</small></div>
+        <div><strong>{lines.reduce((sum, line) => sum + line.lost_quantity, 0).toLocaleString('pt-BR')}</strong>
+          <small>Extraviado</small></div>
+      </div>
       <div className="stock-form-grid">
         <div className="stock-field">
           <label htmlFor="plan-shipment-line">Item aprovado *</label>

@@ -30,12 +30,16 @@ final class StockShipmentController extends Controller
             'page'=>['sometimes','integer','min:1'],
             'status'=>['sometimes','string','max:32'],
             'replenishment_plan_item_id'=>['sometimes','integer','min:1'],
+            'replenishment_plan_id'=>['sometimes','integer','min:1'],
         ]);
         return StockShipmentResource::collection(
             StockShipment::query()->where('tenant_id', $request->attributes->get('nexa_tenant')->id)
                 ->when(isset($filters['status']), static fn ($q) => $q->where('status', $filters['status']))
                 ->when(isset($filters['replenishment_plan_item_id']), static fn ($q) => $q->where('replenishment_plan_item_id', $filters['replenishment_plan_item_id']))
-                ->with(['item','source','destination','lotTransit'])->orderByDesc('id')
+                ->when(isset($filters['replenishment_plan_id']), static fn ($q) => $q->whereHas('replenishmentLine',
+                    static fn ($lines) => $lines->where('plan_id', $filters['replenishment_plan_id'])
+                        ->where('tenant_id', $request->attributes->get('nexa_tenant')->id)))
+                ->with(['item','source','destination','lotTransit','replenishmentLine:id,plan_id'])->orderByDesc('id')
                 ->paginate($filters['per_page'] ?? 25)
         );
     }
@@ -45,7 +49,7 @@ final class StockShipmentController extends Controller
         $this->portfolio->assertFull($request);
         $record = StockShipment::query()
             ->where('tenant_id', $request->attributes->get('nexa_tenant')->id)
-            ->with(['item','source','destination','lotTransit','events'=>static fn ($query) =>
+            ->with(['item','source','destination','lotTransit','replenishmentLine:id,plan_id','events'=>static fn ($query) =>
                 $query->with('actor:id,name')->orderBy('id')])
             ->findOrFail($shipment);
         return new StockShipmentResource($record);

@@ -156,10 +156,18 @@ final class StockPlanShipmentTest extends TestCase
         $shipmentId = $this->as($creatorToken)->postJson(
             $this->endpoint($plan, $line), $this->payload($source, 3)
         )->assertCreated()->json('data.id');
+        $this->as($creatorToken)->getJson("/api/v1/stock/replenishment-plans/{$plan}")
+            ->assertOk()->assertJsonPath('data.items.0.reserved_quantity', 3)
+            ->assertJsonPath('data.items.0.in_transit_quantity', 0)
+            ->assertJsonPath('data.items.0.received_quantity', 0);
         $this->as($creatorToken)->postJson("/api/v1/stock/shipments/{$shipmentId}/dispatch", [
             'request_id' => (string) Str::uuid(),
             'quantity' => 3, 'reason' => 'Expedição física confirmada',
         ])->assertOk()->assertJsonPath('data.shipped_quantity', 3);
+        $this->as($creatorToken)->getJson("/api/v1/stock/replenishment-plans/{$plan}")
+            ->assertOk()->assertJsonPath('data.items.0.reserved_quantity', 0)
+            ->assertJsonPath('data.items.0.shipped_quantity', 3)
+            ->assertJsonPath('data.items.0.in_transit_quantity', 3);
         $this->assertDatabaseHas('stock_balances', [
             'tenant_id' => $tenant->id, 'item_id' => $item,
             'location_id' => $source, 'quantity' => 17,
@@ -173,7 +181,18 @@ final class StockPlanShipmentTest extends TestCase
             'location_id' => $destination, 'quantity' => 3,
         ]);
         $this->as($creatorToken)->getJson("/api/v1/stock/replenishment-plans/{$plan}")
-            ->assertOk()->assertJsonPath('data.items.0.allocated_quantity', 3);
+            ->assertOk()->assertJsonPath('data.items.0.allocated_quantity', 3)
+            ->assertJsonPath('data.items.0.in_transit_quantity', 0)
+            ->assertJsonPath('data.items.0.received_quantity', 3)
+            ->assertJsonPath('data.items.0.lost_quantity', 0);
+        $this->as($creatorToken)->getJson("/api/v1/stock/shipments?replenishment_plan_id={$plan}")
+            ->assertOk()->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.replenishment_plan_id', $plan)
+            ->assertJsonPath('data.0.replenishment_plan_item_id', $line);
+        $this->as($creatorToken)->getJson("/api/v1/stock/shipments?replenishment_plan_id=999999")
+            ->assertOk()->assertJsonCount(0, 'data');
+        $this->as($creatorToken)->getJson('/api/v1/stock/shipments?replenishment_plan_id=bad')
+            ->assertUnprocessable();
     }
 
     public function test_cross_tenant_line_and_roles_are_rejected_and_bad_payload_is_atomic(): void

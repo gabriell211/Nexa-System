@@ -727,3 +727,11 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Reenvio de UUID da mesma linha, dados e operador preserva a remessa; reutilização divergente é rejeitada. O serviço de remessas existente executa posteriormente dispatch/receive, lançando baixas/entradas somente nesses eventos auditados. Um plano aprovado com remessa vinculada não pode ser cancelado silenciosamente.
 - Portal exibe alocado/restante, seleção paginada do local de origem, confirmação de reserva e remessas vinculadas. Testes feature e E2E cobrem a ligação manual, não duplicação, limites e movimentações físicas confirmadas.
 - A validação do PR ainda depende do CI; sem fluxo de pedidos de compra, automação de envio, conciliação de entregas externas e homologação operacional. NX-105/106/107/108/110 ainda não têm aceite integral.
+
+## Entrega 52 — progresso logístico por proposta aprovada (15/10/2026)
+
+- A leitura de planos faz agregações de remessas vinculadas por linha com quantidade alocada, saldo a reservar, reserva pendente, expedido, trânsito, recebido, extravio e cancelado. Fórmulas derivam exclusivamente de stock_shipments (com os eventos existentes); consulta usa eager aggregates, não consulta individual por remessa.
+- Nova busca de remessas filtrada por replenishment_plan_id, preservando autenticação e escopo por empresa/carteira. O recurso mostra ID do plano somente quando a relação da linha está pré-carregada.
+- O portal mostra resumo por plano e colunas por linha, sempre sem confirmação automática de eventos; operador deve continuar expedindo e recebendo no módulo Remessas.
+- Testes de API comparam medidas após reserva/expedição/recebimento, validam filtro e rejeição de parâmetros; E2E consulta indicadores após recebimento real. CI final ainda não concluído.
+- Limitações: sem integração de transportadora, sem ordem de compra associada, sem indicadores contratuais ou homologação em hardware/estoque físico; NX-107/108/110 continuam parciais.

@@ -21,6 +21,8 @@ interface PlanLine {
   origin: 'suggested' | 'manual';
   available_quantity: number | null; suggested_quantity: number | null;
   quantity: number; allocated_quantity: number; remaining_quantity: number;
+  reserved_quantity: number; shipped_quantity: number; in_transit_quantity: number;
+  received_quantity: number; lost_quantity: number; cancelled_quantity: number;
   safety_item: boolean; note: string | null;
   item: ItemOption; location: LocationOption;
 }
@@ -328,12 +330,16 @@ function PlanDetails({ id, token, role, userId, onClose, onChanged }: {
         role={role} userId={userId} onChanged={onChanged} onReload={reload} /> : <>
         <p><strong>Observações:</strong> {plan.notes || '—'}</p>
         <div className="table-wrap"><table><thead><tr><th>Material</th><th>Local</th><th>Origem</th>
-          <th>Quantidade</th><th>Alocado</th><th>Restante</th><th>Segurança</th><th>Nota</th></tr></thead><tbody>
+          <th>Quantidade</th><th>Alocado</th><th>Restante</th><th>Reservado</th><th>Em trânsito</th><th>Recebido</th><th>Perdas</th><th>Segurança</th><th>Nota</th></tr></thead><tbody>
           {plan.items.map(line => <tr key={line.id}><td><strong>{line.item.sku}</strong><small>{line.item.name}</small></td>
             <td>{line.location.name}</td><td>{line.origin === 'suggested' ? 'Sugerido' : 'Manual'}</td>
             <td>{line.quantity.toLocaleString('pt-BR')} {line.item.unit}</td>
             <td>{line.allocated_quantity.toLocaleString('pt-BR')}</td>
             <td>{line.remaining_quantity.toLocaleString('pt-BR')}</td>
+            <td>{line.reserved_quantity.toLocaleString('pt-BR')}</td>
+            <td>{line.in_transit_quantity.toLocaleString('pt-BR')}</td>
+            <td>{line.received_quantity.toLocaleString('pt-BR')}</td>
+            <td>{line.lost_quantity.toLocaleString('pt-BR')}</td>
             <td>{line.safety_item ? 'Sim' : 'Não'}</td><td>{line.note || '—'}</td></tr>)}
           </tbody></table></div>
         {plan.status === 'approved' ? <p><strong>Aprovada por:</strong> {plan.approved_by?.name ?? '—'} em {displayDateTime(plan.approved_at)}.

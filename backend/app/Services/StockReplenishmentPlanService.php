@@ -26,7 +26,12 @@ final class StockReplenishmentPlanService
         return StockReplenishmentPlan::query()->where('tenant_id', $tenantId)
             ->with([
                 'responsible:id,name', 'createdBy:id,name', 'approvedBy:id,name', 'cancelledBy:id,name',
-                'items' => static fn ($q) => $q->orderBy('id')->withSum('shipments as allocated_quantity', DB::raw('quantity - cancelled_quantity')),
+                'items' => static fn ($q) => $q->orderBy('id')
+                    ->withSum('shipments as allocated_quantity', DB::raw('quantity - cancelled_quantity'))
+                    ->withSum('shipments as shipped_quantity_total', 'shipped_quantity')
+                    ->withSum('shipments as received_quantity_total', 'received_quantity')
+                    ->withSum('shipments as lost_quantity_total', 'lost_quantity')
+                    ->withSum('shipments as cancelled_quantity_total', 'cancelled_quantity'),
                 'items.item', 'items.location',
             ])->findOrFail($planId);
     }
