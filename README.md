@@ -35,6 +35,14 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Acompanhamento e confirmação documental de substituições — incremento 57 (parcial)
+
+- Uma devolução concluída pode abrir um **acompanhamento de substituição** com responsável interno, prazo e contato inicial; o mesmo retorno não pode abrir casos concorrentes. Cada contato, reagendamento, resposta e encerramento é um evento **imutável**, identificado por UUID, com autoria e auditoria; operações idempotentes não duplicam eventos. Datas e referência do fornecedor são preservadas.
+- O portal **Estoque → Compras → Devoluções ao fornecedor → Acompanhamento** exibe pendências por prazo, responsável, histórico e ações. Operadores registram contatos; gestão pode reagendar, confirmar a resposta documentada do fornecedor (com referência obrigatória) ou encerrar sem solução. A confirmação/encerramento exige outra pessoa em relação ao criador; respostas não confirmam chegada física.
+- Listagens paginadas possuem escopo de empresa e carteira completa, filtro por pedido, estado e atraso; o backend impede usuários externos, versões antigas, registros cruzados e referências alteradas sob o mesmo UUID. Testes Laravel verificam a autorização e o histórico; Playwright cobre solicitação pelo almoxarifado e confirmação documental pela gestão.
+- **Estado do fornecedor e recebimento físico são independentes**. Mesmo um acompanhamento marcado `supplier_confirmed` não cria remessa, altera saldo, faz conciliação, representa nota fiscal ou prova que a reposição chegou.
+- NX-099/NX-107/NX-286 permanecem **PARCIAIS**: sem integração com fornecedores, comprovante anexado, assinatura ou autenticidade criptográfica de documento, rastreio de transportadora, NF-e de devolução, crédito financeiro, aceite operacional e SLA homologado. O CI deste PR valida apenas o código testado.
+
 ### Indicadores de recebimento líquido e capacidade para reposição — incremento 56 (parcial)
 
 - Pedidos de compra agora informam **quantidade pedida, recebida bruta (histórica), devolução pendente, devolução concluída, quantidade líquida retida, pendência líquida e lacuna estimada de reposição** por linha e por pedido. Todos os cálculos vêm de recebimentos conciliados e devoluções reais existentes, sem lançamento adicional.
