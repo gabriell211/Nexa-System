@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\V1\StockPlanShipmentController;
 use App\Http\Controllers\Api\V1\StockPurchaseOrderController;
 use App\Http\Controllers\Api\V1\StockPurchaseReceiptMatchController;
 use App\Http\Controllers\Api\V1\StockSupplierReturnController;
+use App\Http\Controllers\Api\V1\StockSupplierReplacementController;
 use App\Http\Controllers\Api\V1\ServiceTicketController;
 use App\Http\Controllers\Api\V1\PrinterAlertController;
 use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
@@ -85,6 +86,8 @@ $registerBackoffice = static function (): void {
         Route::get('/stock/purchase-orders', [StockPurchaseOrderController::class, 'index']);
         Route::get('/stock/purchase-orders/{order}', [StockPurchaseOrderController::class, 'show']);
         Route::get('/stock/supplier-returns', [StockSupplierReturnController::class, 'index']);
+        Route::get('/stock/supplier-replacements', [StockSupplierReplacementController::class, 'index']);
+        Route::get('/stock/supplier-replacements/{case}', [StockSupplierReplacementController::class, 'show']);
         Route::get('/stock/supplier-returns/{return}', [StockSupplierReturnController::class, 'show']);
         Route::get('/stock/replenishment-plans/{plan}', [StockReplenishmentPlanController::class, 'show']);
         Route::get('/stock/lots', StockLotController::class);
@@ -112,6 +115,8 @@ $registerBackoffice = static function (): void {
         Route::post('/stock/replenishment-plans', [StockReplenishmentPlanController::class, 'store']);
         Route::post('/stock/purchase-orders', [StockPurchaseOrderController::class, 'store']);
         Route::post('/stock/supplier-returns', [StockSupplierReturnController::class, 'store']);
+        Route::post('/stock/supplier-replacements', [StockSupplierReplacementController::class, 'store']);
+        Route::post('/stock/supplier-replacements/{case}/events', [StockSupplierReplacementController::class, 'event']);
         Route::post('/stock/supplier-returns/{return}/cancel', [StockSupplierReturnController::class, 'cancel']);
         Route::post('/stock/purchase-orders/{order}/reconcile-receipt', [StockPurchaseReceiptMatchController::class, 'store']);
         Route::post('/stock/purchase-orders/{order}/cancel', [StockPurchaseOrderController::class, 'cancel']);
