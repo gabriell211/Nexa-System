@@ -15,6 +15,10 @@ return [
     'collector_notifications'=>[
         // Explicit opt-in; mail transport must be configured outside source.
         'enabled'=>(bool)env('NEXA_COLLECTOR_NOTIFICATIONS_ENABLED',false),
+        'driver'=>env('NEXA_COLLECTOR_MAIL_DRIVER','laravel'),
+        'resend_api_key'=>env('NEXA_RESEND_API_KEY'),
+        'resend_webhooks_enabled'=>(bool)env('NEXA_RESEND_WEBHOOKS_ENABLED',false),
+        'resend_webhook_secret'=>env('NEXA_RESEND_WEBHOOK_SECRET'),
         'escalation_minutes'=>(int)env('NEXA_COLLECTOR_ESCALATION_MINUTES',60),
         'max_per_run'=>(int)env('NEXA_COLLECTOR_MAIL_MAX_PER_RUN',50),
         'max_per_tenant_hour'=>(int)env('NEXA_COLLECTOR_MAIL_MAX_PER_TENANT_HOUR',20),
