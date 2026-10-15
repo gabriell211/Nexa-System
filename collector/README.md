@@ -400,3 +400,7 @@ A expiração configurada por `NEXA_RESEND_PENDING_HOURS` aplica-se **somente a 
 ## Histórico de contador disponível no painel — entrega 41
 
 O portal de impressoras pode consultar o histórico de `printer_readings` persistido na API por equipamento autorizado: `GET /api/v1/browser/printers/{id}/readings`, com sessão e CSRF conforme política do backoffice. Datas `start_date` e `end_date` (UTC, `YYYY-MM-DD`) e paginação até 100 entradas evitam leitura integral. O histórico é apenas **evidência do que foi recebido**, não substitui diagnóstico de SNMP nem mede estado presente. A janela modal permite escolher período, navegar páginas e distinguir um zero real da leitura ausente (`null`). Não existem estimativas, alertas de consumo ou faturamento automático nesta entrega.
+
+## Prévia de incrementos observados no portal — entrega 42
+
+O portal tem consulta opcional de variações entre amostras reais de contador, com limites de 31 dias e 20.000 registros, separação por impressora/empresa e permissões de carteira. Quedas de contadores são possíveis resets ou rollover, canais `null` são dados indisponíveis e divergências no mesmo timestamp descartam deltas ambíguos. O período **não inclui diferença contra leitura anterior ao início da janela**. Mesmo os deltas válidos entre observações não asseguram produção completa entre coletas. `billing_ready=false` é obrigatório; a prévia não cria faturas e não conclui homologação SNMP/USB.
