@@ -69,6 +69,7 @@ $registerBackoffice = static function (): void {
         Route::get('/stock/items', [StockItemController::class, 'index']);
         Route::get('/stock/suppliers', [StockSupplierController::class, 'index']);
         Route::get('/stock/receipts', [StockDocumentedReceiptController::class, 'index']);
+        Route::get('/stock/receipt-batches', [StockReceiptBatchController::class, 'index']);
         Route::get('/stock/receipt-batches/{batch}', [StockReceiptBatchController::class, 'show']);
         Route::get('/stock/items/{item}/compatibilities', [StockCompatibilityController::class, 'index']);
         Route::get('/stock/items/{item}/compatibility-check', [StockCompatibilityController::class, 'check']);
