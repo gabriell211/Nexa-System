@@ -308,6 +308,46 @@ final class CollectorResendWebhookTest extends TestCase
             ->where('action','collector.notice.provider_returned')->count());
     }
 
+    public function test_old_signed_replay_event_is_preserved_after_long_scheduler_outage(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-15T12:00:00Z'));
+        $this->enabled();
+        [$tenant,$agent,$incident,$owner]=$this->fixture();
+        $original=CollectorIncidentNotification::query()->create([
+            'tenant_id'=>$tenant->id,
+            'collector_health_incident_id'=>$incident->id,
+            'recipient_user_id'=>$owner->id,
+            'stage'=>'initial',
+            'status'=>'failed',
+            'attempted_at'=>now('UTC'),
+        ]);
+        $this->webhook($this->event('email.complained',self::REPLAY_ID),
+            'replay_before_long_outage')->assertOk()->assertJsonPath('result','unmatched');
+
+        $replay=CollectorNotificationReplay::query()->create([
+            'tenant_id'=>$tenant->id,
+            'collector_health_incident_id'=>$incident->id,
+            'original_notification_id'=>$original->id,
+            'review_reference'=>'CASE-RECOVERY-39',
+            'status'=>'accepted',
+            'attempted_at'=>now('UTC'),
+            'accepted_at'=>now('UTC'),
+            'provider_email_id'=>self::REPLAY_ID,
+        ]);
+        $this->travel(73)->hours();
+        $this->artisan('nexa:mail:reconcile-resend-webhooks')->assertSuccessful();
+
+        $this->assertSame('complaint',$replay->fresh()->status);
+        $this->assertSame('failed',$original->fresh()->status);
+        $this->assertDatabaseHas('collector_mail_webhook_events',[
+            'event_hash'=>hash('sha256','resend:replay_before_long_outage'),
+            'outcome'=>'applied','target_type'=>'replay','target_id'=>$replay->id,
+        ]);
+        $this->artisan('nexa:mail:reconcile-resend-webhooks')->assertSuccessful();
+        $this->assertSame(1,DB::table('audit_entries')
+            ->where('action','collector.notice.provider_complaint')->count());
+    }
+
     public function test_pending_events_expire_without_reprocessing_duplicate_or_saving_payload(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-10-15T12:00:00Z'));
