@@ -10,3 +10,4 @@ Artisan::command('nexa:version', function (): void {
 
 Schedule::command('nexa:alerts:check-telemetry')->everyFiveMinutes()->withoutOverlapping();
 Schedule::command('nexa:alerts:check-collectors')->everyMinute()->withoutOverlapping();
+Schedule::command('nexa:alerts:notify-collectors')->everyFiveMinutes()->withoutOverlapping();
