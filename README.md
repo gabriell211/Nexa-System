@@ -35,6 +35,13 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Consulta das notas recebidas em lote — incremento 50 (parcial)
+
+- A API oferece histórico paginado de cabeçalhos de recebimento em lote, filtrável por referência do documento ou fornecedor. A consulta exige autenticação, papel de estoque e acesso à carteira completa; aplica escopo da empresa diretamente no SQL, antes da paginação. Ordenação por ID descendente mantém desempate determinístico e eager loading evita N+1 de fornecedores.
+- A aba de Entradas ganhou uma seção **Notas com múltiplos itens**, onde o operador pesquisa o documento e abre o detalhe para conferir todas as linhas, quantidades, lotes, destinos e custos efetivamente persistidos. Entradas avulsas continuam no histórico individual.
+- Testes Laravel de paginação, filtros, autorização, dados de outra empresa e detalhes estão incluídos; o Playwright da entrada em lote agora abre e confere o histórico agrupado. **A validação desta entrega depende do CI do PR correspondente.**
+- NX-099 e NX-286 continuam **PARCIAIS**: não substitui conferência fiscal ou física, não associa automaticamente pedidos de compra, não importa NF-e e não implementa faturas ou documentos externos.
+
 ### Recebimento documentado em múltiplas linhas — incremento 49 (parcial)
 
 - Criada a API autenticada POST /api/v1/stock/receipt-batches e consulta GET /api/v1/stock/receipt-batches/{batch}, usando a infraestrutura do razão de estoque e dos lotes existentes. Uma nota pode ter até 30 linhas com SKU, destino, quantidade, lote, validade e custo próprios; fornecedor, documento e justificativa são comuns.
