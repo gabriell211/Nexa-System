@@ -26,6 +26,10 @@ final class CollectorHealthIncidentController extends Controller
         $query=CollectorHealthIncident::query()
             ->where('tenant_id',$tenant->id)
             ->with(['agent:id,collector_id,customer_id','customer:id,name'])
+            ->withCount([
+                'notifications as email_accepted_count'=>fn($q)=>$q->where('status','accepted'),
+                'notifications as email_failed_count'=>fn($q)=>$q->whereIn('status',['failed','attempting']),
+            ])
             ->when(isset($filters['status']),fn($q)=>$q->where('status',$filters['status']))
             ->when(isset($filters['collector_agent_id']),fn($q)=>$q->where('collector_agent_id',$filters['collector_agent_id']))
             ->when(isset($filters['customer_id']),fn($q)=>$q->where('customer_id',$filters['customer_id']));
@@ -47,6 +51,8 @@ final class CollectorHealthIncidentController extends Controller
                 'detected_at'=>$incident->detected_at?->toIso8601String(),
                 'resolved_at'=>$incident->resolved_at?->toIso8601String(),
                 'resolution_reason'=>$incident->resolution_reason,
+                'email_accepted_count'=>(int)$incident->email_accepted_count,
+                'email_unconfirmed_count'=>(int)$incident->email_failed_count,
             ];
         }));
     }
