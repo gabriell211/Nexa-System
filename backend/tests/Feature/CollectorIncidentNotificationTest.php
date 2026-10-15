@@ -294,7 +294,7 @@ final class CollectorIncidentNotificationTest extends TestCase
         $this->enable();
         config()->set('nexa.collector_notifications.max_per_tenant_hour',1);
         Mail::shouldReceive('to')->once()->andThrow(
-            new \\RuntimeException('sensitive-SMTP-error')
+            new \RuntimeException('sensitive-SMTP-error')
         );
         $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
         $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
