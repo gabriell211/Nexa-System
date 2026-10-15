@@ -642,3 +642,11 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Portal `/parque` exibe Total/P&B/Cor, data da coleta ou indicador de falta de amostras; jamais interpreta dado persistido como disponibilidade atual.
 - Testes feature SQLite/PostgreSQL: ordem de coleta versus recepção, empates, valores acima de 2^53, nulos, isolamento multi-tenant/carteira e regressão N+1 em 30 impressoras. E2E do navegador confere impressora nova sem leitura.
 - Sem validação SNMP/USB real, sinal de status atual, consumo, fechamento de mês ou faturamento; escopo NX e 62 cenários de aceite continuam PARCIAIS.
+
+## Entrega 41 — histórico paginado de contadores por impressora (15/10/2026)
+
+- Rota autenticada `GET /printers/{printer}/readings` atende apenas impressoras do tenant e carteira do usuário, verificadas no middleware e de novo pela consulta scoped no controller. Data de origem armazenada em UTC; filtro por dia inclusivo no final usando comparação exclusiva à meia-noite seguinte.
+- `PrinterReadingHistory` consulta diretamente o índice de `printer_readings` por tenant/impressora, ordena por `collected_at DESC,id DESC`, limita `per_page` a 100 e não carrega todas as amostras nem as relaciona à impressora via N+1.
+- A API preserva contadores de 64 bits como strings decimais; canais não disponíveis continuam nulos. UI traz janela modal, filtros de datas, paginação e aviso explícito de que o histórico não comprova estado online/produção por período.
+- Testes Laravel abrangem paginação, data UTC inclusiva, validação estrita, empates, leituras com recebimento posterior, ausência de amostras e isolamento por tenant/carteira; Playwright testa a abertura da janela em cadastro real.
+- Pendente: homologação física, investigação de reset/rollover, apuração de produção entre leituras, custos/contratos e aceitação dos 324 requisitos completos.

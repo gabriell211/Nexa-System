@@ -4,7 +4,7 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-rou
 import {
   Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList, ClipboardCheck,
   Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon, ShieldAlert,
-  Search, ShieldCheck, Trash2, Users, X, MapPin, UserRoundCog,
+  Search, ShieldCheck, Trash2, Users, X, MapPin, History, UserRoundCog,
 } from 'lucide-react';
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
 import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
@@ -16,6 +16,7 @@ import { TicketsPage } from './pages/TicketsPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { CollectorsPage } from './pages/CollectorsPage';
 import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
+import { PrinterReadingHistoryPanel } from './pages/PrinterReadingHistoryPanel';
 import type {
   AuditEntry, Credentials, CurrentUser, Customer, CustomerPayload, Dashboard,
   Page, Printer, PrinterPayload,
@@ -420,6 +421,7 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
   const [activeOnly, setActiveOnly] = useState(true);
   const [editing, setEditing] = useState<'new' | Printer | null>(null);
   const [assignmentPrinter, setAssignmentPrinter] = useState<Printer | null>(null);
+  const [historyPrinter, setHistoryPrinter] = useState<Printer | null>(null);
   const [notice, setNotice] = useState('');
 
   const listing = useQuery({
@@ -491,6 +493,9 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
             <td><div className="table-actions">
               <button className="icon-button" title="Localização e histórico" aria-label={'Localização da impressora ' + printer.id}
                 onClick={() => setAssignmentPrinter(printer)}><MapPin size={16}/></button>
+              <button className="icon-button" title="Histórico de contadores"
+                aria-label={'Histórico de contadores da impressora ' + printer.id}
+                onClick={() => setHistoryPrinter(printer)}><History size={16}/></button>
               {canWrite && <>
                 <button className="icon-button" title="Editar impressora" aria-label={'Editar impressora ' + printer.id}
                   onClick={() => setEditing(printer)}><Pencil size={16}/></button>
@@ -504,6 +509,8 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
       </>}
     </section>
     {assignmentPrinter && <PrinterAssignmentPanel key={assignmentPrinter.id} printer={assignmentPrinter} token={token} canWrite={canWrite} onClose={() => setAssignmentPrinter(null)} />}
+    {historyPrinter && <PrinterReadingHistoryPanel key={historyPrinter.id} printer={historyPrinter}
+      token={token} onClose={() => setHistoryPrinter(null)} />}
     {editing && (customers.isPending ? <div className="modal-overlay"><div className="modal"><LoadingState/></div></div> :
       customers.error ? <div className="modal-overlay"><div className="modal"><ErrorMessage error={customers.error}/><button className="button ghost" onClick={() => setEditing(null)}>Fechar</button></div></div> :
       <PrinterDialog key={editing === 'new' ? 'new' : editing.id}

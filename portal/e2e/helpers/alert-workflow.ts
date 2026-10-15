@@ -24,6 +24,11 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
     await expect(page.getByText('Kyocera '+model,{exact:true})).toBeVisible();
     await expect(page.getByRole('row',{name:new RegExp('Kyocera '+model)})
       .getByText('Sem leituras registradas')).toBeVisible();
+    await page.getByRole('row',{name:new RegExp('Kyocera '+model)})
+      .getByRole('button',{name:/Histórico de contadores da impressora/}).click();
+    const history=page.getByRole('dialog',{name:/Contadores — Kyocera/});
+    await expect(history.getByText('Nenhuma leitura encontrada para o período.')).toBeVisible();
+    await history.getByRole('button',{name:'Fechar histórico de contadores'}).click();
   });
 
   await test.step('Open a ticket for the same printer from the ticket form',async()=>{

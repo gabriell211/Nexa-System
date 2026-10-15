@@ -506,3 +506,10 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 - Backend faz eager loading de uma leitura por dispositivo na página, sem N+1; timestamp da coleta é diferente do recebimento. `BIGINT` é serializado como string para precisão na API e no frontend.
 - Testes feature incluem amostras fora de ordem, empate, nulos, carteira de operador, isolamento entre empresas e limite de consultas; Playwright valida o estado sem coleta em um equipamento novo.
 - Sem comprovação de coleta física, suporte completo SNMP/USB, toner, contadores por função, janelas de faturamento ou aceite completo do README/QA.
+
+## Histórico real de leituras do parque (15/10/2026 — entrega 41)
+
+- `NX-041` e requisitos de histórico/visualização de contador permanecem **PARCIAIS**: cada impressora autorizada possui histórico paginado, filtrável por dia UTC, com amostras originais persistidas, sem estimativas ou dados fabricados.
+- Proteção na rota do backend e `CustomerPortfolio` impede leitura cruzada entre empresa, cliente e carteira. Paginação 1..100 e índice `printer_id,collected_at,id` impedem consultas sem limite.
+- Testes feature cobrem valores acima de 2^53, empates, coleções fora de ordem, intervalo de calendário inclusivo, limites de paginação e isolamento de multi-tenancy/carteira. E2E abre modal num cadastro real ainda sem amostras.
+- Não equivale a contador efetivamente consultado por SNMP/USB em campo, faturamento automático, níveis de suprimento, extrapolação de produção ou aceite dos demais itens NX/QA.

@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Histórico paginado de contadores por impressora — incremento 41 (parcial)
+
+- Novo endpoint `GET /api/v1/printers/{printer}/readings` (incluindo versão `/browser`) com autenticação, escopo de empresa e carteira, datas UTC opcionais `start_date/end_date` no formato `YYYY-MM-DD` e `per_page` de 1 a 100 (25 padrão).
+- Leituras reais retornam em ordem determinística por `collected_at DESC, id DESC`, sem N+1 ou leitura de todo o histórico em memória. A API não estima produção, não calcula diferenças após reset de contador e mantém canais ausentes como `null`; valores de 64 bits são strings decimais.
+- Nova janela **Histórico de contadores** na tela `/parque`, com paginação, filtros inclusivos por dia, colunas Total/P&B/Cor, data da coleta e chegada à API. Equipamento sem amostras mostra histórico vazio, jamais contador inventado.
+- Testes Laravel abrangem ordenação/empate, paginação, filtros e datas inválidas, isolamento por tenant/carteira, precisão e vazio; E2E Chromium valida abertura e ausência de amostras da janela no cadastro real.
+- Sem homologação SNMP/USB físico, faturamento por período, detecção de reset, amostras de origem com assinatura ou retenção operacional. Funcionalidade **PARCIAL** até aceite em campo.
+
 ### Últimos contadores reais no parque — incremento 40 (parcial)
 
 - A listagem paginada `/printers` inclui `latest_reading` para cada equipamento autorizado: `meter_total`, `meter_mono`, `meter_color`, `collected_at` e `received_at`. A API carrega somente a leitura mais recente por **horário da coleta** e desempata por ID de inserção, sem consultas por linha (N+1).
