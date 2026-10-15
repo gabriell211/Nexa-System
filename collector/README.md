@@ -396,3 +396,7 @@ O retorno é somente agregado. Código zero significa ausência de alerta ou mon
 ## Recuperação após indisponibilidade prolongada — entrega 39
 
 A expiração configurada por `NEXA_RESEND_PENDING_HOURS` aplica-se **somente a eventos assinados ainda sem UUID associado** no banco. Se o envio original ou reenvio já tiver `provider_email_id` persistido, o evento permanece `pending` até ser conciliado, mesmo após parada do Scheduler por mais que o período de retenção. O comando `nexa:mail:reconcile-resend-webhooks` continua seguro para repetição e não envia e-mails. Evento desconhecido expirado preserva seu hash de deduplicação e não é reativado automaticamente se a correspondência só for gravada depois da expiração. Ainda faltam ensaios físicos, validação multi-worker, provedor real e política de retenção de registros históricos.
+
+## Histórico de contador disponível no painel — entrega 41
+
+O portal de impressoras pode consultar o histórico de `printer_readings` persistido na API por equipamento autorizado: `GET /api/v1/browser/printers/{id}/readings`, com sessão e CSRF conforme política do backoffice. Datas `start_date` e `end_date` (UTC, `YYYY-MM-DD`) e paginação até 100 entradas evitam leitura integral. O histórico é apenas **evidência do que foi recebido**, não substitui diagnóstico de SNMP nem mede estado presente. A janela modal permite escolher período, navegar páginas e distinguir um zero real da leitura ausente (`null`). Não existem estimativas, alertas de consumo ou faturamento automático nesta entrega.
