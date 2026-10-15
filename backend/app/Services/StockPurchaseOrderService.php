@@ -186,11 +186,16 @@ final class StockPurchaseOrderService
         }, 3);
     }
 
-    public function cancel(Tenant $tenant, User $actor, int $orderId, array $data): StockPurchaseOrder
+    public function cancel(Tenant $tenant, User $actor, int $orderId, array $data, string $role): StockPurchaseOrder
     {
-        return DB::transaction(function () use ($tenant, $actor, $orderId, $data): StockPurchaseOrder {
+        return DB::transaction(function () use ($tenant, $actor, $orderId, $data, $role): StockPurchaseOrder {
             $order = StockPurchaseOrder::query()->where('tenant_id', $tenant->id)
                 ->lockForUpdate()->findOrFail($orderId);
+            $manager = in_array($role, ['owner','admin','manager'], true);
+            if (!$manager && ($order->status !== 'draft'
+                || (int) $order->created_by_user_id !== (int) $actor->id)) {
+                abort(403, 'Somente a gestão cancela compras aprovadas.');
+            }
             if ($order->status === 'cancelled' || (int) $order->version !== (int) $data['expected_version']) {
                 abort(409, 'O pedido já foi cancelado ou está desatualizado.');
             }
