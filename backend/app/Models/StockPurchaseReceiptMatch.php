@@ -18,6 +18,11 @@ final class StockPurchaseReceiptMatch extends Model
         return ['quantity' => 'integer', 'received_unit_cost_cents' => 'integer'];
     }
 
+    public function purchaseOrder(): BelongsTo
+    {
+        return $this->belongsTo(StockPurchaseOrder::class, 'purchase_order_id');
+    }
+
     public function receipt(): BelongsTo
     {
         return $this->belongsTo(StockReceiptDetail::class, 'receipt_detail_id');
