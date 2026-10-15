@@ -339,4 +339,171 @@ final class StockPurchaseOrderTest extends TestCase
         $this->assertDatabaseCount('stock_purchase_receipt_matches', 1);
     }
 
+
+    private function reconciledForReturn(array $fixture, int $quantity, string $invoice): array
+    {
+        [$order, $line] = $this->approvedPurchase($fixture, $quantity);
+        $receiptId = $this->documentedPurchaseReceipt($fixture, $quantity, 6875, $invoice);
+        $this->as($fixture['creatorToken'])->postJson(
+            "/api/v1/stock/purchase-orders/{$order}/reconcile-receipt", [
+                'purchase_order_line_id' => $line, 'receipt_detail_id' => $receiptId,
+            ]
+        )->assertCreated();
+        $match = (int) DB::table('stock_purchase_receipt_matches')
+            ->where('tenant_id', $fixture['tenant']->id)->where('receipt_detail_id', $receiptId)
+            ->value('id');
+        return [$order, $line, $receiptId, $match];
+    }
+
+    public function test_supplier_return_requires_independent_confirmation_and_uses_the_exact_receipt_lot(): void
+    {
+        $fixture = $this->fixture();
+        [$order, $line, $receiptId, $match] = $this->reconciledForReturn($fixture, 5, 'NF-DEVOLUCAO-A');
+        $secondReceipt = $this->documentedPurchaseReceipt($fixture, 2, 6875, 'NF-DEVOLUCAO-B');
+        $firstLot = (int) DB::table('stock_lots')->where('receipt_detail_id', $receiptId)->value('id');
+        $secondLot = (int) DB::table('stock_lots')->where('receipt_detail_id', $secondReceipt)->value('id');
+        $this->assertNotSame($firstLot, $secondLot);
+
+        $uuid = (string) Str::uuid();
+        $request = [
+            'request_id' => $uuid, 'purchase_receipt_match_id' => $match,
+            'quantity' => 2, 'reason' => 'Material avariado identificado na conferência',
+        ];
+        $before = (int) DB::table('stock_movements')->count();
+        $submitted = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-returns', $request)
+            ->assertCreated()->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.movement_id', null);
+        $returnId = $submitted->json('data.id');
+        $this->assertDatabaseCount('stock_movements', $before);
+        $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-returns', $request)
+            ->assertOk()->assertJsonPath('data.id', $returnId);
+        $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-returns', [
+            ...$request, 'quantity' => 1,
+        ])->assertUnprocessable();
+        $this->as($fixture['creatorToken'])->postJson("/api/v1/stock/supplier-returns/{$returnId}/approve", [
+            'expected_version' => 1,
+        ])->assertForbidden();
+
+        $result = $this->as($fixture['managerToken'])->postJson(
+            "/api/v1/stock/supplier-returns/{$returnId}/approve",
+            ['expected_version' => 1, 'review_note' => 'Lote físico e quantidade conferidos por supervisor']
+        )->assertOk()->assertJsonPath('data.status', 'completed')
+            ->assertJsonPath('data.version', 2);
+        $movementId = (int) $result->json('data.movement_id');
+        $this->assertGreaterThan(0, $movementId);
+        $this->assertDatabaseCount('stock_movements', $before + 1);
+        $this->assertDatabaseHas('stock_movements', [
+            'id' => $movementId, 'tenant_id' => $fixture['tenant']->id,
+            'kind' => 'issue', 'quantity' => 2,
+            'source_location_id' => $fixture['destination'],
+        ]);
+        $this->assertDatabaseHas('stock_movement_lot_allocations', [
+            'tenant_id' => $fixture['tenant']->id, 'movement_id' => $movementId,
+            'lot_id' => $firstLot, 'quantity' => 2,
+        ]);
+        $this->assertDatabaseHas('stock_lot_balances', [
+            'lot_id' => $firstLot, 'location_id' => $fixture['destination'], 'quantity' => 3,
+        ]);
+        $this->assertDatabaseHas('stock_lot_balances', [
+            'lot_id' => $secondLot, 'location_id' => $fixture['destination'], 'quantity' => 2,
+        ]);
+        $this->assertDatabaseHas('stock_balances', [
+            'tenant_id' => $fixture['tenant']->id, 'item_id' => $fixture['item'],
+            'location_id' => $fixture['destination'], 'quantity' => 5,
+        ]);
+        $this->as($fixture['managerToken'])->postJson(
+            "/api/v1/stock/supplier-returns/{$returnId}/approve",
+            ['expected_version' => 1]
+        )->assertStatus(409);
+        $this->assertDatabaseCount('stock_movements', $before + 1);
+        $this->as($fixture['creatorToken'])->getJson("/api/v1/stock/purchase-orders/{$order}")
+            ->assertOk()->assertJsonPath('data.items.0.receipts.0.returned_quantity', 2);
+        $this->as($fixture['creatorToken'])->getJson("/api/v1/stock/supplier-returns?purchase_order_id={$order}")
+            ->assertOk()->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.receipt.invoice_reference', 'NF-DEVOLUCAO-A');
+        $this->assertDatabaseHas('audit_entries', [
+            'tenant_id' => $fixture['tenant']->id,
+            'entity_type' => 'StockSupplierReturn',
+            'entity_id' => $returnId, 'action' => 'stock.supplier_return.completed',
+        ]);
+    }
+
+    public function test_return_rejects_overmatched_quantity_and_insufficient_exact_lot_stock(): void
+    {
+        $fixture = $this->fixture();
+        [, , $receiptId, $match] = $this->reconciledForReturn($fixture, 2, 'NF-DEVOLUCAO-QUOTA');
+        $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-returns', [
+            'request_id' => (string) Str::uuid(),
+            'purchase_receipt_match_id' => $match,
+            'quantity' => 3, 'reason' => 'Excede o recebimento conciliado',
+        ])->assertUnprocessable();
+
+        $returnId = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-returns', [
+            'request_id' => (string) Str::uuid(),
+            'purchase_receipt_match_id' => $match,
+            'quantity' => 2, 'reason' => 'Devolver lote físico ao fornecedor',
+        ])->assertCreated()->json('data.id');
+
+        $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-returns', [
+            'request_id' => (string) Str::uuid(),
+            'purchase_receipt_match_id' => $match,
+            'quantity' => 1, 'reason' => 'Tentativa de reservar mais do que recebido',
+        ])->assertUnprocessable();
+
+        // A separate stock issue is legal; the approval must revalidate the lot balance.
+        $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/movements', [
+            'request_id' => (string) Str::uuid(),
+            'kind' => 'issue',
+            'item_id' => $fixture['item'],
+            'source_location_id' => $fixture['destination'],
+            'destination_location_id' => null,
+            'quantity' => 1,
+            'reason' => 'Consumo anterior à aprovação da devolução',
+        ])->assertCreated();
+        $this->as($fixture['managerToken'])->postJson(
+            "/api/v1/stock/supplier-returns/{$returnId}/approve", ['expected_version' => 1]
+        )->assertUnprocessable();
+        $this->assertDatabaseHas('stock_supplier_returns', [
+            'id' => $returnId, 'status' => 'pending', 'movement_id' => null,
+        ]);
+        $this->as($fixture['creatorToken'])->postJson(
+            "/api/v1/stock/supplier-returns/{$returnId}/cancel", [
+                'expected_version' => 1, 'reason' => 'O lote já não possui a quantidade necessária',
+            ]
+        )->assertOk()->assertJsonPath('data.status', 'cancelled');
+        $this->assertDatabaseCount('stock_supplier_returns', 1);
+    }
+
+    public function test_supplier_returns_are_tenant_scoped_and_role_guarded(): void
+    {
+        $fixture = $this->fixture();
+        [, , , $match] = $this->reconciledForReturn($fixture, 1, 'NF-DEVOLUCAO-SCOPE');
+        $payload = [
+            'request_id' => (string) Str::uuid(),
+            'purchase_receipt_match_id' => $match,
+            'quantity' => 1, 'reason' => 'Retorno por lote danificado',
+        ];
+        $other = Tenant::query()->create(['name' => 'Other company', 'slug' => 'supplier-return-foreign']);
+        [, $foreign] = $this->token($other);
+        $this->as($foreign)->postJson('/api/v1/stock/supplier-returns', $payload)->assertNotFound();
+        $this->as($foreign)->getJson('/api/v1/stock/supplier-returns')
+            ->assertOk()->assertJsonPath('meta.total', 0);
+        [, $technician] = $this->token($fixture['tenant'], 'technician');
+        $this->as($technician)->postJson('/api/v1/stock/supplier-returns', $payload)->assertForbidden();
+
+        $returnId = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-returns', $payload)
+            ->assertCreated()->json('data.id');
+        $this->as($foreign)->getJson("/api/v1/stock/supplier-returns/{$returnId}")
+            ->assertNotFound();
+        $this->as($fixture['creatorToken'])->postJson(
+            "/api/v1/stock/supplier-returns/{$returnId}/approve", ['expected_version' => 1]
+        )->assertForbidden();
+        $this->as($fixture['creatorToken'])->postJson(
+            "/api/v1/stock/supplier-returns/{$returnId}/cancel", [
+                'expected_version' => 1, 'reason' => 'Solicitação rejeitada por conferência',
+            ]
+        )->assertOk();
+        $this->assertDatabaseCount('stock_movements', 1);
+    }
+
 }
