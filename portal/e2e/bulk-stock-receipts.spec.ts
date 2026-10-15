@@ -103,6 +103,15 @@ test('nota com dois itens registra dois lotes e apenas duas movimentações', as
 
   await expect(page.getByRole('row').filter({ hasText: 'LOTE-A-' + suffix })).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: 'LOTE-B-' + suffix })).toBeVisible();
+  const grouped = page.getByRole('region', { name: 'Notas recebidas em lote' });
+  await grouped.getByLabel('Buscar referência da nota').fill(invoice);
+  const noteRow = grouped.getByRole('row').filter({ hasText: invoice });
+  await expect(noteRow).toBeVisible();
+  await noteRow.getByRole('button', { name: 'Ver itens da nota ' + invoice }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('LOTE-A-' + suffix)).toBeVisible();
+  await expect(dialog.getByText('LOTE-B-' + suffix)).toBeVisible();
+  await dialog.getByRole('button', { name: 'Fechar nota em lote' }).click();
   await page.reload();
   await page.getByRole('button', { name: 'Entradas', exact: true }).click();
   await expect(page.getByRole('row').filter({ hasText: 'LOTE-A-' + suffix })).toBeVisible();
