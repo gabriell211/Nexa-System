@@ -9,6 +9,7 @@ use App\Models\StockLocation;
 use App\Models\StockReorderPolicy;
 use App\Services\AuditWriter;
 use App\Services\CustomerPortfolio;
+use App\Services\StockReorderAvailability;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -22,6 +23,7 @@ final class StockReorderPolicyController extends Controller
     public function __construct(
         private readonly CustomerPortfolio $portfolio,
         private readonly AuditWriter $audit,
+        private readonly StockReorderAvailability $availability,
     ) {}
 
     public function index(Request $request): AnonymousResourceCollection
@@ -36,61 +38,11 @@ final class StockReorderPolicyController extends Controller
             'status' => ['sometimes', 'in:critical,safety,low,ok,inactive'],
         ]);
         $tenantId = (int) $request->attributes->get('nexa_tenant')->id;
-        $today = now('UTC')->toDateString();
+        $available = $this->availability->availableExpression();
 
-        $reservations = DB::table('stock_shipments')
-            ->where('tenant_id', $tenantId)
-            ->select('item_id', 'source_location_id')
-            ->selectRaw('SUM(quantity - shipped_quantity - cancelled_quantity) AS reserved_quantity')
-            ->groupBy('item_id', 'source_location_id');
-        $expired = DB::table('stock_lot_balances as lot_balances')
-            ->join('stock_lots as lots', static function ($join): void {
-                $join->on('lots.id', '=', 'lot_balances.lot_id')
-                    ->on('lots.tenant_id', '=', 'lot_balances.tenant_id');
-            })
-            ->where('lot_balances.tenant_id', $tenantId)
-            ->whereNotNull('lots.expires_on')->where('lots.expires_on', '<', $today)
-            ->select('lots.item_id', 'lot_balances.location_id')
-            ->selectRaw('SUM(lot_balances.quantity) AS expired_quantity')
-            ->groupBy('lots.item_id', 'lot_balances.location_id');
-
-        $net = '(COALESCE(balances.quantity, 0) - COALESCE(reservations.reserved_quantity, 0)'
-            .' - COALESCE(expired.expired_quantity, 0))';
-        // CASE is portable across SQLite and PostgreSQL. Reservations are for
-        // eligible stock at creation, but are not tied to individual lots. A
-        // later expiry can overlap a reservation, so this intentionally reports
-        // a conservative lower bound rather than claiming an unsafe surplus.
-        $available = "(CASE WHEN {$net} > 0 THEN {$net} ELSE 0 END)";
-
-        $query = StockReorderPolicy::query()->from('stock_reorder_policies as policies')
-            ->where('policies.tenant_id', $tenantId)
-            ->join('stock_items as items', static function ($join): void {
-                $join->on('items.id', '=', 'policies.item_id')
-                    ->on('items.tenant_id', '=', 'policies.tenant_id');
-            })
-            ->join('stock_locations as locations', static function ($join): void {
-                $join->on('locations.id', '=', 'policies.location_id')
-                    ->on('locations.tenant_id', '=', 'policies.tenant_id');
-            })
-            ->leftJoin('stock_balances as balances', static function ($join): void {
-                $join->on('balances.tenant_id', '=', 'policies.tenant_id')
-                    ->on('balances.item_id', '=', 'policies.item_id')
-                    ->on('balances.location_id', '=', 'policies.location_id');
-            })
-            ->leftJoinSub($reservations, 'reservations', static function ($join): void {
-                $join->on('reservations.item_id', '=', 'policies.item_id')
-                    ->on('reservations.source_location_id', '=', 'policies.location_id');
-            })
-            ->leftJoinSub($expired, 'expired', static function ($join): void {
-                $join->on('expired.item_id', '=', 'policies.item_id')
-                    ->on('expired.location_id', '=', 'policies.location_id');
-            })
+        $query = $this->availability->query($tenantId)
             ->when(isset($input['item_id']), fn ($q) => $q->where('policies.item_id', $input['item_id']))
-            ->when(isset($input['location_id']), fn ($q) => $q->where('policies.location_id', $input['location_id']))
-            ->select('policies.*')
-            ->selectRaw('COALESCE(balances.quantity, 0) AS physical_quantity')
-            ->selectRaw('COALESCE(reservations.reserved_quantity, 0) AS reserved_quantity')
-            ->selectRaw('COALESCE(expired.expired_quantity, 0) AS expired_quantity');
+            ->when(isset($input['location_id']), fn ($q) => $q->where('policies.location_id', $input['location_id']));
 
         if ($request->boolean('needs_only', true)) {
             $query->where('items.active', true)->where('locations.active', true)

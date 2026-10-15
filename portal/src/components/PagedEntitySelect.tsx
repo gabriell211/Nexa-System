@@ -12,7 +12,7 @@ interface Props<T extends Entity> {
   placeholder: string;
   emptyLabel: string;
   value: string;
-  onChange: (value: string) => void;
+  onChange: (value: string, option: T | null) => void;
   queryKey: readonly unknown[];
   endpoint: string;
   filters?: Record<string, string | number | boolean>;
@@ -55,8 +55,9 @@ export function PagedEntitySelect<T extends Entity>({
     <select id={id} value={value} required={required} disabled={disabled || results.isPending || Boolean(results.error)}
       onChange={event => {
         const next = event.target.value;
-        setChosen(items.find(item => item.id === Number(next)) ?? null);
-        onChange(next);
+        const option = items.find(item => item.id === Number(next)) ?? null;
+        setChosen(option);
+        onChange(next, option);
       }}>
       <option value="">{emptyLabel}</option>
       {missingSelected && <option value={selected.id}>{optionLabel(selected)}</option>}

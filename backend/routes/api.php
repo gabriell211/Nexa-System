@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\V1\StockCompatibilityController;
 use App\Http\Controllers\Api\V1\StockDocumentedReceiptController;
 use App\Http\Controllers\Api\V1\StockCountController;
 use App\Http\Controllers\Api\V1\StockReorderPolicyController;
+use App\Http\Controllers\Api\V1\StockReplenishmentPlanController;
 use App\Http\Controllers\Api\V1\ServiceTicketController;
 use App\Http\Controllers\Api\V1\PrinterAlertController;
 use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
@@ -73,6 +74,8 @@ $registerBackoffice = static function (): void {
         Route::get('/stock/locations', [StockLocationController::class, 'index']);
         Route::get('/stock/balances', StockBalanceController::class);
         Route::get('/stock/reorder-needs', [StockReorderPolicyController::class, 'index']);
+        Route::get('/stock/replenishment-plans', [StockReplenishmentPlanController::class, 'index']);
+        Route::get('/stock/replenishment-plans/{plan}', [StockReplenishmentPlanController::class, 'show']);
         Route::get('/stock/lots', StockLotController::class);
         Route::get('/stock/movements', [StockMovementController::class, 'index']);
         Route::get('/stock/shipments', [StockShipmentController::class, 'index']);
@@ -93,11 +96,15 @@ $registerBackoffice = static function (): void {
         Route::post('/stock/counts', [StockCountController::class, 'store']);
         Route::put('/stock/reorder-policies/{item}/{location}', [StockReorderPolicyController::class, 'upsert']);
         Route::delete('/stock/reorder-policies/{item}/{location}', [StockReorderPolicyController::class, 'destroy']);
+        Route::post('/stock/replenishment-plans', [StockReplenishmentPlanController::class, 'store']);
+        Route::patch('/stock/replenishment-plans/{plan}', [StockReplenishmentPlanController::class, 'update']);
     });
 
     Route::middleware('nexa.roles:owner,admin,manager')->group(static function (): void {
         Route::post('/stock/counts/{count}/approve', [StockCountController::class, 'approve']);
         Route::post('/stock/counts/{count}/reject', [StockCountController::class, 'reject']);
+        Route::post('/stock/replenishment-plans/{plan}/approve', [StockReplenishmentPlanController::class, 'approve']);
+        Route::post('/stock/replenishment-plans/{plan}/cancel', [StockReplenishmentPlanController::class, 'cancel']);
     });
 
     Route::middleware('nexa.roles:owner,admin,manager,supervisor,technician')->group(static function (): void {

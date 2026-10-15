@@ -148,8 +148,12 @@ jobs:
         run: cat /tmp/nexa-http-smoke.log || true
 
   browser-e2e:
-    name: Playwright Chromium E2E (desktop and mobile)
+    name: Playwright Chromium E2E (${{ matrix.suite }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, replenishment]
     env:
       APP_ENV: production
       APP_DEBUG: "false"
@@ -195,14 +199,19 @@ jobs:
         run: |
           (cd backend && php artisan serve --host=127.0.0.1 --port=8080 > /tmp/nexa-e2e-api.log 2>&1 &)
           (cd portal && npm run dev > /tmp/nexa-e2e-vite.log 2>&1 &)
-      - name: Run real desktop and mobile browser E2E
+      - name: Run core desktop and mobile browser E2E
+        if: matrix.suite == 'core'
         working-directory: portal
-        run: npm run test:e2e
+        run: npm run test:e2e -- e2e/operations.spec.ts e2e/reorder-needs.spec.ts e2e/stock-counts.spec.ts
+      - name: Run replenishment browser E2E
+        if: matrix.suite == 'replenishment'
+        working-directory: portal
+        run: npm run test:e2e -- e2e/replenishment-plans.spec.ts --project=desktop-chromium
       - name: Upload artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-debug
+          name: playwright-debug-${{ matrix.suite }}
           path: |
             portal/playwright-report/
             portal/test-results/

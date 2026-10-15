@@ -18,9 +18,15 @@ final class StockOperatorController extends Controller
         $data = $request->validate([
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
+            'eligible_for_replenishment' => ['sometimes', 'in:0,1,true,false'],
         ]);
         $members = $request->attributes->get('nexa_tenant')->users()
             ->where('users.active', true)->select('users.id', 'users.name')
+            ->when($request->boolean('eligible_for_replenishment'), static fn ($query) => $query
+                ->whereIn('tenant_user.role', ['owner', 'admin', 'manager', 'warehouse'])
+                ->where(static fn ($scope) => $scope
+                    ->whereIn('tenant_user.role', ['owner', 'admin'])
+                    ->orWhere('tenant_user.customer_scope', 'all')))
             ->orderBy('users.name')->paginate($data['per_page'] ?? 25);
 
         return response()->json($members->through(static fn ($user): array => [
