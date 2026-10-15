@@ -322,10 +322,10 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       await owner.getByRole('button', { name: 'Compras', exact: true }).click();
       await owner.getByRole('button', { name: 'Revisar pedido ' + orderId }).click();
       const dialog = owner.getByRole('dialog');
-      await expect(dialog.getByText('R$ 137,50')).toBeVisible();
+      await expect(dialog.getByText('R$ 137,50', { exact: true })).toBeVisible();
       await dialog.getByLabel('Nota do aprovador').fill('Custo e quantidade conferidos');
       await dialog.getByRole('button', { name: 'Aprovar pedido de compra' }).click();
-      await expect(dialog.getByText('Aprovado', { exact: true })).toBeVisible();
+      await expect(dialog.locator('p').filter({ hasText: 'Situação: Aprovado' })).toBeVisible();
       expect(await paginatedTotal(owner.context().request, '/stock/movements')).toBe(movementCount);
       const response = await owner.context().request.get(apiRoot + '/stock/replenishment-plans/' + planId);
       expect(response.status()).toBe(200);
