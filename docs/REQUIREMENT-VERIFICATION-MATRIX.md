@@ -124,7 +124,7 @@
 | NX-096 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Configuração granular de quais suprimentos geram alerta e sugestões de troca por impressora. |
 | NX-097 | Suprimentos, peças e inteligência de consumo | NÃO COMPROVADO | Preparar motor estatístico determinístico; qualquer futuro uso de IA deverá ser isolado, validado e opcional. |
 | NX-098 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Estoque da empresa, depósitos, técnicos e cada localidade do cliente, com posições de saldo separadas. |
-| NX-099 | Estoque, movimentação e reposição | PARCIAL — fornecedor, pedidos de compra supervisionados e lote de entrada; sem conciliação fiscal entre pedido e recebimento | Cadastro de fornecedores, nota fiscal/documento, lote, custo, validade e entrada unitária ou em massa. |
+| NX-099 | Estoque, movimentação e reposição | PARCIAL — compras aprovadas e vínculo de entrada documentada, nota/lote/custo/diferença; sem conciliação fiscal ou estorno | Cadastro de fornecedores, nota fiscal/documento, lote, custo, validade e entrada unitária ou em massa. |
 | NX-100 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Transferência provedor → técnico, provedor → cliente, técnico → cliente, cliente → técnico e devolução ao provedor. |
 | NX-101 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Movimento transacional com origem/destino, saldo antes/depois, autorização, justificativa e trilha de auditoria. |
 | NX-102 | Estoque, movimentação e reposição | PARCIAL — implementação e CI; sem aceite integral | Bloqueio de saldo negativo e de consumo concorrente da mesma unidade; reservas para chamados e reposições. |
@@ -535,3 +535,8 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 
 - NX-099/NX-105/NX-107: fluxo supervisionado com pedido do fornecedor vinculado a linhas de uma proposta aprovada e valores inteiros em centavos. A segunda aprovação controla quantidade combinada entre compras aprovadas e remessas reservadas, com locks transacionais e isolamento de empresa.
 - Matriz e readme continuam PARCIAIS: não existe pedido realmente transmitido ao fornecedor, sistema de compras financeiro completo, pagamento, importação NF-e, conciliação da entrada com compra ou confirmação física. CI valida o incremento, não o processo fiscal em campo.
+
+## Evidências da Entrega 54 — recebimento físico vinculado a compra (15/10/2026)
+
+- NX-099/NX-107/NX-286: a conciliação associa recebimentos reais do razão já persistidos a linhas aprovadas de pedidos de compra. Diferenças de custo têm justificativa e uma entrada só pode pertencer a uma compra. Quantidades não ultrapassam a linha aprovada e a tentativa repetida não gera outro movimento.
+- Continua PARCIAL: não comprova validação tributária de NF-e, origem fiscal, estorno e devolução, financiamento, envio automático ao fornecedor ou aceite real de mercadorias.
