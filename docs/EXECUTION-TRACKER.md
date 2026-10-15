@@ -626,3 +626,11 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Informa contadores `pending/known/unknown/overdue/applied/stale/expired`, idade da pendência mais antiga e severidade. Comando não muta eventos nem dispara envio. Os totais `expired` são históricos, não alertas de expiração recente.
 - Testes automatizados de fila vazia, warning, critical, capacidade, desativação, configuração inválida, não exposição de identificadores, histórico e ausência de escrita. Integração com monitor externo é manual; nenhum webhook/e-mail adicional é enviado.
 - Sem validação de tráfego real, instalação operacional de monitor externo, simulação multi-worker e aceite de todos os 324 requisitos; NX-039/041 continuam PARCIAIS.
+
+
+## Entrega 39 — reconciliação segura após indisponibilidade prolongada do Scheduler (15/10/2026)
+
+- Bug corrigido: a rotina de expiração de eventos `pending` descartava indistintamente eventos que já estavam relacionados a um UUID conhecido caso o Scheduler ficasse indisponível além da retenção de 72h. Agora usa consultas `NOT EXISTS` nas notificações originais e reenvios antes de expirar, sem descartar eventos comprovadamente correlacionáveis.
+- A execução agendada continua processando eventos correlacionáveis em lotes, independentemente da idade; desconhecidos antigos ainda expiram e preservam seu hash Svix para impedir reaplicação após redelivery.
+- Teste de regressão cobre parada >72h, evento correlacionado aplicado com resultado de bounce, evento desconhecido expirado, status e auditoria idempotentes.
+- A decisão de correlação e expiração é dependente do estado do banco; ainda faltam ensaios de interleaving multi-worker, webhook real, observabilidade externa e homologação de produção. NX-039/041 PARCIAIS.
