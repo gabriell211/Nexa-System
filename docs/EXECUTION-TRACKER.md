@@ -650,3 +650,11 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - A API preserva contadores de 64 bits como strings decimais; canais não disponíveis continuam nulos. UI traz janela modal, filtros de datas, paginação e aviso explícito de que o histórico não comprova estado online/produção por período.
 - Testes Laravel abrangem paginação, data UTC inclusiva, validação estrita, empates, leituras com recebimento posterior, ausência de amostras e isolamento por tenant/carteira; Playwright testa a abertura da janela em cadastro real.
 - Pendente: homologação física, investigação de reset/rollover, apuração de produção entre leituras, custos/contratos e aceitação dos 324 requisitos completos.
+
+## Entrega 42 — prévia conservadora de incrementos de contadores (15/10/2026)
+
+- `PrinterProductionPreview` compara apenas amostras com dois timestamps distintos **dentro da janela**. Não soma valores inicial/final cruzando a borda da janela. Consulta `printer_readings` com escopo explícito de tenant/impressora, ordenação cronológica, cursor e limite de 20.000 amostras; período é restrito a 31 dias UTC.
+- Canal ausente não equivale a zero; quedas de contador/rollover não geram incremento negativo ou suposta produção. Duplicidade de timestamp com valores idênticos é agrupada; divergência invalida intervalos adjacentes.
+- Aritmética de inteiros de medição é decimal exata (`UnsignedDecimal`) sem cast para float/int, incluindo acumulação potencialmente maior que 64 bits. Resposta informa pares observados, lacunas, quedas, conflitos e status; `billing_ready=false` é incondicional.
+- A tela de histórico ganhou ação explícita "Prévia de incrementos", estado vazio e indicadores de revisão. Testes cobrem resets, nulls, ordem, precisão >2^53, tempos idênticos/conflitantes, fronteiras, tamanho da janela e segregação. Playwright testa prévia vazia.
+- **Não é faturamento** nem prova de volume impresso completo; podem existir resets entre duas leituras, coletas perdidas, diferenças de origem do relógio, páginas copiadas/impressas ou outras particularidades de fabricante. Falta homologação real.
