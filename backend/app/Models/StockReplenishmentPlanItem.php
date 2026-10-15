@@ -28,5 +28,6 @@ final class StockReplenishmentPlanItem extends Model
 
     public function item(): BelongsTo { return $this->belongsTo(StockItem::class, 'item_id'); }
     public function location(): BelongsTo { return $this->belongsTo(StockLocation::class, 'location_id'); }
+    public function purchaseOrderLines(): HasMany { return $this->hasMany(StockPurchaseOrderLine::class, 'plan_line_id'); }
     public function shipments(): HasMany { return $this->hasMany(StockShipment::class, 'replenishment_plan_item_id'); }
 }
