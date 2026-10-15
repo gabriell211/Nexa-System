@@ -192,6 +192,118 @@ final class CollectorIncidentNotificationTest extends TestCase
         $this->assertDatabaseCount('collector_incident_notifications',0);
     }
 
+    public function test_per_run_budget_defers_without_reserving_or_dropping_pending_notices(): void
+    {
+        Mail::fake();
+        $this->travelTo(CarbonImmutable::parse('2026-10-14T12:00:00Z'));
+        [$tenant,$agent,$incident]=$this->incident('run-cap');
+        $this->member($tenant,'owner');
+        $this->member($tenant,'admin');
+        $this->enable();
+        config()->set('nexa.collector_notifications.max_per_run',1);
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        Mail::assertSent(CollectorHealthIncidentMail::class,1);
+        $this->assertDatabaseCount('collector_incident_notifications',1);
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        Mail::assertSent(CollectorHealthIncidentMail::class,2);
+        $this->assertDatabaseCount('collector_incident_notifications',2);
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        Mail::assertSent(CollectorHealthIncidentMail::class,2);
+    }
+
+    public function test_per_tenant_rolling_hour_budget_defers_and_recovers_after_window(): void
+    {
+        Mail::fake();
+        $this->travelTo(CarbonImmutable::parse('2026-10-14T12:00:00Z'));
+        [$tenant,$agent,$incident]=$this->incident('tenant-cap');
+        $this->member($tenant,'owner');
+        $this->member($tenant,'admin');
+        $this->enable();
+        config()->set('nexa.collector_notifications.max_per_tenant_hour',1);
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        Mail::assertSent(CollectorHealthIncidentMail::class,1);
+        $this->assertDatabaseCount('collector_incident_notifications',1);
+
+        $this->travel(61)->minutes();
+        // Deliberately keep the same incident active for the reminder stage.
+        // No new reservation was made for the deferred second recipient.
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        Mail::assertSent(CollectorHealthIncidentMail::class,2);
+        $this->assertDatabaseCount('collector_incident_notifications',2);
+    }
+
+    public function test_global_hour_budget_is_shared_by_tenants_not_reset_per_process(): void
+    {
+        Mail::fake();
+        $this->travelTo(CarbonImmutable::parse('2026-10-14T12:00:00Z'));
+        [$tenantA,$agentA]=$this->incident('global-cap-a');
+        $this->member($tenantA,'owner');
+        [$tenantB,$agentB]=$this->incident('global-cap-b');
+        $this->member($tenantB,'owner');
+        $this->enable();
+        config()->set('nexa.collector_notifications.max_per_tenant_hour',1);
+        config()->set('nexa.collector_notifications.max_global_hour',1);
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        Mail::assertSent(CollectorHealthIncidentMail::class,1);
+        $this->assertDatabaseCount('collector_incident_notifications',1);
+        $this->assertSame(1,CollectorIncidentNotification::query()
+            ->where('tenant_id',$tenantA->id)->count());
+        $this->assertSame(0,CollectorIncidentNotification::query()
+            ->where('tenant_id',$tenantB->id)->count());
+
+        $this->travel(61)->minutes();
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        Mail::assertSent(CollectorHealthIncidentMail::class,2);
+        $this->assertDatabaseCount('collector_incident_notifications',2);
+    }
+
+    public function test_invalid_mail_budgets_fail_closed_before_any_send(): void
+    {
+        Mail::fake();
+        $this->travelTo(CarbonImmutable::parse('2026-10-14T12:00:00Z'));
+        [$tenant]=$this->incident('invalid-budget');
+        $this->member($tenant,'owner');
+        $this->enable();
+        foreach ([
+            ['max_per_run',0],['max_per_run',501],
+            ['max_per_tenant_hour',0],['max_per_tenant_hour',1001],
+            ['max_global_hour',0],['max_global_hour',10001],
+        ] as [$name,$value]) {
+            config()->set('nexa.collector_notifications.'.$name,$value);
+            $this->artisan('nexa:alerts:notify-collectors')->assertFailed();
+            config()->set('nexa.collector_notifications.'.$name,
+                match ($name) {
+                    'max_per_run'=>50,'max_per_tenant_hour'=>20,'max_global_hour'=>100,
+                });
+        }
+        config()->set('nexa.collector_notifications.max_per_tenant_hour',21);
+        config()->set('nexa.collector_notifications.max_global_hour',20);
+        $this->artisan('nexa:alerts:notify-collectors')->assertFailed();
+        Mail::assertNothingSent();
+        $this->assertDatabaseCount('collector_incident_notifications',0);
+    }
+
+    public function test_failed_attempt_consumes_budget_and_is_never_retried_automatically(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-14T12:00:00Z'));
+        [$tenant]=$this->incident('error-cap');
+        $this->member($tenant,'owner');
+        $this->member($tenant,'admin');
+        $this->enable();
+        config()->set('nexa.collector_notifications.max_per_tenant_hour',1);
+        Mail::shouldReceive('to')->once()->andThrow(
+            new \\RuntimeException('sensitive-SMTP-error')
+        );
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        $this->assertSame(1,CollectorIncidentNotification::query()->where('status','failed')->count());
+        $this->assertDatabaseCount('collector_incident_notifications',1);
+        $this->assertStringNotContainsString('sensitive-SMTP-error',
+            json_encode(CollectorIncidentNotification::query()->firstOrFail()->toArray()));
+    }
+
     public function test_api_exposes_aggregate_accepted_counts_but_not_recipient_addresses(): void
     {
         Mail::fake();
