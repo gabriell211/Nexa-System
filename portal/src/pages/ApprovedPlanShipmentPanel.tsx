@@ -70,7 +70,7 @@ export function ApprovedPlanShipmentPanel({ planId, lines, token, onChanged }: {
       await Promise.all([
         onChanged('Reserva vinculada ao plano e auditada.'),
         queryClient.invalidateQueries({ queryKey: ['plan-linked-shipments'] }),
-        queryClient.invalidateQueries({ queryKey: ['shipment-list'] }),
+        queryClient.invalidateQueries({ queryKey: ['shipments'] }),
         queryClient.invalidateQueries({ queryKey: ['stock-list'] }),
       ]);
     },
