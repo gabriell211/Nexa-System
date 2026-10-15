@@ -217,6 +217,67 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       expect(await paginatedTotal(request, '/stock/shipments')).toBe(baselineShipments);
       expect(await paginatedTotal(request, '/stock/movements')).toBe(baselineMovements);
     });
+    await test.step('Reservar manualmente parte aprovada, expedir e receber com rastreio', async () => {
+      const request = owner.context().request;
+      const sourceName = 'Origem abastecida ' + suffix;
+      const sourceId = (await writeStock(request, 'post', '/stock/locations', {
+        name: sourceName, kind: 'provider',
+      }, 201)).data.id;
+      await writeStock(request, 'post', '/stock/movements', {
+        request_id: randomUUID(), kind: 'receipt', item_id: itemId,
+        source_location_id: null, destination_location_id: sourceId,
+        quantity: 8, reason: 'Estoque de origem preparado para a expedição',
+      }, 201);
+
+      const response = await request.get(apiRoot + '/stock/replenishment-plans/' + planId);
+      expect(response.status(), await response.text()).toBe(200);
+      const body: { data: { items: Array<{ id: number; item_id: number;
+        remaining_quantity: number; allocated_quantity: number }> } } = await response.json();
+      const line = body.data.items.find(entry => entry.item_id === itemId);
+      expect(line).toBeDefined();
+      expect(line?.remaining_quantity).toBe(10);
+
+      await owner.getByRole('region', { name: 'Propostas de reposição' })
+        .getByRole('row').filter({ has: owner.getByText('#' + planId, { exact: true }) })
+        .getByRole('button', { name: 'Detalhes' }).click();
+      const dialog = owner.getByRole('dialog');
+      const fulfillment = dialog.getByRole('region', { name: 'Executar reposição aprovada' });
+      await fulfillment.getByLabel('Item aprovado *').selectOption(String(line!.id));
+      await fulfillment.getByLabel('Buscar origem da remessa').fill(sourceName);
+      await fulfillment.getByLabel('Origem da remessa *', { exact: true })
+        .selectOption({ label: sourceName });
+      await fulfillment.getByLabel('Quantidade para reservar *').fill('5');
+      await fulfillment.getByLabel('Justificativa da reserva *')
+        .fill('Separação autorizada para enviar ao destino planejado');
+      await fulfillment.getByRole('button', { name: 'Confirmar reserva vinculada' }).click();
+      await expect(fulfillment.getByRole('status').filter({
+        hasText: 'A expedição ainda exige confirmação.',
+      })).toBeVisible();
+      await expect(fulfillment.getByText('5 já alocados de 10.')).toBeVisible();
+      const linked = fulfillment.getByRole('row').filter({ hasText: 'reserved' });
+      await expect(linked).toHaveCount(1);
+      const shipmentId = Number((await linked.locator('td').first().innerText()).replace('#', ''));
+      expect(shipmentId).toBeGreaterThan(0);
+
+      expect(await paginatedTotal(request, '/stock/shipments')).toBe(baselineShipments + 1);
+      expect(await paginatedTotal(request, '/stock/movements')).toBe(baselineMovements + 1);
+      const dispatch = await writeStock(request, 'post',
+        '/stock/shipments/' + shipmentId + '/dispatch', {
+          request_id: randomUUID(), quantity: 5, reason: 'Expedição física conferida',
+        }, 200);
+      expect(dispatch.data.id).toBe(shipmentId);
+      const receive = await writeStock(request, 'post',
+        '/stock/shipments/' + shipmentId + '/receive', {
+          request_id: randomUUID(), quantity: 5, reason: 'Recebimento físico conferido',
+        }, 200);
+      expect(receive.data.id).toBe(shipmentId);
+      expect(await paginatedTotal(request, '/stock/movements')).toBe(baselineMovements + 3);
+      const refreshed = await request.get(apiRoot + '/stock/replenishment-plans/' + planId);
+      const latest: { data: { items: Array<{ id: number; allocated_quantity: number }> } } =
+        await refreshed.json();
+      expect(latest.data.items.find(entry => entry.id === line?.id)?.allocated_quantity).toBe(5);
+    });
+
   } finally {
     await ownerContext.close();
   }
