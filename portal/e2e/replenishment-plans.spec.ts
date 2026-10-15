@@ -276,6 +276,15 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       const latest: { data: { items: Array<{ id: number; allocated_quantity: number }> } } =
         await refreshed.json();
       expect(latest.data.items.find(entry => entry.id === line?.id)?.allocated_quantity).toBe(5);
+      await dialog.getByRole('button', { name: 'Fechar proposta' }).click();
+      await owner.getByRole('region', { name: 'Propostas de reposição' })
+        .getByRole('row').filter({ has: owner.getByText('#' + planId, { exact: true }) })
+        .getByRole('button', { name: 'Detalhes' }).click();
+      const summary = owner.getByRole('dialog').locator('.shipment-metrics');
+      await expect(summary.getByText('Reservado')).toBeVisible();
+      await expect(summary.getByText('Em trânsito')).toBeVisible();
+      await expect(summary.getByText('Recebido')).toBeVisible();
+      await expect(summary.locator('div').nth(2).getByText('5', { exact: true })).toBeVisible();
     });
 
   } finally {
