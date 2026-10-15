@@ -590,3 +590,12 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 ### Pendências de aceite
 - Sem ingestão autenticada de DSN/webhooks, sem prova de entrega real, sem reenvio após revisão, sem avaliação de concorrência em múltiplos processos com transporte SMTP real. Cotas globais se aplicam somente aos workers no mesmo banco de dados.
 - Teste unitário/feature não significa homologação de fornecedor de e-mail; precisa de infraestrutura e serviço operacional, medições em produção e limites de spam. NX-039/041 permanecem PARCIAIS.
+
+## Entrega 35 — replay auditado e único de falha confirmada pelo operador (15/10/2026)
+
+- Tabela independente `collector_notification_replays`, com referência administrativa de revisão, status e timestamps, FK tenant/alerta/original e índice único por tentativa original; impede replay duplo ainda que dois processos façam reserva em concorrência.
+- CLI local `nexa:alerts:replay-collector-mail ID --review-reference=CASE-123 --confirm-not-accepted`, sem agendamento nem endpoint HTTP. Exige revisão externa explícita de não aceitação pelo transporte; aceita só origem `failed`, incidente ativo, proprietário/admin ativo, e-mail verificado e cliente/tenant/agente ativos.
+- Reserva usa o mesmo `collector_notification_rate_locks` da entrega 34 e computa mensagens originais **e** replays em orçamentos horário por tenant e globais; falta de cota adia sem criar linha. O scheduler automático também considera os replays nos dois orçamentos.
+- Resultados do replay são auditados sem corpos de mensagens, destinatários ou exceções SMTP. Falhas ou ambiguidade não são reenviadas; a tentativa original mantém sua condição. Endpoint/portal apresentam somente contagens agregadas por incidente e carteira.
+- Testes Laravel devem cobrir autorização explícita, única tentativa, bloqueio de originais aceitos/ambíguos/devolvidos, revogação, incidente recuperado, cotas compartilhadas, falhas sanitizadas e opção desabilitada.
+- **Sem webhooks/DSN assinados, confirmação de recebimento, SMTP real ou homologação operacional**. NX-039/041 permanecem PARCIAIS.
