@@ -27,6 +27,23 @@ final class StockSupplyCatalogService
         });
     }
 
+    public function updateSupplier(Tenant $tenant, User $actor, int $supplierId, array $input): StockSupplier
+    {
+        return DB::transaction(function () use ($tenant, $actor, $supplierId, $input): StockSupplier {
+            $supplier = StockSupplier::query()->where('tenant_id', $tenant->id)
+                ->lockForUpdate()->findOrFail($supplierId);
+            $fields = ['code', 'name', 'email', 'document', 'active'];
+            $before = $supplier->only($fields);
+            $supplier->fill($input);
+            if ($supplier->isDirty()) {
+                $supplier->save();
+                $this->audit->write($tenant, $actor, 'stock.supplier.updated',
+                    $supplier, $before, $supplier->only($fields));
+            }
+            return $supplier;
+        }, 3);
+    }
+
     public function addCompatibility(Tenant $tenant, User $actor, int $itemId, array $input): StockItemCompatibility
     {
         return DB::transaction(function () use ($tenant,$actor,$itemId,$input): StockItemCompatibility {

@@ -23,7 +23,7 @@ final class StockDocumentedReceiptService
     {
         return DB::transaction(function () use ($tenant,$actor,$input): StockReceiptDetail {
             $supplier = StockSupplier::query()->where('tenant_id',$tenant->id)
-                ->where('active',true)->find($input['supplier_id']);
+                ->where('active',true)->lockForUpdate()->find($input['supplier_id']);
             if (!$supplier) {
                 throw ValidationException::withMessages(['supplier_id'=>'Fornecedor inativo ou não pertence à empresa.']);
             }

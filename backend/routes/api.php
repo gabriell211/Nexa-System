@@ -84,6 +84,7 @@ $registerBackoffice = static function (): void {
         Route::get('/stock/counts/{count}', [StockCountController::class, 'show']);
         Route::post('/stock/items', [StockItemController::class, 'store']);
         Route::post('/stock/suppliers', [StockSupplierController::class, 'store']);
+        Route::patch('/stock/suppliers/{supplier}', [StockSupplierController::class, 'update']);
         Route::post('/stock/receipts', [StockDocumentedReceiptController::class, 'store']);
         Route::post('/stock/items/{item}/compatibilities', [StockCompatibilityController::class, 'store']);
         Route::delete('/stock/items/{item}/compatibilities/{compatibility}', [StockCompatibilityController::class, 'destroy']);
