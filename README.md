@@ -35,6 +35,14 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Reserva de remessas vinculadas a planos aprovados — incremento 51 (parcial)
+
+- Planos aprovados podem gerar **reservas manuais de remessa por linha**, com origem escolhida pelo operador, destino imutável conforme proposta e limite de quantidade aprovada. A reserva reutiliza o serviço de estoque e **não** dispara expedição, recebimento nem compra automaticamente.
+- A API POST /api/v1/stock/replenishment-plans/{plan}/items/{line}/reserve-shipment exige papel de estoque e carteira completa, valida UUID, motivo e quantidade, aplica lock do SKU e do plano, rejeita rascunho/cancelamento, falta de saldo e excesso da cota. Reenvio idêntico retorna a remessa original, sem duplicar reservas; FKs compostas impedem associação entre empresas.
+- A consulta de remessas pode filtrar a linha de reposição. O detalhe do plano exibe o total já alocado e o restante por linha. Após associar uma remessa, o cancelamento do plano aprovado é bloqueado para não invalidar uma execução logística já iniciada.
+- Testes Laravel validam autorização, idempotência, quantidade, cancelamento, isolamento e transições do ledger; o Playwright cobre aprovação, reserva manual, expedição e recebimento. **O CI do incremento 51 precisa ser aprovado antes do merge.**
+- NX-105, NX-106, NX-107, NX-108 e NX-110 seguem **PARCIAIS**: sem pedido de compra vinculado, previsão automática, faturamento ou homologação logística em campo. A quantidade cancelada de remessa pode liberar cota aprovada; material já expedido continua contabilizado contra a cota.
+
 ### Consulta das notas recebidas em lote — incremento 50 (parcial)
 
 - A API oferece histórico paginado de cabeçalhos de recebimento em lote, filtrável por referência do documento ou fornecedor. A consulta exige autenticação, papel de estoque e acesso à carteira completa; aplica escopo da empresa diretamente no SQL, antes da paginação. Ordenação por ID descendente mantém desempate determinístico e eager loading evita N+1 de fornecedores.
