@@ -159,7 +159,7 @@ final class CollectorNotificationReplayService
             if ($providerId!==null) {
                 try {
                     app(ResendWebhookProcessor::class)->reconcileForProviderEmailId($providerId);
-                 catch (\Throwable $error) {
+                } catch (\Throwable $error) {
                     // A scheduled reconciliation sweep repairs transient DB races.
                     logger()->warning('Collector provider event reconciliation deferred');
                 }
