@@ -17,6 +17,12 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Recuperação de webhooks correlacionados após parada longa — incremento 39 (parcial)
+
+- Corrigida a expiração do reconciliador: após 72 horas (configuráveis), **somente eventos pendentes sem UUID associado a notificação original ou reenvio** podem expirar. Eventos cuja mensagem já é conhecida permanecem elegíveis para reconciliação, mesmo após uma parada prolongada do Scheduler.
+- O processamento continua limitado por lote e idempotente por hash Svix, respeita a precedência entrega/devolução/reclamação, não reenvia notificações e não atribui um evento sem correspondência a empresas.
+- Teste de regressão simula mais de 72 horas sem execução agendada, com evento conhecido recuperado e evento desconhecido expirado. Permanecem pendentes ensaios reais de concorrência PostgreSQL multi-worker, integrações e homologação Resend em produção; NX-039/041 PARCIAIS.
+
 ### Monitoramento agregado de reconciliação Resend — incremento 38 (parcial)
 
 - Comando **somente leitura** `php artisan nexa:mail:check-resend-backlog --json --fail-on-alert`, habilitado explicitamente por `NEXA_RESEND_MONITOR_ENABLED=true`, requer driver Resend e webhooks assinados habilitados. A execução não reconcilia, expira, apaga nem reenvia mensagens.
