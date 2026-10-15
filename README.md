@@ -17,6 +17,13 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Monitoramento agregado de reconciliação Resend — incremento 38 (parcial)
+
+- Comando **somente leitura** `php artisan nexa:mail:check-resend-backlog --json --fail-on-alert`, habilitado explicitamente por `NEXA_RESEND_MONITOR_ENABLED=true`, requer driver Resend e webhooks assinados habilitados. A execução não reconcilia, expira, apaga nem reenvia mensagens.
+- Monitora total de pendências, quantas já têm UUID de envio reconhecido no banco, quantas ainda não possuem correlação, idade da mais antiga e totais históricos `applied/stale/expired`. Eventos sem correlação **não são atribuídos a nenhum tenant**; não existe endpoint externo dessa telemetria.
+- Gera status `warning` para pendências desconhecidas há pelo menos 15 minutos (configurável), `critical` para pendências correlacionáveis há pelo menos 2 minutos ou fila acima de 100 (configuráveis); `--fail-on-alert` permite integração com observabilidade externa por código de saída. Saída não inclui UUID, destinatário, Svix ID, hash de evento, assunto ou credencial.
+- Testes Laravel de opt-in, backlog vazio, atrasos, severidade, ausência de mutação, configuração inválida, métricas históricas e sanitização. **Sem alarme externo conectado, carga concorrente real ou domínio Resend homologado**; NX-039/041 continuam PARCIAIS.
+
 ### Reconciliação automática de webhook precoce — incremento 37 (parcial)
 
 - Webhooks Resend **com assinatura válida** recebidos antes da persistência do UUID da resposta HTTPS não são descartados: os campos mínimos (hash do ID Svix, UUID, tipo e classificação sanitizada de bounce) ficam em estado `pending`, sem destinatário, assunto, corpo nem credencial.

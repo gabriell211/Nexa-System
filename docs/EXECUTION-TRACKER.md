@@ -617,3 +617,12 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Pendências expiradas após 72 horas por padrão recebem `expired`, **sem apagar hash de deduplicação**. Configuração permite lote 1..500 e retenção 1..168 horas; inválida falha fechada.
 - Testes Laravel integram chegada antecipada, aplicação imediata, replay, correção por sweep agendado, eventos desconhecidos, sanitização, expiração e opt-in.
 - **Ainda parcial:** sem ensaio de webhook físico de Resend, política de limpeza de hashes, alarmes de filas pendentes, validação carga concorrente/restart e testes de entregabilidade real. NX-039/041 permanecem PARCIAIS.
+
+
+## Entrega 38 — monitoramento operacional do backlog Resend (15/10/2026)
+
+- Adicionado diagnóstico `ResendWebhookBacklogMonitor` de leitura agregada e comando `nexa:mail:check-resend-backlog` com modo JSON e código de saída de alerta. Configuração opt-in `NEXA_RESEND_MONITOR_ENABLED` e limites estritos de idade e contagem.
+- Distingue pendências com UUID do provedor já correlacionável de eventos sem alvo; não mistura estes dados com carteira ou tenant, já que UUID desconhecido não autoriza identificação de empresa.
+- Informa contadores `pending/known/unknown/overdue/applied/stale/expired`, idade da pendência mais antiga e severidade. Comando não muta eventos nem dispara envio. Os totais `expired` são históricos, não alertas de expiração recente.
+- Testes automatizados de fila vazia, warning, critical, capacidade, desativação, configuração inválida, não exposição de identificadores, histórico e ausência de escrita. Integração com monitor externo é manual; nenhum webhook/e-mail adicional é enviado.
+- Sem validação de tráfego real, instalação operacional de monitor externo, simulação multi-worker e aceite de todos os 324 requisitos; NX-039/041 continuam PARCIAIS.
