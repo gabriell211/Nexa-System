@@ -35,6 +35,13 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Entradas documentadas no portal — incremento 48 (parcial)
+
+- A aba **Entradas** do estoque registra recebimento real com fornecedor ativo, item, destino, documento fiscal, lote, quantidade, custo em centavos, validade opcional e justificativa. Os seletores de fornecedor/item/local usam busca remota paginada, sem limites artificiais às primeiras 100 opções.
+- Cada tentativa mantém seu UUID enquanto a entrada não é alterada, para evitar uma segunda movimentação quando a resposta HTTP é incerta. Após confirmação, o portal atualiza o histórico, saldos e indicadores do estoque; falhas exibem o erro sem descartar o identificador.
+- O histórico paginado mostra também o destino associado à movimentação, sem consulta N+1. O cálculo de moeda ocorre em centavos inteiros. Testes de API verificam destino e documento, e Playwright realiza uma entrada com lote e custo e confirma que uma única movimentação foi persistida. **CI do incremento 48 ainda precisa concluir.**
+- NX-099, NX-101, NX-286 continuam **PARCIAIS**: não há entrada em massa, importação de XML/NF-e, conciliação contábil, retenção de arquivos fiscais, homologação fiscal nem validação física externa. Esta tela requer conferência humana explícita antes do lançamento.
+
 ### Gestão de fornecedores e histórico fiscal — incremento 47 (parcial)
 
 - Fornecedores existentes agora são pesquisáveis por nome/código com paginação, filtros ativo/inativo e isolamento estrito por tenant/carteira. O portal de Estoque ganhou a seção **Fornecedores**, com cadastro, edição, ativação e desativação; não há exclusão física, para preservar vínculos com recebimentos e notas.
