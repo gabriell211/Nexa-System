@@ -38,9 +38,9 @@ export interface Printer {
   active: boolean;
   customer?: { id: number; name: string };
   latest_reading?: {
-    meter_total: number | null;
-    meter_mono: number | null;
-    meter_color: number | null;
+    meter_total: string | null;
+    meter_mono: string | null;
+    meter_color: string | null;
     collected_at: string;
     received_at: string;
   } | null;
