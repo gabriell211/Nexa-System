@@ -15,6 +15,16 @@ final class Printer extends Model
     public function customer(): BelongsTo { return $this->belongsTo(Customer::class); }
     public function tenant(): BelongsTo { return $this->belongsTo(Tenant::class); }
     public function readings(): HasMany { return $this->hasMany(PrinterReading::class); }
+    /**
+     * Most recent collected sample (source time), with insertion ID breaking
+     * timestamp ties. Null meter fields mean unavailable, never zero.
+     */
+    public function latestReading(): HasOne
+    {
+        return $this->hasOne(PrinterReading::class)
+            ->ofMany(['collected_at' => 'max', 'id' => 'max']);
+    }
+
     public function assignments(): HasMany { return $this->hasMany(PrinterAssignment::class); }
     public function currentAssignment(): HasOne
     {
