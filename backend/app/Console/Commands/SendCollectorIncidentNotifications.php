@@ -27,10 +27,18 @@ final class SendCollectorIncidentNotifications extends Command
             return self::FAILURE;
         }
 
-        $stats=$notifier->send($minutes);
+        $perRun=(int)config('nexa.collector_notifications.max_per_run',50);
+        $perTenant=(int)config('nexa.collector_notifications.max_per_tenant_hour',20);
+        $global=(int)config('nexa.collector_notifications.max_global_hour',100);
+        if ($perRun<1 || $perRun>500 || $perTenant<1 || $perTenant>1000
+            || $global<1 || $global>10000 || $perTenant>$global) {
+            $this->error('Invalid notification volume limits; per-run 1..500, per-tenant/hour 1..1000, global/hour 1..10000, tenant <= global.');
+            return self::FAILURE;
+        }
+        $stats=$notifier->send($minutes,$perRun,$perTenant,$global);
         $this->info(sprintf(
-            'Scanned %d open incidents; %d attempts, %d accepted by mail transport, %d failed, %d skipped/deduplicated.',
-            $stats['incidents'],$stats['attempted'],$stats['accepted'],$stats['failed'],$stats['skipped']
+            'Scanned %d open incidents; %d attempts, %d accepted by mail transport, %d failed, %d skipped/deduplicated, %d deferred due to volume limits.',
+            $stats['incidents'],$stats['attempted'],$stats['accepted'],$stats['failed'],$stats['skipped'],$stats['deferred']
         ));
         return self::SUCCESS;
     }

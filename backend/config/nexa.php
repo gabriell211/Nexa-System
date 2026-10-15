@@ -16,6 +16,9 @@ return [
         // Explicit opt-in; mail transport must be configured outside source.
         'enabled'=>(bool)env('NEXA_COLLECTOR_NOTIFICATIONS_ENABLED',false),
         'escalation_minutes'=>(int)env('NEXA_COLLECTOR_ESCALATION_MINUTES',60),
+        'max_per_run'=>(int)env('NEXA_COLLECTOR_MAIL_MAX_PER_RUN',50),
+        'max_per_tenant_hour'=>(int)env('NEXA_COLLECTOR_MAIL_MAX_PER_TENANT_HOUR',20),
+        'max_global_hour'=>(int)env('NEXA_COLLECTOR_MAIL_MAX_GLOBAL_HOUR',100),
     ],
     'telemetry_gap' => [
         // Disabled until explicitly enabled by the installation operator.
