@@ -599,3 +599,12 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Resultados do replay são auditados sem corpos de mensagens, destinatários ou exceções SMTP. Falhas ou ambiguidade não são reenviadas; a tentativa original mantém sua condição. Endpoint/portal apresentam somente contagens agregadas por incidente e carteira.
 - Testes Laravel devem cobrir autorização explícita, única tentativa, bloqueio de originais aceitos/ambíguos/devolvidos, revogação, incidente recuperado, cotas compartilhadas, falhas sanitizadas e opção desabilitada.
 - **Sem webhooks/DSN assinados, confirmação de recebimento, SMTP real ou homologação operacional**. NX-039/041 permanecem PARCIAIS.
+
+## Entrega 36 — correlação opcional com Resend e eventos assinados (15/10/2026)
+
+- Adaptador `CollectorMailTransport` envia pela API Resend somente com `NEXA_COLLECTOR_MAIL_DRIVER=resend`, armazenando o UUID de saída de cada tentativa original ou reenvio e usando `Idempotency-Key`. Driver Laravel genérico continua sem provider_id e não é correlacionado por e-mail.
+- Novo endpoint autenticado criptograficamente `/api/v1/webhooks/resend` valida `svix-id`, `svix-timestamp`, `svix-signature` sobre JSON bruto: HMAC-SHA256 com segredo base64 `whsec_`, comparação constante, janela ±300s, size ≤65536 bytes e rate limit. Configuração opt-in.
+- Tabela `collector_mail_webhook_events` persiste **apenas hashes dos IDs Svix** com índice UNIQUE, tipo/outcome sanitizados, alvo opcional e timestamp de recepção, garantindo idempotência de redeliveries via banco. Sem armazenar conteúdo, destinatário ou segredo do provedor.
+- `ResendWebhookProcessor` trata `email.delivered`, `email.bounced`, `email.complained` por `email_id` exatamente associado a notificação original ou replay e audita transições. Devoluções/denúncias prevalecem sobre eventos positivos atrasados; nunca usa assunto ou e-mail como chave.
+- API/portal passam a diferenciar contagem `delivered` reportada pelo provedor, aceite técnico de envio e estados de bounce/reclamação; testes fake HTTP/Resend cobrem assinaturas, data, idempotência, correlação, ordem e isolamentos.
+- **Aceite pendente:** testagem real com domínio Resend verificado, DNS/remetente, HTTP webhook público, rotação de segredo, webhook precoce `unmatched` e validação de entrega real. Não há prova de abertura da caixa postal nem E2E físico. NX-039 e NX-041 continuam PARCIAIS.
