@@ -304,6 +304,70 @@ final class CollectorIncidentNotificationTest extends TestCase
             json_encode(CollectorIncidentNotification::query()->firstOrFail()->toArray()));
     }
 
+    public function test_reviewed_provider_bounce_requires_evidence_and_never_retries_email(): void
+    {
+        Mail::fake();
+        $this->travelTo(CarbonImmutable::parse('2026-10-14T12:00:00Z'));
+        [$tenant,$agent,$incident]=$this->incident('manual-bounce');
+        $owner=$this->member($tenant,'owner');
+        $this->enable();
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        Mail::assertSent(CollectorHealthIncidentMail::class,1);
+        $notice=CollectorIncidentNotification::query()->firstOrFail();
+
+        $this->artisan('nexa:alerts:reconcile-collector-mail',[
+            'notification_id'=>(string)$notice->id,'--type'=>'hard_bounce',
+        ])->assertFailed();
+        $this->artisan('nexa:alerts:reconcile-collector-mail',[
+            'notification_id'=>(string)$notice->id,'--type'=>'untrusted',
+            '--confirm-reviewed-evidence'=>true,
+        ])->assertFailed();
+        $this->assertSame('accepted',$notice->fresh()->status);
+
+        $this->artisan('nexa:alerts:reconcile-collector-mail',[
+            'notification_id'=>(string)$notice->id,'--type'=>'hard_bounce',
+            '--confirm-reviewed-evidence'=>true,
+        ])->assertSuccessful();
+        $this->assertSame('returned',$notice->fresh()->status);
+        $this->assertSame('hard_bounce',$notice->fresh()->error_category);
+        $this->artisan('nexa:alerts:reconcile-collector-mail',[
+            'notification_id'=>(string)$notice->id,'--type'=>'hard_bounce',
+            '--confirm-reviewed-evidence'=>true,
+        ])->assertFailed();
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        Mail::assertSent(CollectorHealthIncidentMail::class,1);
+        $this->assertDatabaseHas('audit_entries',[
+            'action'=>'collector.notice.delivery_reconciled',
+            'origin'=>'manual-backend-delivery-review',
+            'entity_id'=>$notice->id,
+        ]);
+        $token=$owner->createToken('check',['api','tenant:'.$tenant->id])->plainTextToken;
+        Auth::forgetGuards();
+        $this->withToken($token)->getJson('/api/v1/collector-health-incidents')
+            ->assertOk()->assertJsonPath('data.0.email_accepted_count',0)
+            ->assertJsonPath('data.0.email_returned_count',1)
+            ->assertJsonPath('data.0.email_complaint_count',0)
+            ->assertJsonMissingPath('data.0.recipient_email');
+    }
+
+    public function test_manual_spam_complaint_is_distinct_from_transport_failure(): void
+    {
+        Mail::fake();
+        $this->travelTo(CarbonImmutable::parse('2026-10-14T12:00:00Z'));
+        [$tenant]=$this->incident('manual-complaint');
+        $this->member($tenant,'owner');
+        $this->enable();
+        $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
+        $notice=CollectorIncidentNotification::query()->firstOrFail();
+        $this->artisan('nexa:alerts:reconcile-collector-mail',[
+            'notification_id'=>(string)$notice->id,'--type'=>'complaint',
+            '--confirm-reviewed-evidence'=>true,
+        ])->assertSuccessful();
+        $this->assertSame('complaint',$notice->fresh()->status);
+        $this->assertSame('complaint',$notice->fresh()->error_category);
+        Mail::assertSent(CollectorHealthIncidentMail::class,1);
+    }
+
     public function test_api_exposes_aggregate_accepted_counts_but_not_recipient_addresses(): void
     {
         Mail::fake();
