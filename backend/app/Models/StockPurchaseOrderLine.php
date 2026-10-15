@@ -15,6 +15,10 @@ final class StockPurchaseOrderLine extends Model
     {
         return ['quantity' => 'integer', 'unit_cost_cents' => 'integer'];
     }
+    public function purchaseOrder(): BelongsTo
+    {
+        return $this->belongsTo(StockPurchaseOrder::class, 'purchase_order_id');
+    }
     public function planLine(): BelongsTo
     {
         return $this->belongsTo(StockReplenishmentPlanItem::class, 'plan_line_id');
