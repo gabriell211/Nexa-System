@@ -291,6 +291,51 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       await expect(summary.locator('div').nth(2)).toHaveText(/5\s*Recebido/);
     });
 
+    await test.step('Criar compra vinculada por almoxarifado e aprovar com gestor sem entrada automática', async () => {
+      const supplierCode = 'PO-E2E-' + suffix;
+      await writeStock(warehouseRequest, 'post', '/stock/suppliers', {
+        code: supplierCode, name: 'Distribuidora compra ' + suffix,
+      }, 201);
+      const movementCount = await paginatedTotal(warehouseRequest, '/stock/movements');
+
+      await page.goto(baseUrl + '/estoque');
+      await page.getByRole('button', { name: 'Compras', exact: true }).click();
+      await page.getByLabel('Buscar número da proposta aprovada').fill(String(planId));
+      await page.getByLabel('Proposta aprovada *', { exact: true })
+        .selectOption({ label: 'Proposta #' + planId });
+      await page.getByLabel('Buscar fornecedor da compra').fill(supplierCode);
+      await page.getByLabel('Fornecedor da compra *', { exact: true })
+        .selectOption({ label: supplierCode + ' — Distribuidora compra ' + suffix });
+      await page.getByRole('checkbox', { name: 'Selecionar compra do item ' + manualSku }).check();
+      await page.getByLabel('Quantidade para comprar ' + manualSku).fill('2');
+      await page.getByLabel('Custo unitário da compra ' + manualSku).fill('68,75');
+      await page.getByLabel('Observações de compra').fill('Compra de peça manual revisada');
+      await page.getByRole('button', { name: 'Criar pedido para aprovação' }).click();
+      const warehouseDialog = page.getByRole('dialog');
+      const heading = warehouseDialog.getByRole('heading', { name: /^Pedido de compra #\d+$/ });
+      await expect(heading).toBeVisible();
+      const orderId = Number((await heading.textContent())?.match(/\d+/)?.[0]);
+      expect(orderId).toBeGreaterThan(0);
+      await expect(warehouseDialog.getByText('Aguardando aprovação')).toBeVisible();
+
+      await owner.goto(baseUrl + '/estoque');
+      await owner.getByRole('button', { name: 'Compras', exact: true }).click();
+      await owner.getByRole('button', { name: 'Revisar pedido ' + orderId }).click();
+      const dialog = owner.getByRole('dialog');
+      await expect(dialog.getByText('R$ 137,50')).toBeVisible();
+      await dialog.getByLabel('Nota do aprovador').fill('Custo e quantidade conferidos');
+      await dialog.getByRole('button', { name: 'Aprovar pedido de compra' }).click();
+      await expect(dialog.getByText('Aprovado', { exact: true })).toBeVisible();
+      expect(await paginatedTotal(owner.context().request, '/stock/movements')).toBe(movementCount);
+      const response = await owner.context().request.get(apiRoot + '/stock/replenishment-plans/' + planId);
+      expect(response.status()).toBe(200);
+      const body: { data: { items: Array<{ item_id: number; purchased_quantity: number; remaining_quantity: number }> } } =
+        await response.json();
+      expect(body.data.items.find(line => line.item_id === manualItemId)).toMatchObject({
+        purchased_quantity: 2, remaining_quantity: 1,
+      });
+    });
+
   } finally {
     await ownerContext.close();
   }
