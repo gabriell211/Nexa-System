@@ -682,3 +682,17 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - O portal oferece busca paginada para escolher item/local, formulário de política, filtros, saldos e sugestão. O Playwright percorre saldo zero, filtros, edição e remoção. Nenhuma compra, remessa ou pedido é disparado automaticamente.
 - Um defeito encontrado pelo CI da entrega 44 foi corrigido: `/browser/auth/csrf` e `/browser/auth/login` usavam a mesma chave de throttling por IP, então handshakes legítimos esgotavam a quota de 5 logins/min. Prefixos separados também isolam a rota antiga de login; teste de regressão cobre seis CSRF seguidos por login válido.
 - Permanecem pendentes aprovação e consolidação de sugestões em pedidos, planejamento por cliente/modelo/demanda, compra real, casos QA de logística, ensaios de concorrência PostgreSQL para a nova política e homologação operacional. `NX-104` e o sistema completo seguem PARCIAIS.
+
+## Entrega 46 — proposta de reposição com revisão humana (15/10/2026)
+
+- A nova tabela de planos de reposição registra request UUID idempotente, versão, responsável, prazo e itens associados, mantendo snapshots das políticas e disponibilidade no momento da criação. Rascunhos podem ser revisados em quantidades, prazo, responsável, notas e itens manuais.
+- Um responsável com função de gestão diferente do autor aprova a proposta, com verificação de versão, escopo de tenant/carteira, política e saldo atuais, item/local ativo e responsável ainda elegível; conflitos abortam, sem remessa, compra ou alteração de saldo automáticas.
+- Portal exibe propostas, necessidades elegíveis, edição supervisionada, aprovações e cancelamento auditável. O CI do commit original passou em 13 de 14 jobs, com falha do Playwright causada pela ambiguidade no rótulo Material; o PR #36 corrigiu a busca com exact labels e teve CI aprovado, depois foi integrado à main.
+- NX-105, NX-106 e NX-107 são parciais; não houve homologação física, previsão contratual, ciclo completo de pedido/entrega, integração logística nem aceite dos cenários QA.
+
+## Entrega 47 — cadastro e manutenção de fornecedores com auditoria (15/10/2026)
+
+- Evolução do catálogo existente: GET de fornecedores permite q (nome/código), ativo/inativo, page e per_page, todos validados, com ordenação determinística; resultados são filtrados por tenant antes da paginação. Novo PATCH altera nome, e-mail, documento e situação, proibindo mudança de código/tenant.
+- Serviço transacional bloqueia a linha de fornecedor para atualização, audita alterações reais e mantém todos os históricos: não há DELETE nem remoção de notas e lotes. A criação de recebimentos documentados também bloqueia o fornecedor ativo, coordenando a checagem com desativações concorrentes.
+- Portal Estoque ganhou aba Fornecedores com busca, filtro, cadastro, edição e ativação/desativação, usando sessão e CSRF existentes. Testes API cobrem filtro, paginação, atualização, no-op sem nova auditoria, validação, acesso de tenant estrangeiro, papéis/carteira e recusa de documento novo com fornecedor inativo; E2E desktop percorre a jornada de cadastro até desativação.
+- Status de validação: **a confirmar no CI do PR da entrega 47**. Não estão cobertos ainda a corrida PostgreSQL entre recebimento e desativação, fornecedores reais, pedidos de compra, importação de catálogos e homologação fiscal. NX-099/NX-284/NX-285 permanecem parciais, e todos os 324 requisitos/62 cenários continuam sem aceite integral.

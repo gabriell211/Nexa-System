@@ -203,10 +203,10 @@ jobs:
         if: matrix.suite == 'core'
         working-directory: portal
         run: npm run test:e2e -- e2e/operations.spec.ts e2e/reorder-needs.spec.ts e2e/stock-counts.spec.ts
-      - name: Run replenishment browser E2E
+      - name: Run replenishment and supplier browser E2E
         if: matrix.suite == 'replenishment'
         working-directory: portal
-        run: npm run test:e2e -- e2e/replenishment-plans.spec.ts --project=desktop-chromium
+        run: npm run test:e2e -- e2e/replenishment-plans.spec.ts e2e/supplier-management.spec.ts --project=desktop-chromium
       - name: Upload artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
