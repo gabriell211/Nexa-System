@@ -82,7 +82,7 @@ final class CollectorResendWebhookTest extends TestCase
 
     private function sentOriginal(): CollectorIncidentNotification
     {
-        Http::fake(['api.resend.com/emails'=>Http::response(['id'=>self::EMAIL_ID],200)]);
+        Http::fake(['https://api.resend.com/emails'=>Http::response(['id'=>self::EMAIL_ID],200)]);
         Mail::fake();
         $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
         $notice=CollectorIncidentNotification::query()->firstOrFail();
@@ -207,7 +207,7 @@ final class CollectorResendWebhookTest extends TestCase
             'status'=>'failed',
             'attempted_at'=>now('UTC')->subHours(2),
         ]);
-        Http::fake(['api.resend.com/emails'=>Http::response(['id'=>self::REPLAY_ID],200)]);
+        Http::fake(['https://api.resend.com/emails'=>Http::response(['id'=>self::REPLAY_ID],200)]);
         $this->artisan('nexa:alerts:replay-collector-mail',[
             'notification_id'=>(string)$original->id,
             '--review-reference'=>'CASE-123',
