@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\V1\StockReorderPolicyController;
 use App\Http\Controllers\Api\V1\StockReplenishmentPlanController;
 use App\Http\Controllers\Api\V1\StockPlanShipmentController;
 use App\Http\Controllers\Api\V1\StockPurchaseOrderController;
+use App\Http\Controllers\Api\V1\StockPurchaseReceiptMatchController;
 use App\Http\Controllers\Api\V1\ServiceTicketController;
 use App\Http\Controllers\Api\V1\PrinterAlertController;
 use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
@@ -107,6 +108,7 @@ $registerBackoffice = static function (): void {
         Route::delete('/stock/reorder-policies/{item}/{location}', [StockReorderPolicyController::class, 'destroy']);
         Route::post('/stock/replenishment-plans', [StockReplenishmentPlanController::class, 'store']);
         Route::post('/stock/purchase-orders', [StockPurchaseOrderController::class, 'store']);
+        Route::post('/stock/purchase-orders/{order}/reconcile-receipt', [StockPurchaseReceiptMatchController::class, 'store']);
         Route::post('/stock/purchase-orders/{order}/cancel', [StockPurchaseOrderController::class, 'cancel']);
         Route::post('/stock/replenishment-plans/{plan}/items/{line}/reserve-shipment', [StockPlanShipmentController::class, 'store']);
         Route::patch('/stock/replenishment-plans/{plan}', [StockReplenishmentPlanController::class, 'update']);

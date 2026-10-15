@@ -26,10 +26,25 @@ final class StockDocumentedReceiptController extends Controller
         $data=$request->validate([
             'page'=>['sometimes','integer','min:1'],
             'per_page'=>['sometimes','integer','between:1,100'],
+            'q'=>['sometimes','nullable','string','max:100'],
+            'supplier_id'=>['sometimes','integer','min:1'],
+            'item_id'=>['sometimes','integer','min:1'],
+            'destination_location_id'=>['sometimes','integer','min:1'],
+            'unmatched_only'=>['sometimes','in:0,1'],
         ]);
         return StockReceiptResource::collection(
             StockReceiptDetail::query()
                 ->where('tenant_id',$request->attributes->get('nexa_tenant')->id)
+                ->when(isset($data['supplier_id']), static fn ($query) => $query->where('supplier_id', $data['supplier_id']))
+                ->when(isset($data['item_id']), static fn ($query) => $query->whereHas('movement',
+                    static fn ($movement) => $movement->where('item_id', $data['item_id'])))
+                ->when(isset($data['destination_location_id']), static fn ($query) => $query->whereHas('movement',
+                    static fn ($movement) => $movement->where('destination_location_id', $data['destination_location_id'])))
+                ->when(($data['unmatched_only'] ?? null) === '1', static fn ($query) => $query->whereDoesntHave('purchaseMatch'))
+                ->when(trim($data['q'] ?? '') !== '', static fn ($query) => $query->where(
+                    static fn ($match) => $match->whereRaw('LOWER(invoice_reference) LIKE ?', ['%'.mb_strtolower(trim($data['q'])).'%'])
+                        ->orWhereRaw('LOWER(lot_number) LIKE ?', ['%'.mb_strtolower(trim($data['q'])).'%'])
+                ))
                 ->with(['supplier','movement.item','movement.destination'])
                 ->orderByDesc('id')->paginate($data['per_page']??25)
         );
