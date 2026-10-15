@@ -634,3 +634,11 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - A execução agendada continua processando eventos correlacionáveis em lotes, independentemente da idade; desconhecidos antigos ainda expiram e preservam seu hash Svix para impedir reaplicação após redelivery.
 - Teste de regressão cobre parada >72h, evento correlacionado aplicado com resultado de bounce, evento desconhecido expirado, status e auditoria idempotentes.
 - A decisão de correlação e expiração é dependente do estado do banco; ainda faltam ensaios de interleaving multi-worker, webhook real, observabilidade externa e homologação de produção. NX-039/041 PARCIAIS.
+
+## Entrega 40 — último contador persistido no parque (15/10/2026)
+
+- Associação `Printer.latestReading` definida por `MAX(collected_at)` e `MAX(id)` no mesmo carimbo: usa origem da coleta, não timestamp do recebimento. Índice próprio para `printer_id,collected_at,id`; eager loading na lista paginada evita N+1.
+- `PrinterResource` expõe `latest_reading` somente quando carregado, com `null` na ausência de leituras. Campos de medição são strings decimais para não arredondar `BIGINT` no JavaScript; TypeScript converte somente para formatação `BigInt`.
+- Portal `/parque` exibe Total/P&B/Cor, data da coleta ou indicador de falta de amostras; jamais interpreta dado persistido como disponibilidade atual.
+- Testes feature SQLite/PostgreSQL: ordem de coleta versus recepção, empates, valores acima de 2^53, nulos, isolamento multi-tenant/carteira e regressão N+1 em 30 impressoras. E2E do navegador confere impressora nova sem leitura.
+- Sem validação SNMP/USB real, sinal de status atual, consumo, fechamento de mês ou faturamento; escopo NX e 62 cenários de aceite continuam PARCIAIS.
