@@ -48,6 +48,7 @@ final class PrinterProductionPreview
             ];
         }
 
+        $streamedCount = 0;
         $distinctTimes = 0;
         $repeatedTimestamps = 0;
         $conflictingTimestamps = 0;
@@ -91,6 +92,13 @@ final class PrinterProductionPreview
 
         foreach ((clone $query)->select(['collected_at', 'id', 'meter_total', 'meter_mono', 'meter_color'])
             ->orderBy('collected_at')->orderBy('id')->cursor() as $reading) {
+            // Second bound guards races between the COUNT and cursor SELECT.
+            $streamedCount++;
+            if ($streamedCount > self::MAX_SAMPLES) {
+                throw ValidationException::withMessages([
+                    'start_date' => 'Intervalo com mais de 20.000 amostras; divida a consulta.',
+                ]);
+            }
             $values = [];
             foreach (self::CHANNELS as $key) {
                 $raw = $reading->{'meter_'.$key};
@@ -138,7 +146,7 @@ final class PrinterProductionPreview
             'billing_ready' => false,
             'status' => !$hasPairs ? 'insufficient_data'
                 : ($hasGaps ? 'review_required' : 'observed'),
-            'sample_count' => $sampleCount,
+            'sample_count' => $streamedCount,
             'distinct_timestamps' => $distinctTimes,
             'repeated_timestamps' => $repeatedTimestamps,
             'conflicting_timestamps' => $conflictingTimestamps,
