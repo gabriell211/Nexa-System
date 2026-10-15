@@ -91,6 +91,24 @@ final class CollectorIncidentNotifier
                 }
                 $fresh=CollectorHealthIncident::query()->lockForUpdate()->find($incidentId);
                 if ($fresh===null || $fresh->status!=='active') return ['kind'=>'skip'];
+                if (!$fresh->agent()->where('active',true)->exists()
+                    || !$fresh->customer()->where('active',true)->exists()
+                    || !DB::table('tenants')->where('id',$fresh->tenant_id)
+                        ->where('active',true)->exists()) {
+                    return ['kind'=>'skip'];
+                }
+                // Membership, verification and current address must still be
+                // valid at reservation time (not just when batching begins).
+                $currentRecipient=DB::table('tenant_user')
+                    ->join('users','users.id','=','tenant_user.user_id')
+                    ->where('tenant_user.tenant_id',$fresh->tenant_id)
+                    ->where('users.id',$recipient->id)
+                    ->whereIn('tenant_user.role',$stage==='escalation'?['owner']:['owner','admin'])
+                    ->where('users.active',true)
+                    ->whereNotNull('users.email_verified_at')
+                    ->whereNotNull('users.email')
+                    ->select('users.email')->first();
+                if ($currentRecipient===null) return ['kind'=>'skip'];
                 if (CollectorIncidentNotification::query()
                     ->where('collector_health_incident_id',$incidentId)
                     ->where('recipient_user_id',$recipient->id)
@@ -115,7 +133,7 @@ final class CollectorIncidentNotifier
                     'status'=>'attempting',
                     'attempted_at'=>$now,
                 ]);
-                return ['kind'=>'reserved','id'=>(int)$notification->id];
+                return ['kind'=>'reserved','id'=>(int)$notification->id,'email'=>$currentRecipient->email];
             },3);
             if ($reservation['kind']==='skip') {
                 $stats['skipped']++;
@@ -141,7 +159,7 @@ final class CollectorIncidentNotifier
             $stats['attempted']++;
             try {
                 $tenantName=DB::table('tenants')->where('id',$incident->tenant_id)->value('name')??'Nexa';
-                Mail::to($recipient->email)->send(new CollectorHealthIncidentMail(
+                Mail::to($reservation['email'])->send(new CollectorHealthIncidentMail(
                     (string)$tenantName,
                     (string)$incident->customer->name,
                     (int)$incident->collector_agent_id,
