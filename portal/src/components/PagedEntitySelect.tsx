@@ -17,6 +17,7 @@ interface Props<T extends Entity> {
   endpoint: string;
   filters?: Record<string, string | number | boolean>;
   optionLabel: (item: T) => string;
+  initialOption?: T | null;
   required?: boolean;
   disabled?: boolean;
 }
@@ -25,7 +26,7 @@ interface Props<T extends Entity> {
 export function PagedEntitySelect<T extends Entity>({
   id, label, searchLabel, placeholder, emptyLabel, value, onChange,
   queryKey, endpoint, filters = {}, optionLabel,
-  required = false, disabled = false,
+  initialOption = null, required = false, disabled = false,
 }: Props<T>) {
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
@@ -40,7 +41,8 @@ export function PagedEntitySelect<T extends Entity>({
     enabled: !disabled,
   });
   const items = results.data?.data ?? [];
-  const selected = chosen?.id === Number(value) ? chosen : null;
+  const selected = chosen?.id === Number(value) ? chosen
+    : initialOption?.id === Number(value) ? initialOption : null;
   const missingSelected = selected && !items.some(item => item.id === selected.id);
   const currentPage = results.data?.meta?.current_page ?? results.data?.current_page ?? page;
   const lastPage = results.data?.meta?.last_page ?? results.data?.last_page ?? 1;

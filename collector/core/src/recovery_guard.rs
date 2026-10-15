@@ -4,10 +4,11 @@
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::{self, OpenOptions},
+    fs::{self, File, OpenOptions},
     io::{ErrorKind, Write},
     path::{Path, PathBuf},
 };
+use uuid::Uuid;
 
 pub const MAX_STALLS: usize = 3;
 const WINDOW_MINUTES: i64 = 30;
@@ -158,6 +159,7 @@ impl RecoveryGuard {
         if !matches!(worker, "main-loop" | "heartbeat-worker") {
             return Err(RecoveryError::Invalid("unknown watchdog worker"));
         }
+        let _lock = self.lock_writer()?;
         let mut journal = self.load()?;
         journal.events.push(StallEvent { at: now, worker: worker.into() });
         // Bounded diagnostic history: recent incidents survive operator reset.
@@ -168,9 +170,40 @@ impl RecoveryGuard {
     }
 
     pub fn reset(&self, now: DateTime<Utc>) -> Result<(), RecoveryError> {
+        let _lock = self.lock_writer()?;
         let mut journal = self.load()?;
         journal.last_reset_at = Some(now);
         self.write(&journal)
+    }
+
+    fn lock_writer(&self) -> Result<File, RecoveryError> {
+        // The lock has a stable inode/path, unlike the atomically replaced
+        // journal. Keep it open across the complete read-modify-write cycle so
+        // a daemon incident cannot race an operator acknowledgement or a
+        // second writer and erase a committed event.
+        let mut name = self.file.as_os_str().to_os_string();
+        name.push(".lock");
+        let lock_path = PathBuf::from(name);
+        match fs::symlink_metadata(&lock_path) {
+            Ok(meta) if !meta.file_type().is_file() || meta.file_type().is_symlink() =>
+                return Err(RecoveryError::Invalid("writer lock is not a regular file")),
+            Ok(_) => {},
+            Err(error) if error.kind() == ErrorKind::NotFound => {},
+            Err(error) => return Err(error.into()),
+        }
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = options.open(lock_path)?;
+        if !file.metadata()?.file_type().is_file() {
+            return Err(RecoveryError::Invalid("writer lock is not a regular file"));
+        }
+        file.lock()?;
+        Ok(file)
     }
 
     fn write(&self, journal: &Journal) -> Result<(), RecoveryError> {
@@ -183,24 +216,56 @@ impl RecoveryGuard {
             Err(error) if error.kind() == ErrorKind::NotFound => {},
             Err(error) => return Err(error.into()),
         }
+        let encoded = serde_json::to_vec(journal)?;
+        // The old journal stays intact until the complete replacement is on
+        // disk. A unique, create_new file in the same directory avoids both
+        // partial readers and accidental traversal of a stale temp symlink.
+        let mut temp_name = self.file.as_os_str().to_os_string();
+        temp_name.push(format!(".tmp.{}", Uuid::new_v4()));
+        let temp_path = PathBuf::from(temp_name);
         let mut options = OpenOptions::new();
-        options.write(true).create(true).truncate(true);
+        options.write(true).create_new(true);
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
         }
-        let mut file = options.open(&self.file)?;
-        let encoded = serde_json::to_vec(journal)?;
-        file.write_all(&encoded)?;
-        file.sync_all()?;
-        Ok(())
+        let result = (|| -> Result<(), RecoveryError> {
+            let mut file = options.open(&temp_path)?;
+            file.write_all(&encoded)?;
+            file.sync_all()?;
+            drop(file); // Windows cannot replace an open file.
+            // Recheck immediately before replacement so a journal changed to
+            // a symlink or directory during the write is never overwritten.
+            match fs::symlink_metadata(&self.file) {
+                Ok(meta) if !meta.file_type().is_file() || meta.file_type().is_symlink() =>
+                    return Err(RecoveryError::Invalid("not a regular file")),
+                Ok(_) => {},
+                Err(error) if error.kind() == ErrorKind::NotFound => {},
+                Err(error) => return Err(error.into()),
+            }
+            fs::rename(&temp_path, &self.file)?;
+            #[cfg(unix)]
+            {
+                // Persist the directory entry as well as the JSON contents.
+                let parent = self.file.parent()
+                    .filter(|path| !path.as_os_str().is_empty())
+                    .unwrap_or(Path::new("."));
+                fs::File::open(parent)?.sync_all()?;
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temp_path);
+        }
+        result
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{process::Command, thread, time::{Duration, Instant}};
 
     #[test]
     fn repeated_watchdog_exits_open_circuit_without_erasing_history() {
@@ -314,5 +379,95 @@ mod tests {
         let recorded = fs::read_to_string(&guard.file).unwrap();
         assert!(recorded.contains("heartbeat-worker"));
         assert!(!recorded.contains("unaltered-content"));
+    }
+
+    #[test]
+    fn concurrent_console_reads_see_only_complete_journals() {
+        let tmp = tempfile::tempdir().unwrap();
+        let guard = RecoveryGuard::for_queue(&tmp.path().join("queue.sqlite"));
+        let reader = guard.clone();
+        let now = Utc::now();
+        let writer = std::thread::spawn(move || {
+            for _ in 0..128 {
+                guard.record("main-loop", now).unwrap();
+            }
+        });
+        for _ in 0..512 {
+            let snapshot = reader.snapshot(now).unwrap();
+            assert!(snapshot.retained_incidents <= MAX_HISTORY);
+        }
+        writer.join().unwrap();
+        assert_eq!(reader.snapshot(now).unwrap().retained_incidents, MAX_HISTORY);
+        let leftovers: Vec<_> = fs::read_dir(tmp.path()).unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name.to_string_lossy().contains(".tmp."))
+            .collect();
+        assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    fn concurrent_writer_process_child() {
+        let Some(queue) = std::env::var_os("NEXA_INTERNAL_WATCHDOG_WRITER_QUEUE") else { return };
+        let mode = std::env::var("NEXA_INTERNAL_WATCHDOG_WRITER_MODE").unwrap();
+        let queue = PathBuf::from(queue);
+        let directory = queue.parent().unwrap();
+        fs::write(directory.join(format!("ready-{mode}")), b"ready").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !directory.join("go").exists() {
+            assert!(Instant::now() < deadline, "concurrent writer start timed out");
+            thread::sleep(Duration::from_millis(5));
+        }
+        let guard = RecoveryGuard::for_queue(&queue);
+        for _ in 0..8 {
+            if mode == "reset" {
+                guard.reset(Utc::now()).unwrap();
+            } else {
+                guard.record(&mode, Utc::now()).unwrap();
+            }
+        }
+    }
+
+    #[test]
+    fn concurrent_process_writers_preserve_all_events_and_reset() {
+        let tmp = tempfile::tempdir().unwrap();
+        let queue = tmp.path().join("queue.sqlite");
+        let executable = std::env::current_exe().unwrap();
+        let modes = ["main-loop", "heartbeat-worker", "reset"];
+        let mut children: Vec<_> = modes.iter().map(|mode| {
+            Command::new(&executable)
+                .arg("--exact")
+                .arg("recovery_guard::tests::concurrent_writer_process_child")
+                .env("NEXA_INTERNAL_WATCHDOG_WRITER_QUEUE", &queue)
+                .env("NEXA_INTERNAL_WATCHDOG_WRITER_MODE", mode)
+                .spawn().unwrap()
+        }).collect();
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while modes.iter().any(|mode| !tmp.path().join(format!("ready-{mode}")).exists()) {
+            if Instant::now() >= deadline {
+                for child in &mut children { let _ = child.kill(); }
+                panic!("concurrent writer children did not become ready");
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        fs::write(tmp.path().join("go"), b"go").unwrap();
+        let finish_deadline = Instant::now() + Duration::from_secs(20);
+        for index in 0..children.len() {
+            loop {
+                if let Some(status) = children[index].try_wait().unwrap() {
+                    assert!(status.success(), "concurrent writer child failed");
+                    break;
+                }
+                if Instant::now() >= finish_deadline {
+                    for child in &mut children { let _ = child.kill(); }
+                    panic!("concurrent writer child timed out");
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+        }
+        let snapshot = RecoveryGuard::for_queue(&queue).snapshot(Utc::now()).unwrap();
+        assert_eq!(snapshot.retained_incidents, 16);
+        assert_eq!(snapshot.incidents.iter().filter(|e| e.worker == "main-loop").count(), 8);
+        assert_eq!(snapshot.incidents.iter().filter(|e| e.worker == "heartbeat-worker").count(), 8);
+        assert!(snapshot.last_reset_at.is_some());
     }
 }

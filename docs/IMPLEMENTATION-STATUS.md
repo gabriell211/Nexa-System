@@ -1,5 +1,14 @@
 # Estado verificável de implementação
 
+## Fotografia atual — 15/10/2026
+
+Este documento preserva os registros históricos abaixo. Para entregas posteriores à fundação, veja o [rastreamento incremental](EXECUTION-TRACKER.md) e a [matriz de evidências](REQUIREMENT-VERIFICATION-MATRIX.md). O README descreve 324 requisitos NX e 62 cenários QA; nenhum recebeu aceite integral de produção.
+
+- A API Laravel implementa autenticação de navegador com sessão e CSRF, escopo de tenant/carteira, clientes, organização, parque e alocação de impressoras, ingestão idempotente, alertas, chamados, estoque e prévia conservadora de produção. Os detalhes e limites de cada entrega estão no rastreamento.
+- O portal React usa dados reais da API e possui testes Playwright de jornadas específicas em desktop e mobile. O Collector Rust tem outbox SQLite, envio HTTPS, watchdog, Console Tauri e serviços nativos de desenvolvimento; faltam ensaios de campo, modelos de impressora e instaladores homologados.
+- O commit `df041fe` passou em [13 jobs do CI](https://github.com/gabriell211/Nexa-System/actions/runs/38767261930), incluindo Laravel em SQLite e PostgreSQL, E2E real de navegador, build das imagens, testes do Collector em Windows/macOS/Linux e verificação de exclusão de `.env` da imagem da API.
+- Continuam pendentes os contratos, a apuração/faturamento, integrações operacionais externas, hardware real, segurança e operação de produção, além da validação individual de cada requisito e cenário QA. O Compose documentado serve ao desenvolvimento e laboratório.
+
 ## Fundação criada em 08/10/2026
 
 O monorepo agora possui código inicial de API Laravel 13, autenticação por token de 12 horas, associação de usuários a tenants, clientes, impressoras, dashboard de contagens persistidas e esquema mínimo de leituras.

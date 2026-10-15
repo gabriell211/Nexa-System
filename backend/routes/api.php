@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\V1\StockLotController;
 use App\Http\Controllers\Api\V1\StockSupplierController;
 use App\Http\Controllers\Api\V1\StockCompatibilityController;
 use App\Http\Controllers\Api\V1\StockDocumentedReceiptController;
+use App\Http\Controllers\Api\V1\StockCountController;
 use App\Http\Controllers\Api\V1\ServiceTicketController;
 use App\Http\Controllers\Api\V1\PrinterAlertController;
 use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
@@ -74,6 +75,8 @@ $registerBackoffice = static function (): void {
         Route::get('/stock/movements', [StockMovementController::class, 'index']);
         Route::get('/stock/shipments', [StockShipmentController::class, 'index']);
         Route::get('/stock/shipments/{shipment}', [StockShipmentController::class, 'show']);
+        Route::get('/stock/counts', [StockCountController::class, 'index']);
+        Route::get('/stock/counts/{count}', [StockCountController::class, 'show']);
         Route::post('/stock/items', [StockItemController::class, 'store']);
         Route::post('/stock/suppliers', [StockSupplierController::class, 'store']);
         Route::post('/stock/receipts', [StockDocumentedReceiptController::class, 'store']);
@@ -85,6 +88,12 @@ $registerBackoffice = static function (): void {
         Route::post('/stock/shipments/{shipment}/dispatch', [StockShipmentController::class, 'dispatch']);
         Route::post('/stock/shipments/{shipment}/receive', [StockShipmentController::class, 'receive']);
         Route::post('/stock/shipments/{shipment}/close', [StockShipmentController::class, 'close']);
+        Route::post('/stock/counts', [StockCountController::class, 'store']);
+    });
+
+    Route::middleware('nexa.roles:owner,admin,manager')->group(static function (): void {
+        Route::post('/stock/counts/{count}/approve', [StockCountController::class, 'approve']);
+        Route::post('/stock/counts/{count}/reject', [StockCountController::class, 'reject']);
     });
 
     Route::middleware('nexa.roles:owner,admin,manager,supervisor,technician')->group(static function (): void {

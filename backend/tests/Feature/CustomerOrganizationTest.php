@@ -203,4 +203,74 @@ final class CustomerOrganizationTest extends TestCase
             ->assertNotFound();
         $this->assertDatabaseHas('customer_departments', ['id'=>$department->id,'name'=>'First only']);
     }
+
+    public function test_organization_lists_search_before_pagination_within_the_customer_and_location(): void
+    {
+        $tenant = Tenant::query()->create(['name'=>'Provider','slug'=>'provider']);
+        $customer = $tenant->customers()->create(['name'=>'Factory']);
+        $other = $tenant->customers()->create(['name'=>'Other']);
+        $token = $this->token($tenant);
+
+        for ($index = 0; $index < 30; $index++) {
+            $name = sprintf('Alpha %02d', $index);
+            $customer->locations()->create(['tenant_id'=>$tenant->id,'name'=>$name]);
+            $customer->costCenters()->create([
+                'tenant_id'=>$tenant->id,'name'=>$name,'code'=>sprintf('A%02d', $index),
+            ]);
+        }
+
+        $target = $customer->locations()->create([
+            'tenant_id'=>$tenant->id,'name'=>'Zulu unit','code'=>'LOC-NEEDLE',
+        ]);
+        $customer->locations()->create([
+            'tenant_id'=>$tenant->id,'name'=>'Zzz needle inactive','active'=>false,
+        ]);
+        for ($index = 0; $index < 30; $index++) {
+            $target->departments()->create([
+                'tenant_id'=>$tenant->id,'customer_id'=>$customer->id,
+                'name'=>sprintf('Alpha %02d', $index),
+            ]);
+        }
+        $department = $target->departments()->create([
+            'tenant_id'=>$tenant->id,'customer_id'=>$customer->id,
+            'name'=>'Zulu department','code'=>'DEP-NEEDLE',
+        ]);
+        $target->departments()->create([
+            'tenant_id'=>$tenant->id,'customer_id'=>$customer->id,
+            'name'=>'Zzz dep-needle inactive','active'=>false,
+        ]);
+        $center = $customer->costCenters()->create([
+            'tenant_id'=>$tenant->id,'name'=>'Zulu center','code'=>'CST-NEEDLE',
+        ]);
+        $customer->costCenters()->create([
+            'tenant_id'=>$tenant->id,'name'=>'Zzz zulu inactive','code'=>'ZZZ','active'=>false,
+        ]);
+        $other->locations()->create([
+            'tenant_id'=>$tenant->id,'name'=>'Needle elsewhere','code'=>'OTHER-NEEDLE',
+        ]);
+
+        $locations = "/api/v1/customers/{$customer->id}/locations";
+        $departments = "{$locations}/{$target->id}/departments";
+        $centers = "/api/v1/customers/{$customer->id}/cost-centers";
+
+        $this->withToken($token)->getJson("{$locations}?page=2&per_page=25")
+            ->assertOk()->assertJsonPath('data.5.id', $target->id);
+        $this->withToken($token)->getJson("{$locations}?q=needle&active_only=true")
+            ->assertOk()->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.id', $target->id);
+        $this->withToken($token)->getJson("{$departments}?page=2&per_page=25")
+            ->assertOk()->assertJsonPath('data.5.id', $department->id);
+        $this->withToken($token)->getJson("{$departments}?q=dep-needle&active_only=true")
+            ->assertOk()->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.id', $department->id);
+        $this->withToken($token)->getJson("{$centers}?page=2&per_page=25")
+            ->assertOk()->assertJsonPath('data.5.id', $center->id);
+        $this->withToken($token)->getJson("{$centers}?q=zulu&active_only=true")
+            ->assertOk()->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.id', $center->id);
+
+        $this->withToken($token)->getJson("{$locations}?q[]=needle")->assertUnprocessable();
+        $this->withToken($token)->getJson("{$departments}?q[]=needle")->assertUnprocessable();
+        $this->withToken($token)->getJson("{$centers}?q[]=needle")->assertUnprocessable();
+    }
 }

@@ -35,6 +35,13 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Contagem física supervisionada e navegação paginada — incremento 44 (parcial)
+
+- O estoque registra uma contagem física por item/local com UUID idempotente, saldo esperado e último movimento observados. Uma segunda pessoa com papel de gestão aprova ou rejeita com justificativa; a aprovação gera ajuste no razão e auditoria dentro da transação. Saldo alterado, inclusive quando retorna ao número anterior, impede aprovar uma contagem antiga. Reservas não podem ser anuladas e perdas com lotes conhecidos aguardam contagem específica por lote.
+- O portal ganhou lista, registro e revisão de contagens, busca paginada de itens e locais, e preserva o UUID ao reenviar o mesmo formulário. Alocação de impressoras consulta unidade, departamento e centro de custo por pesquisa/páginas e mostra todas as páginas do histórico. As buscas são filtradas no servidor antes da paginação e mantêm escopo de empresa/carteira.
+- O diário local do watchdog é substituído por gravação temporária sincronizada e renomeação; um lock de arquivo cobre as atualizações entre processos para preservar incidentes e resets simultâneos. Os testes automatizados cobrem leitores e escritores concorrentes; falta ensaio de queda de energia e serviço real.
+- O fluxo ainda exige validação operacional de contagem física, reconciliação por lote, hardware de impressão real e aceite individual dos NX/QA. Veja [rastreamento](docs/EXECUTION-TRACKER.md).
+
 ### Correções de seleção, Collector e execução local — incremento 43 (parcial)
 
 - Formulários de impressoras, chamados e alertas consultam opções paginadas e pesquisáveis; novos filtros da API restringem cliente, impressora e chamados abertos antes da paginação, preservando empresa e carteira.

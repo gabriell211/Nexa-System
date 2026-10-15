@@ -18,15 +18,20 @@ final class CustomerDepartmentController extends Controller
     public function index(Request $request, int $customer, int $location): AnonymousResourceCollection
     {
         $filters = $request->validate([
+            'q' => ['sometimes','nullable','string','max:100'],
             'page' => ['sometimes','integer','min:1'],
             'per_page' => ['sometimes','integer','between:1,100'],
-            'active_only' => ['sometimes','boolean'],
+            'active_only' => ['sometimes','in:0,1,true,false'],
         ]);
+        $term = mb_strtolower(trim($filters['q'] ?? ''));
         $client = $request->attributes->get('nexa_tenant')->customers()->findOrFail($customer);
         $unit = $client->locations()->findOrFail($location);
         return CustomerDepartmentResource::collection(
             $unit->departments()
                 ->when($request->boolean('active_only'), fn ($query) => $query->where('active', true))
+                ->when($term !== '', fn ($query) => $query->where(fn ($match) => $match
+                    ->whereRaw('LOWER(name) LIKE ?', ['%'.$term.'%'])
+                    ->orWhereRaw('LOWER(code) LIKE ?', ['%'.$term.'%'])))
                 ->orderBy('name')->paginate($filters['per_page'] ?? 25)
         );
     }

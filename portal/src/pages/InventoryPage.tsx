@@ -2,10 +2,11 @@ import { useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRightLeft, Package, Plus, Warehouse } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
+import { StockCountsPanel } from './StockCountsPanel';
 import type { Customer, Page } from '../types';
 
 type Kind = 'receipt' | 'transfer' | 'issue';
-type Section = 'balances' | 'movements' | 'lots' | 'items' | 'locations';
+type Section = 'balances' | 'movements' | 'lots' | 'counts' | 'items' | 'locations';
 interface LotPosition { id:number; lot_id:number; item_id:number; item_sku:string; item_name:string; location_name:string; quantity:number; expires_on:string|null; expired:boolean; lot_number:string; unit_cost_cents:number; receipt_detail_id:number }
 interface StockItem { id: number; sku: string; name: string; category: string; unit: string; active: boolean }
 interface StockLocation {
@@ -242,14 +243,16 @@ function MoveStock({ token, onCreated }: {
   </form>;
 }
 
-export function InventoryPage({token}: {token: string | null}) {
+export function InventoryPage({token, role, userId}: {
+  token: string | null; role: string; userId: number;
+}) {
   const qc = useQueryClient();
   const [section, setSection] = useState<Section>('balances');
   const [page, setPage] = useState(1);
   const [notice, setNotice] = useState('');
   const listings = {
     balances: '/stock/balances', movements: '/stock/movements', lots:'/stock/lots',
-    items: '/stock/items', locations: '/stock/locations',
+    counts: '/stock/counts', items: '/stock/items', locations: '/stock/locations',
   };
   const listing = useQuery({
     queryKey: ['stock-list', section, page],
@@ -257,6 +260,7 @@ export function InventoryPage({token}: {token: string | null}) {
       const url = listings[section] + queryString({page,per_page:25});
       return api<Page<Balance | Movement | LotPosition | StockItem | StockLocation>>(url, token);
     },
+    enabled: section !== 'counts',
   });
   async function refresh() {
     setNotice('Operação registrada e auditada com sucesso.');
@@ -271,13 +275,14 @@ export function InventoryPage({token}: {token: string | null}) {
       <p>Entradas, transferências e baixas por posição, com saldos independentes e histórico auditável.</p>
     </div><Warehouse size={36} color="#397cf7"/></div>
     <nav className="stock-tabs" aria-label="Gestão do estoque">
-      {(['balances','lots','movements','items','locations'] as Section[]).map(value =>
+      {(['balances','lots','movements','counts','items','locations'] as Section[]).map(value =>
         <button key={value} className={'organization-tab' + (section===value?' selected':'')} onClick={()=>change(value)}>
-          {({balances:'Saldos',lots:'Lotes',movements:'Movimentações',items:'Itens',locations:'Locais'} as Record<Section,string>)[value]}
+          {({balances:'Saldos',lots:'Lotes',movements:'Movimentações',counts:'Contagens',items:'Itens',locations:'Locais'} as Record<Section,string>)[value]}
         </button>)}
     </nav>
     {notice && <p role="status" className="notice success">{notice}</p>}
-    <section className="data-card stock-listing">
+    {section === 'counts' && <StockCountsPanel token={token} role={role} userId={userId} />}
+    {section !== 'counts' && <section className="data-card stock-listing">
       {listing.isPending ? <div className="loading">Carregando estoque...</div> :
         listing.error ? <p role="alert" className="notice error">{readableError(listing.error)}</p> :
         listing.data.data.length===0 ? <div className="empty-state"><Package size={30}/><p>Nenhum registro nesta categoria.</p></div> :
@@ -324,12 +329,12 @@ export function InventoryPage({token}: {token: string | null}) {
               <td>{l.customer_id??'—'}</td><td>{l.active?'Ativo':'Inativo'}</td></tr>;
           })}</tbody></table></div>}
       {!listing.isPending && !listing.error && <Pager value={listing.data} onChange={setPage}/>}
-    </section>
-    <div className="stock-forms">
+    </section>}
+    {section !== 'counts' && <div className="stock-forms">
       <MoveStock token={token} onCreated={refresh}/>
       <NewItem token={token} onCreated={refresh}/>
       <NewLocation token={token} onCreated={refresh}/>
-    </div>
-    <p className="stock-footnote">O saldo por lote rastreia somente entradas documentadas após esta migração. Estoque antigo permanece sem lote conhecido. Movimentações usam FEFO entre lotes válidos; inventário físico, ajuste supervisionado e reconciliação de legados permanecem pendentes.</p>
+    </div>}
+    <p className="stock-footnote">O saldo por lote rastreia somente entradas documentadas após esta migração. Estoque antigo permanece sem lote conhecido. Movimentações usam FEFO entre lotes válidos; perdas em lotes rastreados exigem contagem por lote.</p>
   </>;
 }

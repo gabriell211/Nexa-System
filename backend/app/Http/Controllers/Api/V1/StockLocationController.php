@@ -24,11 +24,16 @@ final class StockLocationController extends Controller
     {
         $this->portfolio->assertFull($request);
         $data = $request->validate([
+            'q' => ['sometimes','nullable','string','max:100'],
             'page' => ['sometimes','integer','min:1'],
             'per_page' => ['sometimes','integer','between:1,100'],
+            'active_only' => ['sometimes','in:0,1,true,false'],
         ]);
+        $term = mb_strtolower(trim($data['q'] ?? ''));
         return StockLocationResource::collection(
             StockLocation::query()->where('tenant_id', $request->attributes->get('nexa_tenant')->id)
+                ->when($request->boolean('active_only'), fn ($query) => $query->where('active', true))
+                ->when($term !== '', fn ($query) => $query->whereRaw('LOWER(name) LIKE ?', ['%'.$term.'%']))
                 ->orderBy('name')->paginate($data['per_page'] ?? 25)
         );
     }

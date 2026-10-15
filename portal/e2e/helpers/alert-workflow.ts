@@ -4,6 +4,7 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
   const unique=Date.now().toString()+'-'+Math.floor(Math.random()*100_000);
   const customer='Alerta E2E Cliente '+unique;
   const model='Model E2E '+unique;
+  const unit='Unidade E2E '+unique;
   const subject='Chamado E2E alerta '+unique;
   const alertTitle='Alerta de hardware E2E '+unique;
 
@@ -37,6 +38,40 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
     await expect(history.getByText(/Dados insuficientes para comparar/)).toBeVisible();
     await expect(history.getByText(/Não utilizar para faturamento automático/)).toBeVisible();
     await history.getByRole('button',{name:'Fechar histórico de contadores'}).click();
+  });
+
+  await test.step('Find a customer unit remotely and persist the printer assignment',async()=>{
+    await page.goto('/clientes');
+    await page.getByLabel('Pesquisar clientes').fill(customer);
+    await page.getByRole('link',{name:customer}).click();
+    await page.getByRole('button',{name:'Nova unidade'}).click();
+    const editor=page.getByRole('dialog');
+    await editor.getByLabel('Nome').fill(unit);
+    await editor.getByRole('button',{name:'Salvar'}).click();
+    await expect(page.getByText(unit,{exact:true})).toBeVisible();
+
+    await page.goto('/parque');
+    await page.getByLabel('Pesquisar impressoras').fill(model);
+    const printer=page.getByRole('row',{name:new RegExp('Kyocera '+model)});
+    await printer.getByRole('button',{name:/Localização da impressora/}).click();
+    const assignment=page.getByRole('dialog');
+    await assignment.getByLabel('Buscar unidade da impressora').fill(unit);
+    const unitOption=assignment.locator('#assigned-location option').filter({hasText:unit}).first();
+    const unitId=await unitOption.getAttribute('value');
+    expect(unitId).not.toBeNull();
+    await assignment.locator('#assigned-location').selectOption(unitId!);
+    await assignment.getByLabel('Motivo da movimentação').fill('Instalação validada pelo navegador E2E');
+    await assignment.getByRole('button',{name:'Registrar localização'}).click();
+    await expect(assignment.getByText('Nova localização registrada com sucesso.')).toBeVisible();
+    await expect(assignment.getByText(unit,{exact:true}).first()).toBeVisible();
+    await assignment.getByRole('button',{name:'Fechar'}).click();
+
+    await printer.getByRole('button',{name:/Localização da impressora/}).click();
+    const reopened=page.getByRole('dialog');
+    await reopened.getByLabel('Buscar unidade da impressora').fill('busca sem resultado E2E');
+    await expect(reopened.getByText('Nenhuma opção nesta página. Ajuste a busca ou avance.').first()).toBeVisible();
+    await expect(reopened.locator('#assigned-location')).toHaveValue(unitId!);
+    await reopened.getByRole('button',{name:'Fechar'}).click();
   });
 
   await test.step('Open a ticket for the same printer from the ticket form',async()=>{

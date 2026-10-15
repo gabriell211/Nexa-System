@@ -9,6 +9,7 @@ collector/console/src-tauri/icons/ios/
 **/dist/
 **/.phpunit.cache/
 backend/.phpunit.result.cache
+backend/database/*.sqlite
 portal/test-results/
 portal/playwright-report/
 .DS_Store

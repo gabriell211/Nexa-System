@@ -2,11 +2,12 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowRightLeft, MapPin, X } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
+import { PagedEntitySelect } from '../components/PagedEntitySelect';
 import type { Page, Printer } from '../types';
 
-interface Unit { id: number; name: string; active: boolean }
-interface Department { id: number; name: string; active: boolean }
-interface CostCenter { id: number; code: string; name: string; active: boolean }
+interface Unit { id: number; name: string; active?: boolean }
+interface Department { id: number; name: string; active?: boolean }
+interface CostCenter { id: number; code: string; name: string; active?: boolean }
 interface Assignment {
   id: number; location_id: number; department_id: number | null;
   cost_center_id: number | null; assigned_at: string; released_at: string | null;
@@ -24,41 +25,24 @@ export function PrinterAssignmentPanel({ printer, token, canWrite, onClose }: {
   const [departmentId, setDepartmentId] = useState(String(printer.current_assignment?.department_id ?? ''));
   const [costCenterId, setCostCenterId] = useState(String(printer.current_assignment?.cost_center_id ?? ''));
   const [reason, setReason] = useState('');
+  const [historyPage, setHistoryPage] = useState(1);
   const [notice, setNotice] = useState<string | null>(null);
 
   const url = '/printers/' + printer.id + '/assignments';
   const customerBase = '/customers/' + printer.customer_id;
   const history = useQuery({
-    queryKey: ['printer-assignments', printer.id],
-    queryFn: () => api<Page<Assignment>>(url, token),
+    queryKey: ['printer-assignments', printer.id, historyPage],
+    queryFn: () => api<Page<Assignment>>(url + queryString({ page: historyPage, per_page: 25 }), token),
   });
-  const units = useQuery({
-    queryKey: ['printer-location-options', printer.customer_id],
-    enabled: canWrite,
-    queryFn: () => api<Page<Unit>>(customerBase + '/locations' + queryString({
-      active_only: true, per_page: 100,
-    }), token),
+  const currentAssignment = useQuery({
+    queryKey: ['printer-assignment-current', printer.id],
+    queryFn: () => api<Page<Assignment>>(url + queryString({ page: 1, per_page: 1 }), token),
   });
-  const centers = useQuery({
-    queryKey: ['printer-center-options', printer.customer_id],
-    enabled: canWrite,
-    queryFn: () => api<Page<CostCenter>>(customerBase + '/cost-centers' + queryString({
-      active_only: true, per_page: 100,
-    }), token),
-  });
-  const departments = useQuery({
-    queryKey: ['printer-departments', printer.customer_id, locationId],
-    enabled: canWrite && locationId !== '',
-    queryFn: () => api<Page<Department>>(
-      customerBase + '/locations/' + locationId + '/departments' +
-      queryString({ active_only: true, per_page: 100 }), token,
-    ),
-  });
-
   async function refresh() {
     await Promise.all([
       qc.invalidateQueries({ queryKey: ['printers'] }),
       qc.invalidateQueries({ queryKey: ['printer-assignments', printer.id] }),
+      qc.invalidateQueries({ queryKey: ['printer-assignment-current', printer.id] }),
     ]);
   }
 
@@ -74,6 +58,7 @@ export function PrinterAssignmentPanel({ printer, token, canWrite, onClose }: {
     }),
     onSuccess: async () => {
       setReason('');
+      setHistoryPage(1);
       setNotice('Nova localização registrada com sucesso.');
       await refresh();
     },
@@ -85,6 +70,7 @@ export function PrinterAssignmentPanel({ printer, token, canWrite, onClose }: {
     }),
     onSuccess: async () => {
       setLocationId(''); setDepartmentId(''); setCostCenterId(''); setReason('');
+      setHistoryPage(1);
       setNotice('Impressora retirada da localização. Histórico preservado.');
       await refresh();
     },
@@ -96,11 +82,12 @@ export function PrinterAssignmentPanel({ printer, token, canWrite, onClose }: {
     if (locationId && reason.trim().length >= 5) assign.mutate();
   }
 
-  const current = history.data?.data.find(item => item.released_at === null);
+  const current = currentAssignment.data?.data.find(item => item.released_at === null);
+  const currentPage = history.data?.meta?.current_page ?? history.data?.current_page ?? historyPage;
+  const lastPage = history.data?.meta?.last_page ?? history.data?.last_page ?? 1;
+  const total = history.data?.meta?.total ?? history.data?.total ?? 0;
   const formPending = assign.isPending || release.isPending;
-  const optionLoading = units.isPending || centers.isPending || (locationId !== '' && departments.isPending);
-  const optionError = units.error || centers.error || departments.error;
-  const historyError = history.error;
+  const historyError = history.error || currentAssignment.error;
 
   return <div className="modal-overlay">
     <section role="dialog" aria-modal="true" aria-labelledby="assign-printer-heading" className="modal printer-assignment-modal">
@@ -114,40 +101,43 @@ export function PrinterAssignmentPanel({ printer, token, canWrite, onClose }: {
       <div className="current-location">
         <MapPin size={20} aria-hidden="true"/>
         <div><strong>Localização atual</strong>
-          <p>{history.isPending ? 'Consultando...' : current
+          <p>{currentAssignment.isPending ? 'Consultando...' : current
             ? [current.location?.name, current.department?.name, current.cost_center?.code].filter(Boolean).join(' / ')
             : 'Sem unidade atribuída'}</p>
         </div>
       </div>
       {notice && <p className="notice success" role="status">{notice}</p>}
-      {(historyError || optionError || assign.error || release.error) &&
-        <p role="alert" className="notice error">{readableError(historyError || optionError || assign.error || release.error)}</p>}
+      {(historyError || assign.error || release.error) &&
+        <p role="alert" className="notice error">{readableError(historyError || assign.error || release.error)}</p>}
       {canWrite && printer.active && <form className="editor-form" onSubmit={submit}>
         <span className="eyebrow">REGISTRAR MOVIMENTAÇÃO</span>
-        <label htmlFor="assigned-location">Unidade do cliente *</label>
-        <select id="assigned-location" required disabled={optionLoading || formPending}
-          value={locationId} onChange={event => {
-            setLocationId(event.target.value); setDepartmentId('');
-          }}>
-          <option value="">Selecione uma unidade ativa</option>
-          {(units.data?.data ?? []).map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}
-        </select>
+        <PagedEntitySelect<Unit> id="assigned-location" label="Unidade do cliente *"
+          searchLabel="Buscar unidade da impressora" placeholder="Buscar unidade por nome ou código..."
+          emptyLabel="Selecione uma unidade ativa" value={locationId}
+          onChange={value => { setLocationId(value); setDepartmentId(''); }}
+          queryKey={['printer-location-options', printer.customer_id]}
+          endpoint={customerBase + '/locations'} filters={{ active_only: true }}
+          optionLabel={unit => unit.name}
+          initialOption={current?.location ?? printer.current_assignment?.location}
+          required disabled={formPending}/>
         <div className="form-columns">
-          <div><label htmlFor="assigned-dept">Departamento</label>
-            <select id="assigned-dept" disabled={!locationId || optionLoading || formPending} value={departmentId}
-              onChange={event => setDepartmentId(event.target.value)}>
-              <option value="">Não vincular</option>
-              {(departments.data?.data ?? []).map(dept => <option key={dept.id} value={dept.id}>{dept.name}</option>)}
-            </select>
-          </div>
-          <div><label htmlFor="assigned-center">Centro de custo</label>
-            <select id="assigned-center" disabled={optionLoading || formPending} value={costCenterId}
-              onChange={event => setCostCenterId(event.target.value)}>
-              <option value="">Não vincular</option>
-              {(centers.data?.data ?? []).map(center =>
-                <option key={center.id} value={center.id}>{center.code} — {center.name}</option>)}
-            </select>
-          </div>
+          <PagedEntitySelect<Department> key={locationId || 'no-unit'}
+            id="assigned-dept" label="Departamento" searchLabel="Buscar departamento da impressora"
+            placeholder="Buscar departamento por nome ou código..." emptyLabel="Não vincular"
+            value={departmentId} onChange={setDepartmentId}
+            queryKey={['printer-departments', printer.customer_id, locationId]}
+            endpoint={customerBase + '/locations/' + locationId + '/departments'}
+            filters={{ active_only: true }} optionLabel={dept => dept.name}
+            initialOption={current?.location_id === Number(locationId) ? current.department : null}
+            disabled={!locationId || formPending}/>
+          <PagedEntitySelect<CostCenter> id="assigned-center" label="Centro de custo"
+            searchLabel="Buscar centro de custo da impressora"
+            placeholder="Buscar centro por nome ou código..." emptyLabel="Não vincular"
+            value={costCenterId} onChange={setCostCenterId}
+            queryKey={['printer-center-options', printer.customer_id]}
+            endpoint={customerBase + '/cost-centers'} filters={{ active_only: true }}
+            optionLabel={center => `${center.code} — ${center.name}`}
+            initialOption={current?.cost_center ?? null} disabled={formPending}/>
         </div>
         <label htmlFor="assigned-reason">Motivo da movimentação *</label>
         <input id="assigned-reason" required minLength={5} maxLength={500}
@@ -155,7 +145,7 @@ export function PrinterAssignmentPanel({ printer, token, canWrite, onClose }: {
           value={reason} onChange={event => setReason(event.target.value)}/>
         <div className="modal-actions">
           <button type="submit" className="button primary"
-            disabled={!locationId || formPending || optionLoading || Boolean(optionError)}>
+            disabled={!locationId || formPending}>
             <ArrowRightLeft size={17} /> {formPending ? 'Registrando...' : 'Registrar localização'}
           </button>
           {current && <button type="button" className="button ghost" disabled={formPending || reason.trim().length < 5}
@@ -167,7 +157,7 @@ export function PrinterAssignmentPanel({ printer, token, canWrite, onClose }: {
       <div className="assignment-history">
         <h3>Histórico de movimentações</h3>
         {history.isPending ? <p>Carregando histórico...</p> : history.data?.data.length === 0
-          ? <p>Sem movimentações registradas.</p>
+          ? <p>{total ? 'Nenhuma movimentação nesta página.' : 'Sem movimentações registradas.'}</p>
           : <div className="table-wrap"><table><thead><tr>
             <th>Local</th><th>Início</th><th>Fim</th><th>Motivo</th>
           </tr></thead><tbody>
@@ -178,6 +168,15 @@ export function PrinterAssignmentPanel({ printer, token, canWrite, onClose }: {
               <td>{item.reason}</td>
             </tr>)}
           </tbody></table></div>}
+        {history.data && <div className="pagination">
+          <span>{total} movimentações • Página {currentPage} de {lastPage}</span>
+          <div className="inline">
+            <button type="button" className="button ghost" disabled={history.isPending || currentPage <= 1}
+              onClick={() => setHistoryPage(currentPage - 1)}>Anterior</button>
+            <button type="button" className="button ghost" disabled={history.isPending || currentPage >= lastPage}
+              onClick={() => setHistoryPage(currentPage + 1)}>Próxima</button>
+          </div>
+        </div>}
       </div>
     </section>
   </div>;

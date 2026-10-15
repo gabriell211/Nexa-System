@@ -52,7 +52,7 @@ No parque, a ação de localização abre um painel com a unidade, departamento 
 - Transferência entre clientes não é feita editando `customer_id`, exige um processo próprio de migração de ativos/contratos, ainda pendente.
 - Antes de inativar unidade, departamento ou centro de custo com impressoras, mova ou libere os equipamentos vinculados.
 - As alocações são sempre registradas com data de ação atual; sem inventar datas históricas.
-- O painel atualmente limita seletores aos 100 primeiros locais/centros ativos, e o histórico às 25 movimentações mais recentes. Busca paginada e seleção remota permanecem pendentes.
+- O painel busca unidades, departamentos e centros de custo ativos em páginas de 25, mantendo a opção escolhida ao trocar de página ou pesquisar. O histórico também é paginado em 25 movimentações por página; a localização atual é consultada separadamente para continuar correta ao navegar no histórico.
 
 ## Permissões por carteira
 
@@ -66,7 +66,13 @@ A seção `/estoque` possui lista persistida de itens, depósitos/locais (proved
 
 Os papéis owner/admin/manager/warehouse com acesso à carteira inteira podem operar o estoque; usuários com carteira limitada não acessam os saldos de toda a operadora. O registro técnico exige vínculo do membro à operadora, e um local de cliente exige vínculo com unidade ativa.
 
-**Ainda não é um WMS completo:** inventário físico, ajuste supervisionado, confirmação física de lote no picking, devoluções, mínimos, logística e integrações fiscais permanecem pendentes. Catálogo, custo, compatibilidade, reservas, remessas parciais e rastreamento contábil de lotes são descritos nas entregas seguintes. Alguns formulários de estoque ainda usam os primeiros 100 registros; listas volumosas precisam de pesquisa remota e seleção paginada. Não confundir saída/entrada direta com mercadoria em trânsito.
+**Ainda não é um WMS completo:** contagem física por lote, confirmação física de lote no picking, devoluções, mínimos, logística e integrações fiscais permanecem pendentes. O fluxo agregado de contagem supervisionada aparece abaixo. Catálogo, custo, compatibilidade, reservas, remessas parciais e rastreamento contábil de lotes são descritos nas entregas seguintes. Alguns formulários de estoque ainda usam os primeiros 100 registros; listas volumosas precisam de pesquisa remota e seleção paginada. Não confundir saída/entrada direta com mercadoria em trânsito.
+
+## Contagens físicas supervisionadas (entrega 44, parcial)
+
+Na aba **Contagens** de `/estoque`, um operador registra item, local, quantidade física e justificativa. Os seletores de item/local consultam páginas e pesquisa no servidor. O backend guarda saldo e último movimento observados; outra pessoa com papel owner/admin/manager pode aprovar ou rejeitar com justificativa. Aprovação cria o ajuste no razão somente se a posição não mudou após o registro. Uma tentativa reenviada sem editar o formulário conserva o mesmo UUID idempotente.
+
+O fluxo não comprova sozinho a contagem física, nem aceita perda em uma posição com lote rastreado sem identificar o lote. O excedente é registrado sem lote conhecido. Reconciliação de estoque legado, ensaio operacional e aceite `NX-103` continuam pendentes.
 
 ## Reservas e remessas (entrega 8)
 
