@@ -31,7 +31,7 @@ final class PrinterController extends Controller
 
         return PrinterResource::collection(
             $this->portfolio->printers($tenant->printers(), $request)
-                ->with(['customer:id,name','currentAssignment.location:id,name'])
+                ->with(['customer:id,name','currentAssignment.location:id,name','latestReading'])
                 ->when($request->boolean('active_only'), fn (Builder $query) => $query->where('active', true))
                 ->when($term !== '', function (Builder $query) use ($term): void {
                     $query->where(function (Builder $match) use ($term): void {
@@ -60,7 +60,7 @@ final class PrinterController extends Controller
     public function show(Request $request, int $printer): PrinterResource
     {
         $item = $request->attributes->get('nexa_tenant')->printers()
-            ->with(['customer:id,name', 'currentAssignment.location:id,name', 'readings' => fn ($query) => $query->orderByDesc('collected_at')->limit(20)])
+            ->with(['customer:id,name', 'currentAssignment.location:id,name', 'latestReading', 'readings' => fn ($query) => $query->orderByDesc('collected_at')->limit(20)])
             ->findOrFail($printer);
 
         return new PrinterResource($item);
