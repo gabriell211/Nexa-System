@@ -219,6 +219,8 @@ final class CollectorIncidentNotificationTest extends TestCase
         $this->member($tenant,'owner');
         $this->member($tenant,'admin');
         $this->enable();
+        // Keep this test focused on the initial stage, not 60-minute escalation.
+        config()->set('nexa.collector_notifications.escalation_minutes',120);
         config()->set('nexa.collector_notifications.max_per_tenant_hour',1);
         $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
         $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
@@ -242,6 +244,8 @@ final class CollectorIncidentNotificationTest extends TestCase
         [$tenantB,$agentB]=$this->incident('global-cap-b');
         $this->member($tenantB,'owner');
         $this->enable();
+        // Keep this test focused on the initial stage, not 60-minute escalation.
+        config()->set('nexa.collector_notifications.escalation_minutes',120);
         config()->set('nexa.collector_notifications.max_per_tenant_hour',1);
         config()->set('nexa.collector_notifications.max_global_hour',1);
         $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
@@ -257,6 +261,8 @@ final class CollectorIncidentNotificationTest extends TestCase
         $this->artisan('nexa:alerts:notify-collectors')->assertSuccessful();
         Mail::assertSent(CollectorHealthIncidentMail::class,2);
         $this->assertDatabaseCount('collector_incident_notifications',2);
+        $this->assertSame(1,CollectorIncidentNotification::query()
+            ->where('tenant_id',$tenantB->id)->count());
     }
 
     public function test_invalid_mail_budgets_fail_closed_before_any_send(): void
