@@ -120,6 +120,14 @@ final class CollectorIncidentNotifier
                 $tenant=CollectorIncidentNotification::query()
                     ->where('tenant_id',$fresh->tenant_id)
                     ->where('attempted_at','>',$since)->count();
+                // Explicit operator-approved replays must consume the SAME
+                // rolling-hour budget as automatic sends. Both hold the same
+                // global row lock while checking and reserving.
+                $global+=DB::table('collector_notification_replays')
+                    ->where('attempted_at','>',$since)->count();
+                $tenant+=DB::table('collector_notification_replays')
+                    ->where('tenant_id',$fresh->tenant_id)
+                    ->where('attempted_at','>',$since)->count();
                 // Includes failed/ambiguous/skipped reservations: strict
                 // conservative admission, never exceeding configured quotas.
                 if ($global >= $maxGlobalHour || $tenant >= $maxPerTenantHour) {
