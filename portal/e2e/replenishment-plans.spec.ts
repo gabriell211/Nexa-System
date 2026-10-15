@@ -401,19 +401,17 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       expect(await paginatedTotal(owner.context().request, '/stock/movements')).toBe(movementCount + 2);
       const afterReturn = await owner.context().request.get(apiRoot + '/stock/purchase-orders/' + orderId);
       expect(afterReturn.status()).toBe(200);
-      const returnedOrder: { data: { items: Array<{ receipts: Array<{ returned_quantity: number }> }> } } =
-        await afterReturn.json();
+      const returnedOrder: { data: {
+        items: Array<{ receipts: Array<{ returned_quantity: number }> }>;
+        fulfillment: {
+          gross_received_quantity: number; returned_quantity: number;
+          retained_quantity: number; replacement_needed_quantity: number;
+          outstanding_quantity: number; status: string;
+        };
+      } } = await afterReturn.json();
       expect(returnedOrder.data.items[0].receipts[0].returned_quantity).toBe(1);
 
-      const returnSummary: { data: { fulfillment: {
-        gross_received_quantity: number; returned_quantity: number;
-        retained_quantity: number; replacement_needed_quantity: number;
-        outstanding_quantity: number; status: string;
-      } } } = await afterReturn.json().catch(() => ({ data: { fulfillment: {
-        gross_received_quantity: 0, returned_quantity: 0, retained_quantity: 0,
-        replacement_needed_quantity: 0, outstanding_quantity: 0, status: '',
-      } } }));
-      expect(returnSummary.data.fulfillment).toMatchObject({
+      expect(returnedOrder.data.fulfillment).toMatchObject({
         gross_received_quantity: 1,
         returned_quantity: 1,
         retained_quantity: 0,
