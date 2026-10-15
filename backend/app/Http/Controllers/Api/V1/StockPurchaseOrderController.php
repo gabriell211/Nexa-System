@@ -41,6 +41,7 @@ final class StockPurchaseOrderController extends Controller
                     'supplier:id,code,name,active','creator:id,name','approver:id,name',
                     'lines' => static fn ($q) => $q->orderBy('id'),
                     'lines.planLine.item:id,sku,name,unit','lines.planLine.location:id,name',
+                    'lines.receiptMatches.receipt',
                 ])->withCount('lines')->orderByDesc('id')
                 ->paginate($filter['per_page'] ?? 25)
         );

@@ -7,6 +7,7 @@ use App\Models\StockItem;
 use App\Models\StockLocation;
 use App\Models\StockPurchaseOrder;
 use App\Models\StockPurchaseOrderLine;
+use App\Models\StockPurchaseReceiptMatch;
 use App\Models\StockReplenishmentPlan;
 use App\Models\StockReplenishmentPlanItem;
 use App\Models\StockShipment;
@@ -32,6 +33,7 @@ final class StockPurchaseOrderService
                 'lines' => static fn ($q) => $q->orderBy('id'),
                 'lines.planLine.item:id,sku,name,unit',
                 'lines.planLine.location:id,name',
+                'lines.receiptMatches.receipt',
             ])->withCount('lines')->findOrFail($orderId);
     }
 
@@ -198,6 +200,10 @@ final class StockPurchaseOrderService
             }
             if ($order->status === 'cancelled' || (int) $order->version !== (int) $data['expected_version']) {
                 abort(409, 'O pedido já foi cancelado ou está desatualizado.');
+            }
+            if ($order->status === 'approved' && StockPurchaseReceiptMatch::query()
+                ->where('tenant_id', $tenant->id)->where('purchase_order_id', $order->id)->exists()) {
+                abort(409, 'Há recebimentos conciliados. A compra não pode ser cancelada sem estorno supervisionado.');
             }
             $oldStatus = $order->status;
             $order->forceFill([

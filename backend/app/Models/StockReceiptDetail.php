@@ -5,6 +5,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 final class StockReceiptDetail extends Model
 {
@@ -18,6 +19,7 @@ final class StockReceiptDetail extends Model
         return ['expires_on'=>'immutable_date','unit_cost_cents'=>'integer'];
     }
 
+    public function purchaseMatch(): HasOne { return $this->hasOne(StockPurchaseReceiptMatch::class, 'receipt_detail_id'); }
     public function supplier(): BelongsTo { return $this->belongsTo(StockSupplier::class, 'supplier_id'); }
     public function movement(): BelongsTo { return $this->belongsTo(StockMovement::class, 'movement_id'); }
 }

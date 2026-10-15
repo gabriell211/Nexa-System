@@ -225,4 +225,118 @@ final class StockPurchaseOrderTest extends TestCase
         $this->as($creatorToken)->getJson('/api/v1/stock/purchase-orders?status=wrong')
             ->assertUnprocessable();
     }
+
+    private function approvedPurchase(array $fixture, int $quantity = 3): array
+    {
+        $payload = $this->payload($fixture['plan'], $fixture['supplier'], $fixture['line'], $quantity);
+        $created = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/purchase-orders', $payload)
+            ->assertCreated();
+        $orderId = (int) $created->json('data.id');
+        $lineId = (int) $created->json('data.items.0.id');
+        $this->as($fixture['managerToken'])->postJson("/api/v1/stock/purchase-orders/{$orderId}/approve", [
+            'expected_version' => 1,
+        ])->assertOk();
+        return [$orderId, $lineId];
+    }
+
+    private function documentedPurchaseReceipt(array $fixture, int $quantity, int $cost, string $invoice): int
+    {
+        return (int) $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/receipts', [
+            'request_id' => (string) Str::uuid(),
+            'supplier_id' => $fixture['supplier'],
+            'item_id' => $fixture['item'],
+            'destination_location_id' => $fixture['destination'],
+            'quantity' => $quantity, 'invoice_reference' => $invoice,
+            'lot_number' => 'LOTE-'.$invoice, 'unit_cost_cents' => $cost,
+            'reason' => 'Recebimento físico conferido no depósito',
+        ])->assertCreated()->json('data.id');
+    }
+
+    public function test_purchase_receipt_matching_tracks_partial_full_cost_variance_and_is_idempotent(): void
+    {
+        $fixture = $this->fixture();
+        [$order, $line] = $this->approvedPurchase($fixture, 3);
+        $uri = "/api/v1/stock/purchase-orders/{$order}/reconcile-receipt";
+        $first = $this->documentedPurchaseReceipt($fixture, 1, 6875, 'NF-COMPRA-A');
+        $second = $this->documentedPurchaseReceipt($fixture, 2, 7100, 'NF-COMPRA-B');
+        $this->assertDatabaseCount('stock_movements', 2);
+
+        $payload = ['purchase_order_line_id' => $line, 'receipt_detail_id' => $first];
+        $this->as($fixture['creatorToken'])->postJson($uri, $payload)
+            ->assertCreated()->assertJsonPath('data.items.0.received_quantity', 1)
+            ->assertJsonPath('data.items.0.outstanding_quantity', 2)
+            ->assertJsonPath('data.items.0.cost_divergence', false)
+            ->assertJsonPath('data.items.0.receipts.0.invoice_reference', 'NF-COMPRA-A');
+        $this->as($fixture['creatorToken'])->postJson($uri, $payload)
+            ->assertOk()->assertJsonPath('data.items.0.received_quantity', 1);
+        $this->as($fixture['creatorToken'])->postJson($uri, [
+            'purchase_order_line_id' => $line, 'receipt_detail_id' => $second,
+        ])->assertUnprocessable()->assertJsonValidationErrors('variance_reason');
+        $this->as($fixture['creatorToken'])->postJson($uri, [
+            'purchase_order_line_id' => $line, 'receipt_detail_id' => $second,
+            'variance_reason' => 'Valor da nota difere da cotação original',
+        ])->assertCreated()->assertJsonPath('data.items.0.received_quantity', 3)
+            ->assertJsonPath('data.items.0.outstanding_quantity', 0)
+            ->assertJsonPath('data.items.0.cost_divergence', true)
+            ->assertJsonPath('data.items.0.receipts.1.unit_cost_cents', 7100);
+        $this->assertDatabaseCount('stock_purchase_receipt_matches', 2);
+        $this->assertDatabaseCount('stock_movements', 2);
+        $this->assertSame(2, DB::table('audit_entries')
+            ->where('action', 'stock.purchase_order.receipt_matched')->count());
+        $this->as($fixture['managerToken'])->postJson("/api/v1/stock/purchase-orders/{$order}/cancel", [
+            'expected_version' => 2, 'reason' => 'Impossível cancelar com recebimentos vinculados',
+        ])->assertStatus(409);
+
+        $this->as($fixture['creatorToken'])->getJson('/api/v1/stock/receipts?unmatched_only=1&supplier_id='.$fixture['supplier'])
+            ->assertOk()->assertJsonPath('meta.total', 0);
+        $this->as($fixture['creatorToken'])->getJson('/api/v1/stock/receipts?q=compra-b')
+            ->assertOk()->assertJsonPath('meta.total', 1);
+    }
+
+    public function test_receipt_matching_rejects_oversupply_wrong_supplier_destination_and_foreign_tenants(): void
+    {
+        $fixture = $this->fixture();
+        [$order, $line] = $this->approvedPurchase($fixture, 2);
+        $uri = "/api/v1/stock/purchase-orders/{$order}/reconcile-receipt";
+        $valid = $this->documentedPurchaseReceipt($fixture, 1, 6875, 'NF-OK');
+        $oversupply = $this->documentedPurchaseReceipt($fixture, 2, 6875, 'NF-EXCESSO');
+        $this->as($fixture['creatorToken'])->postJson($uri, [
+            'purchase_order_line_id' => $line, 'receipt_detail_id' => $valid,
+        ])->assertCreated();
+        $this->as($fixture['creatorToken'])->postJson($uri, [
+            'purchase_order_line_id' => $line, 'receipt_detail_id' => $oversupply,
+        ])->assertUnprocessable()->assertJsonValidationErrors('receipt_detail_id');
+
+        $wrongSupplier = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/suppliers', [
+            'code' => 'WRONG-SUPPLIER', 'name' => 'Outro fornecedor',
+        ])->assertCreated()->json('data.id');
+        $wrong = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/receipts', [
+            'request_id' => (string) Str::uuid(), 'supplier_id' => $wrongSupplier,
+            'item_id' => $fixture['item'], 'destination_location_id' => $fixture['destination'],
+            'quantity' => 1, 'invoice_reference' => 'NF-ERRADA',
+            'lot_number' => 'LOTE-ERRADO', 'unit_cost_cents' => 6875,
+            'reason' => 'Recebimento válido de outro fornecedor',
+        ])->assertCreated()->json('data.id');
+        $this->as($fixture['creatorToken'])->postJson($uri, [
+            'purchase_order_line_id' => $line, 'receipt_detail_id' => $wrong,
+        ])->assertUnprocessable();
+
+        $anotherTenant = Tenant::query()->create(['name' => 'Foreign', 'slug' => 'match-foreign']);
+        [, $foreign] = $this->token($anotherTenant);
+        $this->as($foreign)->postJson($uri, [
+            'purchase_order_line_id' => $line, 'receipt_detail_id' => $valid,
+        ])->assertNotFound();
+        $this->as($foreign)->getJson("/api/v1/stock/purchase-orders/{$order}")->assertNotFound();
+        [, $technician] = $this->token($fixture['tenant'], 'technician');
+        $this->as($technician)->postJson($uri, [
+            'purchase_order_line_id' => $line, 'receipt_detail_id' => $valid,
+        ])->assertForbidden();
+
+        $this->as($fixture['creatorToken'])->postJson($uri, [
+            'purchase_order_line_id' => $line, 'receipt_detail_id' => $valid,
+            'variance_reason' => 'Reuso com conteúdo diferente',
+        ])->assertUnprocessable();
+        $this->assertDatabaseCount('stock_purchase_receipt_matches', 1);
+    }
+
 }

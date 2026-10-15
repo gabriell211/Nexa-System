@@ -40,6 +40,19 @@ final class StockPurchaseOrderResource extends JsonResource
                     'quantity' => (int) $line->quantity,
                     'unit_cost_cents' => (int) $line->unit_cost_cents,
                     'line_total_cents' => $line->quantity * $line->unit_cost_cents,
+                    'received_quantity' => (int) $line->receiptMatches->sum('quantity'),
+                    'outstanding_quantity' => max(0, (int) $line->quantity - (int) $line->receiptMatches->sum('quantity')),
+                    'cost_divergence' => $line->receiptMatches->contains(
+                        static fn ($match): bool => (int) $match->received_unit_cost_cents !== (int) $line->unit_cost_cents
+                    ),
+                    'receipts' => $line->receiptMatches->map(static fn ($match): array => [
+                        'receipt_detail_id' => (int) $match->receipt_detail_id,
+                        'invoice_reference' => $match->receipt?->invoice_reference,
+                        'lot_number' => $match->receipt?->lot_number,
+                        'quantity' => (int) $match->quantity,
+                        'unit_cost_cents' => (int) $match->received_unit_cost_cents,
+                        'variance_reason' => $match->variance_reason,
+                    ])->values(),
                     'item' => $line->planLine?->item?->only(['id','sku','name','unit']),
                     'destination' => $line->planLine?->location?->only(['id','name']),
                 ]

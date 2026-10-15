@@ -35,6 +35,14 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Conciliação auditada de recebimentos com pedidos de compra — incremento 54 (parcial)
+
+- Entradas documentadas já registradas podem ser vinculadas explicitamente a **uma única linha de pedido de compra aprovado**, preservando saldo, lote, nota, fornecedor, material, destino, quantidade e custo originais. Conciliar **não** cria outra movimentação de estoque.
+- O vínculo usa chaves compostas por empresa/pedido/linha/recebimento e unicidade do recebimento. Retransmitir a mesma associação retorna o resultado anterior; tentar vinculá-la a outra compra, origem ou justificativa é rejeitado. Quantidades recebidas acima da linha aprovada são proibidas sob bloqueio transacional do pedido.
+- O backend confirma fornecedor, SKU e destino contra a linha aprovada. Diferença entre custo efetivamente lançado na entrada e custo aprovado **exige justificativa**; a divergência permanece visível e auditável. Cancelar compra aprovada com entrada conciliada é bloqueado para impedir apagamento de histórico.
+- A seção **Compras** do portal apresenta quantidade recebida/restante por item, lotes/valores e divergências; permite pesquisar recebimentos ainda não vinculados por nota/lote e associá-los manualmente. Testes API e Playwright percorrem recebimento parcial, custos divergentes, isolamento e garantia de zero lançamentos adicionais. **CI precisa passar antes do merge.**
+- NX-099/NX-107/NX-286 permanecem **PARCIAIS**: não há importação de NF-e/XML, validação tributária, aprovação financeira, estorno formal ou processamento de devoluções/nota de crédito. Recebimentos acima do pedido exigem revisão fora desta conciliação; não são associados silenciosamente.
+
 ### Pedidos de compra de suprimentos com revisão humana — incremento 53 (parcial)
 
 - Nova entidade de **pedido de compra de suprimentos**, vinculada a uma proposta de reposição aprovada, fornecedor cadastrado e até 30 linhas aprovadas. Cada linha mantém quantidade e custo unitário em centavos inteiros; o valor previsto é calculado sem arredondamento de ponto flutuante.

@@ -5,6 +5,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 final class StockPurchaseOrderLine extends Model
 {
@@ -19,6 +20,7 @@ final class StockPurchaseOrderLine extends Model
     {
         return $this->belongsTo(StockPurchaseOrder::class, 'purchase_order_id');
     }
+    public function receiptMatches(): HasMany { return $this->hasMany(StockPurchaseReceiptMatch::class, 'purchase_order_line_id'); }
     public function planLine(): BelongsTo
     {
         return $this->belongsTo(StockReplenishmentPlanItem::class, 'plan_line_id');
