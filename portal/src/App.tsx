@@ -329,6 +329,7 @@ function CustomersPage({ token, canWrite }: { token: string | null; canWrite: bo
     <PageTitle kicker="CARTEIRA DE CLIENTES" title="Clientes" subtitle="Cadastro, manutenção e histórico das empresas atendidas."
       action={canWrite && <button type="button" className="button primary" onClick={() => setEditing('new')}><Plus size={17}/> Novo cliente</button>} />
     <section className="data-card">
+      <p className="stock-footnote">Os contadores são as últimas amostras persistidas pelo Collector, não leituras em tempo real. Um campo não suportado aparece como “—”, nunca como zero. A data é da coleta no dispositivo.</p>
       <div className="table-tools"><label className="search-field"><Search size={18} aria-hidden="true"/>
         <input type="search" aria-label="Pesquisar clientes" placeholder="Buscar por nome..." value={search}
           onChange={(event) => { setSearch(event.target.value); setPage(1); }} maxLength={100}/></label>
@@ -474,10 +475,17 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
       {notice && <p role="status" className="notice success">{notice}</p>}
       {deactivate.error && <ErrorMessage error={deactivate.error}/>}
       {listing.isPending ? <LoadingState/> : listing.error ? <ErrorMessage error={listing.error}/> : listing.data.data.length === 0 ? <EmptyState>Nenhuma impressora encontrada para estes filtros.</EmptyState> : <>
-        <div className="table-wrap"><table><thead><tr><th>Impressora</th><th>Cliente</th><th>IP</th><th>Estado de coleta</th><th>Cadastro</th><th className="actions-head">Ações</th></tr></thead>
+        <div className="table-wrap"><table><thead><tr><th>Impressora</th><th>Cliente</th><th>IP</th><th>Últimos contadores</th><th>Estado de coleta</th><th>Cadastro</th><th className="actions-head">Ações</th></tr></thead>
           <tbody>{listing.data.data.map((printer) => <tr key={printer.id}>
             <td><strong>{printer.manufacturer} {printer.model}</strong><small>{printer.serial_number || 'Série não informada'}</small></td>
             <td>{printer.customer?.name || '—'}</td><td className="mono">{printer.ip_address || '—'}</td>
+            <td>{printer.latest_reading
+              ? <span className="meter-summary">
+                  <strong>Total: {printer.latest_reading.meter_total === null ? '—' : printer.latest_reading.meter_total.toLocaleString('pt-BR')}</strong>
+                  <small>P&B: {printer.latest_reading.meter_mono === null ? '—' : printer.latest_reading.meter_mono.toLocaleString('pt-BR')} · Cor: {printer.latest_reading.meter_color === null ? '—' : printer.latest_reading.meter_color.toLocaleString('pt-BR')}</small>
+                  <small>Coletado em: {formatDate(printer.latest_reading.collected_at)}</small>
+                </span>
+              : <span>Sem leituras registradas</span>}</td>
             <td><span className="state-pill neutral">{printer.status === 'unknown' ? 'Não determinado' : printer.status}</span></td>
             <td><span className={'state-pill ' + (printer.active ? 'online' : 'neutral')}>{printer.active ? 'Ativo' : 'Inativo'}</span></td>
             <td><div className="table-actions">
