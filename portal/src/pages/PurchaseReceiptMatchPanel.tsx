@@ -22,6 +22,8 @@ interface PurchaseLine {
   quantity: number;
   unit_cost_cents: number;
   received_quantity: number;
+  returned_quantity: number;
+  retained_quantity: number;
   outstanding_quantity: number;
   item: { id: number; sku: string; name: string; unit: string } | null;
   destination: { id: number; name: string } | null;
@@ -77,7 +79,9 @@ export function PurchaseReceiptMatchPanel({ orderId, supplierId, lines, token, o
     <h3>Conciliar recebimento físico com compra</h3>
     <p className="stock-hint">
       Escolha uma entrada documentada já registrada. A conciliação apenas vincula nota, lote,
-      quantidade e custo ao pedido aprovado; não cria outro lançamento no estoque.
+      quantidade e custo ao pedido aprovado; não cria outro lançamento no estoque. Uma
+      devolução concluída libera espaço para vincular mercadoria substituta, mas uma
+      solicitação pendente não libera quantidade.
     </p>
     <form onSubmit={submit}>
       <div className="stock-form-grid">
@@ -110,7 +114,9 @@ export function PurchaseReceiptMatchPanel({ orderId, supplierId, lines, token, o
           required disabled={create.isPending} />}
       </div>
       {line && <p className="stock-hint">
-        Pedido: {line.received_quantity} de {line.quantity} unidades recebidas.
+        Pedido: {line.quantity} unidades · recebimento histórico: {line.received_quantity} ·
+        devolvido: {line.returned_quantity} · retido líquido: {line.retained_quantity} ·
+        pendente líquido: {line.outstanding_quantity}.
         Custo aprovado: {currencyFromCents(line.unit_cost_cents)} por unidade.
       </p>}
       {receipt && <p className="stock-hint">
