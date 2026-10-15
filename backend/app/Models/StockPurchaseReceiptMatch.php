@@ -5,6 +5,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 final class StockPurchaseReceiptMatch extends Model
 {
@@ -16,6 +17,15 @@ final class StockPurchaseReceiptMatch extends Model
     protected function casts(): array
     {
         return ['quantity' => 'integer', 'received_unit_cost_cents' => 'integer'];
+    }
+
+    public function supplierReturns(): HasMany
+    {
+        return $this->hasMany(StockSupplierReturn::class, 'purchase_receipt_match_id');
+    }
+    public function purchaseOrder(): BelongsTo
+    {
+        return $this->belongsTo(StockPurchaseOrder::class, 'purchase_order_id');
     }
 
     public function receipt(): BelongsTo

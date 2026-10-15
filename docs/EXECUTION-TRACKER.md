@@ -751,3 +751,10 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Consulta de compras expõe por linha recebido, restante, divergências e notas já conciliadas usando eager loading. GET /stock/receipts ganhou filtros de nota/lote, fornecedor, item, local e unlinked-only, com escopo tenant antes da paginação. Portal permite localizar e conciliar uma entrada por vez sem nova movimentação.
 - Testes Laravel verificam recebimentos parciais, custo divergente, idempotência, excesso, fornecedor de outra compra e tenant diferente. E2E percorre registro documentado e conciliação pela UI com auditoria de movimentos inalterada.
 - Pendente: resultado CI deste incremento, homologação física, NF-e/XML, estorno, pagamento, devolução e conciliação fiscal externa. Requisitos seguem parciais.
+
+## Entrega 55 — devoluções físicas supervisionadas por lote (15/10/2026)
+
+- A tabela stock_supplier_returns guarda empresa, UUID/hash, origem da conciliação, quantidade, motivo, estados pending/completed/cancelled, versão, solicitante, revisor e movimentação vinculada. Não elimina registros anteriores.
+- A aprovação humana, sempre por outra pessoa da gestão, bloqueia o SKU e revalida lote físico no depósito de origem; registra uma única baixa `issue` no InventoryLedgerService, com alocação exata do lote original e trilha de auditoria.
+- APIs de criação, aprovação, cancelamento, lista e detalhe estão isoladas por empresa e carteira; portal em Compras exibe a fila e as quantidades devolvidas. Testes PHP e E2E cobrem ausência de baixa antes da confirmação, rastreabilidade, saldo insuficiente e autorização.
+- Pendente CI e homologação real. Não existe integração tributária de NF-e de devolução, compensação/estorno financeiro, emissão documental ao fornecedor ou logística reversa.

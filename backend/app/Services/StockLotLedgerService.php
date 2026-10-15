@@ -63,11 +63,32 @@ final class StockLotLedgerService
         $this->allocation($movement, (int) $lot->id, (int) $movement->quantity);
     }
 
-    public function applyMovement(StockMovement $movement): void
+    public function applyMovement(StockMovement $movement, ?int $specificLotId = null): void
     {
         if ($movement->source_location_id === null) return;
 
         $tenantId = (int) $movement->tenant_id;
+        if ($specificLotId !== null) {
+            if ($movement->kind !== 'issue' || $movement->destination_location_id !== null) {
+                throw ValidationException::withMessages(['kind' => 'A baixa por lote exige saída sem destino.']);
+            }
+            $lot = StockLot::query()->where('tenant_id', $tenantId)
+                ->where('item_id', $movement->item_id)->findOrFail($specificLotId);
+            $position = StockLotBalance::query()->where('tenant_id', $tenantId)
+                ->where('lot_id', $lot->id)
+                ->where('location_id', $movement->source_location_id)
+                ->lockForUpdate()->first();
+            if ($position === null || (int) $position->quantity < (int) $movement->quantity) {
+                throw ValidationException::withMessages([
+                    'quantity' => 'O lote selecionado não possui saldo suficiente na origem.',
+                ]);
+            }
+            // An explicit supplier return may remove a lot after its expiry date,
+            // unlike automatic FEFO consumption. Provenance is preserved.
+            $position->decrement('quantity', (int) $movement->quantity);
+            $this->allocation($movement, (int) $lot->id, (int) $movement->quantity);
+            return;
+        }
         $itemId = (int) $movement->item_id;
         $sourceId = (int) $movement->source_location_id;
         $required = (int) $movement->quantity;

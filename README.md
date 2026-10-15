@@ -35,6 +35,14 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Devoluções supervisionadas ao fornecedor por lote — incremento 55 (parcial)
+
+- Em Estoque → Compras, o operador pode solicitar devolução vinculada a um recebimento conciliado, incluindo pedido, nota, lote original, quantidade e motivo. A solicitação inicialmente fica pendente e **não** movimenta o estoque.
+- Outra pessoa com permissão de gestão confirma a devolução após verificar o lote no depósito original, o saldo disponível e as reservas existentes. Só então a baixa física tipo `issue` é registrada com alocação do lote exato; não se utiliza outro lote por ordem FEFO. A operação preserva documentos originais, é auditada e idempotente.
+- Solicitações pendentes podem ser canceladas pelo solicitante ou pela gestão. Concluídas são imutáveis. Há limitação por quantidade recebida e conciliada, autenticação, tenant, controle de carteira e versionamento.
+- O portal acompanha solicitações e aprovações, e o pedido mostra quantidade devolvida por nota. Testes Laravel e Playwright foram adicionados; **o CI deve ser aprovado antes do merge**.
+- NX-099/NX-107/NX-286 permanecem **PARCIAIS**: sem nota fiscal de devolução, crédito financeiro, contas a pagar, coleta externa, validação tributária ou homologação física.
+
 ### Conciliação auditada de recebimentos com pedidos de compra — incremento 54 (parcial)
 
 - Entradas documentadas já registradas podem ser vinculadas explicitamente a **uma única linha de pedido de compra aprovado**, preservando saldo, lote, nota, fornecedor, material, destino, quantidade e custo originais. Conciliar **não** cria outra movimentação de estoque.

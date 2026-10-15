@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, queryString, readableError } from '../api';
 import { PagedEntitySelect } from '../components/PagedEntitySelect';
 import { PurchaseReceiptMatchPanel } from './PurchaseReceiptMatchPanel';
+import { SupplierReturnsPanel } from './SupplierReturnsPanel';
 import { centsFromBrazilianValue, currencyFromCents } from '../utils/currency';
 import type { Page } from '../types';
 
@@ -31,7 +32,8 @@ interface PurchaseOrder {
     id: number; plan_line_id: number; quantity: number;
     unit_cost_cents: number; line_total_cents: number;
     received_quantity: number; outstanding_quantity: number; cost_divergence: boolean;
-    receipts: Array<{ receipt_detail_id: number; invoice_reference: string; lot_number: string;
+    receipts: Array<{ purchase_receipt_match_id: number; returned_quantity: number; pending_return_quantity: number;
+      receipt_detail_id: number; invoice_reference: string; lot_number: string;
       quantity: number; unit_cost_cents: number; variance_reason: string | null }>;
     item: { id: number; sku: string; name: string; unit: string } | null;
     destination: { id: number; name: string } | null;
@@ -113,17 +115,21 @@ function PurchaseOrderDetail({ orderId, token, role, userId, onClose, onChanged 
           {order.items.some(line => line.receipts.length > 0) && <div className="table-wrap">
             <h3>Notas e lotes conciliados</h3>
             <table><thead><tr><th>Material</th><th>Nota</th><th>Lote</th><th>Quantidade</th>
-              <th>Custo recebido</th><th>Diferença</th></tr></thead><tbody>
+              <th>Custo recebido</th><th>Devolvido</th><th>Diferença</th></tr></thead><tbody>
               {order.items.flatMap(line => line.receipts.map(receipt => <tr key={receipt.receipt_detail_id}>
                 <td>{line.item?.sku ?? '#' + line.id}</td>
                 <td>{receipt.invoice_reference} <small>#{receipt.receipt_detail_id}</small></td>
                 <td>{receipt.lot_number}</td>
                 <td>{receipt.quantity}</td>
                 <td>{currencyFromCents(receipt.unit_cost_cents)}</td>
+                <td>{receipt.returned_quantity.toLocaleString('pt-BR')}</td>
                 <td>{receipt.variance_reason ?? 'Sem diferença registrada'}</td>
               </tr>))}
             </tbody></table>
           </div>}
+          {order.status === 'approved' && <SupplierReturnsPanel
+            orderId={order.id} lines={order.items} token={token} role={role} userId={userId}
+            onChanged={async () => { await Promise.all([details.refetch(), onChanged()]); }} />}
           {order.status === 'approved' && <PurchaseReceiptMatchPanel
             orderId={order.id} supplierId={order.supplier_id} lines={order.items}
             token={token} onChanged={async () => { await Promise.all([details.refetch(), onChanged()]); }} />}

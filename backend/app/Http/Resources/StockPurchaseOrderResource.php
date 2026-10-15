@@ -52,6 +52,11 @@ final class StockPurchaseOrderResource extends JsonResource
                         'quantity' => (int) $match->quantity,
                         'unit_cost_cents' => (int) $match->received_unit_cost_cents,
                         'variance_reason' => $match->variance_reason,
+                        'purchase_receipt_match_id' => (int) $match->id,
+                        'returned_quantity' => (int) $match->supplierReturns
+                            ->where('status', 'completed')->sum('quantity'),
+                        'pending_return_quantity' => (int) $match->supplierReturns
+                            ->where('status', 'pending')->sum('quantity'),
                     ])->values(),
                     'item' => $line->planLine?->item?->only(['id','sku','name','unit']),
                     'destination' => $line->planLine?->location?->only(['id','name']),

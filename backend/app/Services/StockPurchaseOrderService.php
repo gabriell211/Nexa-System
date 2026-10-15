@@ -34,6 +34,7 @@ final class StockPurchaseOrderService
                 'lines.planLine.item:id,sku,name,unit',
                 'lines.planLine.location:id,name',
                 'lines.receiptMatches.receipt',
+                'lines.receiptMatches.supplierReturns',
             ])->withCount('lines')->findOrFail($orderId);
     }
 
