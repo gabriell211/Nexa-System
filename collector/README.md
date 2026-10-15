@@ -299,3 +299,25 @@ O aviso inicial é destinado somente a administradores/proprietários ativos com
 Cada tentativa é registrada na tabela collector_incident_notifications com idempotência por incidente/usuário/etapa e auditoria. O status accepted indica que o Laravel Mail terminou sem erro, NÃO garante recebimento na caixa postal. Falhas ficam registradas como transport_failure, sem texto bruto de exceções que possa conter segredos. Um envio com resultado ambíguo não é repetido automaticamente: investigue antes de qualquer tentativa manual. O envio e a gravação não são transacionais entre SMTP e banco, e existe pequena janela de corrida com resolução do incidente.
 
 O portal mostra contagens agregadas aceitas/sem confirmação por incidente e não expõe endereços dos usuários. PENDÊNCIAS: transporte SMTP real, testes de interrupção, DSN, bounces, confirmação de entrega, alertas push, preferências individuais e homologação em campo. NX-039 e NX-041 permanecem PARCIAIS.
+
+## Controle de volume e reconciliação de e-mails devolvidos — entrega 34
+
+Além do opt-in de notificações (`NEXA_COLLECTOR_NOTIFICATIONS_ENABLED=true`), o backend valida estes limites antes de enviar:
+- `NEXA_COLLECTOR_MAIL_MAX_PER_RUN=50` (1–500): quantidade de tentativas efetivas por execução.
+- `NEXA_COLLECTOR_MAIL_MAX_PER_TENANT_HOUR=20` (1–1000): reservas por tenant na janela móvel de 60 minutos.
+- `NEXA_COLLECTOR_MAIL_MAX_GLOBAL_HOUR=100` (1–10000): reservas globais em 60 minutos, sempre igual ou acima do limite por tenant.
+
+A migração cria `collector_notification_rate_locks` com uma única linha, usada para transações serializadas de reserva de tentativa nos workers que compartilham o mesmo banco. O scheduler conta registros `collector_incident_notifications.attempted_at` recentes (incluindo falhas e resultados incertos) e adia candidatos que ultrapassam as cotas, sem descartá-los, reenviá-los ou alterar o incidente. Contagem `deferred` é apresentada no output do comando. Reiniciar o processo **não zera** as cotas persistentes; a consulta da janela é feita no banco. Este controle não é uma quota global entre *bancos separados* ou implantações independentes, nem substitui os limites de um provedor de SMTP.
+
+### Reconciliação administrativa (somente CLI local)
+
+Depois de confirmar com uma fonte confiável que um aviso **já aceito pelo transporte** foi devolvido ou denunciado, um operador com acesso autorizado ao host de backend pode executar:
+
+```sh
+php artisan nexa:alerts:reconcile-collector-mail 123 --type=hard_bounce --confirm-reviewed-evidence
+php artisan nexa:alerts:reconcile-collector-mail 124 --type=complaint --confirm-reviewed-evidence
+```
+
+Tipos aceitos: `hard_bounce`, `soft_bounce`, `complaint`. O comando recusa IDs inválidos, registros não aceitos, tipos desconhecidos e ausência da confirmação explícita. Atualiza status para `returned` ou `complaint` e cria auditoria com categoria fixa sem dados de transporte, nome ou endereço. Repetições não modificam o registro. **Não consulta uma caixa de e-mail, não verifica a autenticidade da evidência, não envia/reenvia mensagens**; a revisão é responsabilidade do operador. A API administrativa e o portal exibem quantidades agregadas de aceitos, não confirmados, devolvidos e denúncias, com as mesmas restrições de tenant/carteira.
+
+**Limites pendentes:** falta integração segura com DSN/webhooks do provedor, confirmação de entrega no destinatário, reenvio supervisionado com prova/controle de duplicidade, testes de concorrência cross-process do orçamento de e-mails, SMTP de produção e políticas de privacidade/retenção. NX-039/041 permanecem PARCIAIS.
