@@ -42,6 +42,8 @@ final class StockReplenishmentPlanResource extends JsonResource
                 'available_quantity' => $line->available_quantity,
                 'suggested_quantity' => $line->suggested_quantity,
                 'quantity' => (int) $line->quantity,
+                'allocated_quantity' => (int) ($line->allocated_quantity ?? 0),
+                'remaining_quantity' => max(0, (int) $line->quantity - (int) ($line->allocated_quantity ?? 0)),
                 'safety_item' => (bool) $line->safety_item,
                 'note' => $line->note,
                 'item' => new StockItemResource($line->item),
