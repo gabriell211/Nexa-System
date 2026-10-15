@@ -492,3 +492,10 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 - `NX-255`: `heartbeat_at` e `last_seen_at` são sinais diferentes. Telemetria do serviço de atualização, travamentos de supervisor, descoberta e falhas específicas do dispositivo ainda não estão implementadas.
 - Autenticação do endpoint ocorre com token de máquina individual, UUID registrado e tenant/cliente ativos. Revogação e isolamento por empresa/carteira são testados. O servidor ignora timestamps de origem cliente.
 - E2E Chromium exercita a tela, enquanto testes Laravel validam comunicação e isolamento do endpoint. O E2E não instala o daemon em máquinas Windows, Linux ou macOS e não comprova saúde de uma impressora física.
+
+
+## Resend webhook recovery after scheduler outage (15/10/2026 — entrega 39)
+
+- `NX-039/041` continuam **PARCIAIS**: eventos do provedor somente são associados a UUIDs recebidos e autenticados pela integração Resend e não demonstram disponibilidade da impressora.
+- Corrigida a expiração indiscriminada do backlog. Eventos correlacionáveis a `collector_incident_notifications` ou `collector_notification_replays` não expiram só pela idade quando o scheduler ficou parado. Eventos desconhecidos além da retenção expiram e mantêm deduplicação.
+- Regressões Laravel simulam parada por 73 horas tanto para mensagem original quanto para replay autorizado, sem duplicar registros de auditoria ou modificar outros alvos. Aceite em ambiente de produção, interleaving de workers e entrega SMTP/Resend real permanecem pendentes.
