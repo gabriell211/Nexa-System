@@ -2,7 +2,8 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ClipboardCheck, MessageSquarePlus, Plus, RotateCcw } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
-import type { Customer, Page, Printer } from '../types';
+import type { Page, Printer } from '../types';
+import { PagedEntitySelect } from '../components/PagedEntitySelect';
 
 type Status = 'triage'|'unassigned'|'pending'|'in_progress'|'resolved'|'closed';
 type Priority = 'low'|'normal'|'high'|'critical';
@@ -31,15 +32,6 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
   const [description,setDescription]=useState('');
   const [category,setCategory]=useState('suporte');
   const [priority,setPriority]=useState<Priority>('normal');
-  const customers=useQuery({
-    queryKey:['ticket-customer-options'],
-    queryFn:()=>api<Page<Customer>>('/customers'+queryString({per_page:100,active_only:true}),null),
-  });
-  const printers=useQuery({
-    queryKey:['ticket-printer-options'],
-    queryFn:()=>api<Page<Printer>>('/printers'+queryString({per_page:100,active_only:true}),null),
-    enabled:Boolean(customer),
-  });
   const create=useMutation({
     mutationFn:()=>api<{data:Ticket}>('/tickets',null,{
       method:'POST',body:JSON.stringify({
@@ -56,20 +48,20 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
   return <form onSubmit={submit} className="stock-form">
     <h3>Abrir chamado</h3>
     <div className="stock-form-grid">
-      <div className="stock-field"><label htmlFor="ticket-customer">Cliente</label>
-        <select id="ticket-customer" value={customer} onChange={e=>{setCustomer(e.target.value);setPrinter('');}}>
-          <option value="">Interno (sem cliente)</option>
-          {(customers.data?.data??[]).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-        </select></div>
-      <div className="stock-field"><label htmlFor="ticket-printer">Impressora (opcional)</label>
-        <select id="ticket-printer" value={printer} disabled={!customer}
-          onChange={e=>setPrinter(e.target.value)}>
-          <option value="">Sem impressora</option>
-          {(printers.data?.data??[]).filter(item=>item.customer_id===Number(customer))
-            .map(item=><option key={item.id} value={item.id}>
-              #{item.id} {item.manufacturer} {item.model}
-            </option>)}
-        </select></div>
+      <div className="stock-field"><PagedEntitySelect<{id:number;name:string}>
+        id="ticket-customer" label="Cliente" searchLabel="Buscar cliente do chamado"
+        placeholder="Buscar cliente por nome..." emptyLabel="Interno (sem cliente)"
+        value={customer} onChange={value=>{setCustomer(value);setPrinter('');}}
+        queryKey={['ticket-customer-options']} endpoint="/customers" filters={{active_only:true}}
+        optionLabel={item=>item.name}/></div>
+      <div className="stock-field"><PagedEntitySelect<Printer> key={customer}
+        id="ticket-printer" label="Impressora (opcional)"
+        searchLabel="Buscar impressora do chamado" placeholder="Buscar fabricante, modelo ou série..."
+        emptyLabel="Sem impressora" value={printer} onChange={setPrinter}
+        queryKey={['ticket-printer-options',customer]} endpoint="/printers"
+        filters={{active_only:true,...(customer?{customer_id:Number(customer)}:{})}}
+        optionLabel={item=>`#${item.id} ${item.manufacturer} ${item.model}`}
+        disabled={!customer}/></div>
       <div className="stock-field"><label htmlFor="ticket-priority">Prioridade</label>
         <select id="ticket-priority" value={priority} onChange={e=>setPriority(e.target.value as Priority)}>
           {(Object.keys(priorities) as Priority[]).map(p=><option key={p} value={p}>{priorities[p]}</option>)}
@@ -84,10 +76,8 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
     <div className="stock-field"><label htmlFor="ticket-description">Descrição</label>
       <textarea id="ticket-description" required minLength={5} maxLength={12000}
         value={description} onChange={e=>setDescription(e.target.value)} rows={3}/></div>
-    {customers.error&&<p role="alert" className="notice error">{readableError(customers.error)}</p>}
-    {printers.error&&<p role="alert" className="notice error">{readableError(printers.error)}</p>}
     {create.error&&<p role="alert" className="notice error">{readableError(create.error)}</p>}
-    <button className="button primary" disabled={create.isPending||customers.isPending||Boolean(customers.error)}
+    <button className="button primary" disabled={create.isPending}
       type="submit"><Plus size={16}/> {create.isPending?'Salvando...':'Abrir chamado'}</button>
   </form>;
 }

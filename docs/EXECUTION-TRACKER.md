@@ -361,7 +361,7 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 
 ### Limitações e aceitação
 - `NX-034`, `NX-035`, `NX-036`, `NX-038` continuam **PARCIAIS**, sem homologação do comportamento real em proxy, 48h offline, disco cheio, reinício da estação, credencial rotacionada ou firmware de impressora.
-- Política de retry ainda volátil, parser de Retry-After suporta apenas segundos, não HTTP-date. Com erro HTTP 422 de item antigo/sem permissão, a fila para naquele lote até intervenção; não há quarentena automática nem descarte.
+- Política de retry ainda volátil. Nesta entrega 17, o parser de `Retry-After` suportava apenas segundos; datas HTTP foram acrescentadas na entrega 43. Com erro HTTP 422 de item antigo/sem permissão, a fila para naquele lote até intervenção; não há quarentena automática nem descarte.
 - A API Laravel limita leituras antigas a 14 dias. Faturamento nunca deve interpolar lacunas geradas por falhas de transporte.
 - Sem prometer integridade fim a fim até CI e testes de operação reais; `--once` só faz uma tentativa quando elegível.
 
@@ -658,3 +658,10 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Aritmética de inteiros de medição é decimal exata (`UnsignedDecimal`) sem cast para float/int, incluindo acumulação potencialmente maior que 64 bits. Resposta informa pares observados, lacunas, quedas, conflitos e status; `billing_ready=false` é incondicional.
 - A tela de histórico ganhou ação explícita "Prévia de incrementos", estado vazio e indicadores de revisão. Testes cobrem resets, nulls, ordem, precisão >2^53, tempos idênticos/conflitantes, fronteiras, tamanho da janela e segregação. Playwright testa prévia vazia.
 - **Não é faturamento** nem prova de volume impresso completo; podem existir resets entre duas leituras, coletas perdidas, diferenças de origem do relógio, páginas copiadas/impressas ou outras particularidades de fabricante. Falta homologação real.
+
+## Entrega 43 — seleção paginada, diagnóstico local e execução reproduzível (15/10/2026)
+
+- Cadastros de impressora, chamado e alerta passaram a buscar clientes, impressoras e chamados por páginas na API, com opção selecionada preservada durante a navegação. Os filtros `customer_id` em impressoras e `printer_id`, `customer_id` e `open_only` em chamados atuam antes da paginação, sob o mesmo escopo de tenant/carteira. Formulários de estoque ainda têm seletores limitados.
+- O Console do Collector abre a outbox SQLite em modo somente leitura e recusa uma fila inexistente sem criá-la. O watchdog recusa também um reset registrado no futuro, impedindo ocultar incidentes após retrocesso do relógio. `Retry-After` passa a aceitar segundos ou data HTTP válida, limitada a seis horas.
+- O Compose local ganhou processo `scheduler`, saúde da API e senha única de PostgreSQL injetada na API e no agendador. O Dockerfile da API exclui `.env`, `vendor` e artefatos locais do contexto, usa `composer.lock` e executa como `www-data`. Lockfiles de Composer, Cargo e npm passam a fixar dependências; o CI ganhou um job para validar build da imagem da API e ausência de `.env` nela.
+- Essas mudanças corrigem fluxos existentes e melhoram a repetibilidade local. Não comprovam segurança de uma instalação pública, funcionamento em hardware real, conclusão dos módulos planejados ou aceite integral dos 324 NX e 62 QA.

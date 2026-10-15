@@ -69,6 +69,27 @@ final class AdministrativeSearchTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_printer_customer_filter_is_validated_and_tenant_scoped(): void
+    {
+        $first = Tenant::create(['name' => 'First', 'slug' => 'first']);
+        $second = Tenant::create(['name' => 'Second', 'slug' => 'second']);
+        $a = $first->customers()->create(['name' => 'Alpha']);
+        $b = $first->customers()->create(['name' => 'Beta']);
+        $foreign = $second->customers()->create(['name' => 'Foreign']);
+        $first->printers()->create(['customer_id' => $a->id, 'manufacturer' => 'Kyocera', 'model' => 'Alpha printer']);
+        $first->printers()->create(['customer_id' => $b->id, 'manufacturer' => 'Kyocera', 'model' => 'Beta printer']);
+        $second->printers()->create(['customer_id' => $foreign->id, 'manufacturer' => 'Kyocera', 'model' => 'Foreign printer']);
+
+        $this->withToken($this->tokenFor($first));
+        $this->getJson('/api/v1/printers?customer_id='.$b->id)
+            ->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.model', 'Beta printer');
+        $this->getJson('/api/v1/printers?customer_id='.$foreign->id)
+            ->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/v1/printers?customer_id=abc')->assertUnprocessable();
+        $this->getJson('/api/v1/printers?customer_id=0')->assertUnprocessable();
+    }
+
     public function test_empty_browser_search_parameters_show_default_lists_without_validation_errors(): void
     {
         $tenant = Tenant::create(['name' => 'Empty Search Provider', 'slug' => 'empty-search']);

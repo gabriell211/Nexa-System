@@ -95,10 +95,10 @@ fn get_snapshot() -> CollectorSnapshot {
                 50_000, 64 * 1024 * 1024, 512 * 1024 * 1024,
             ));
             let opened = match env::var("NEXA_COLLECTOR_DB_KEY_HEX") {
-                Ok(key) => Outbox::open_encrypted_disk_guard(
+                Ok(key) => Outbox::open_encrypted_read_only_disk_guard(
                     &path, samples, payload_bytes, file_bytes, &key,
                 ),
-                Err(env::VarError::NotPresent) => Outbox::open_with_disk_guard(
+                Err(env::VarError::NotPresent) => Outbox::open_read_only_with_disk_guard(
                     &path, samples, payload_bytes, file_bytes,
                 ),
                 Err(_) => {

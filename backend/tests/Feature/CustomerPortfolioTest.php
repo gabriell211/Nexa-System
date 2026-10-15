@@ -77,6 +77,11 @@ final class CustomerPortfolioTest extends TestCase
         $this->getJson('/api/v1/browser/printers')
             ->assertOk()->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.id', $printerA->id);
+        $this->getJson('/api/v1/browser/printers?customer_id='.$one->id)
+            ->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $printerA->id);
+        $this->getJson('/api/v1/browser/printers?customer_id='.$two->id)
+            ->assertOk()->assertJsonCount(0, 'data');
         $this->getJson('/api/v1/browser/dashboard')
             ->assertOk()->assertJsonPath('customers', 1)
             ->assertJsonPath('printers', 1)

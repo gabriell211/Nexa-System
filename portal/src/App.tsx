@@ -17,6 +17,7 @@ import { AlertsPage } from './pages/AlertsPage';
 import { CollectorsPage } from './pages/CollectorsPage';
 import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
 import { PrinterReadingHistoryPanel } from './pages/PrinterReadingHistoryPanel';
+import { PagedEntitySelect } from './components/PagedEntitySelect';
 import type {
   AuditEntry, Credentials, CurrentUser, Customer, CustomerPayload, Dashboard,
   Page, Printer, PrinterPayload,
@@ -356,8 +357,8 @@ function CustomersPage({ token, canWrite }: { token: string | null; canWrite: bo
   </>;
 }
 
-function PrinterDialog({ printer, customers, onClose, onSave, pending }: {
-  printer: Printer | null; customers: Customer[];
+function PrinterDialog({ printer, onClose, onSave, pending }: {
+  printer: Printer | null;
   onClose: () => void;
   onSave: (values: PrinterPayload) => Promise<void>;
   pending: boolean;
@@ -386,19 +387,19 @@ function PrinterDialog({ printer, customers, onClose, onSave, pending }: {
     } catch (cause) { setError(readableError(cause)); }
   }
 
-  const options = customers.some((customer) => customer.id === printer?.customer_id)
-    ? customers
-    : printer?.customer ? [...customers, { id: printer.customer.id, name: printer.customer.name, active: false } as Customer] : customers;
-
   return <div className="modal-overlay"><section className="modal" role="dialog" aria-modal="true" aria-labelledby="printer-dialog-title">
     <div className="modal-header"><div><span className="eyebrow">EQUIPAMENTO</span><h2 id="printer-dialog-title">{printer ? 'Editar impressora' : 'Cadastrar impressora'}</h2></div>
       <button className="icon-button" type="button" onClick={onClose} aria-label="Fechar"><X size={20}/></button></div>
     <form className="editor-form" onSubmit={(event) => void submit(event)}>
-      <label htmlFor="printer-customer">Cliente <em>*</em></label>
-      <select id="printer-customer" required disabled={printer !== null} value={customerId} onChange={(event) => setCustomerId(event.target.value)}>
-        <option value="">Selecione um cliente</option>
-        {options.map((customer) => <option key={customer.id} value={customer.id} disabled={!customer.active && customer.id !== printer?.customer_id}>{customer.name}</option>)}
-      </select>
+      {printer ? <>
+        <label htmlFor="printer-customer">Cliente</label>
+        <input id="printer-customer" value={printer.customer?.name ?? `Cliente #${printer.customer_id}`}
+          readOnly aria-readonly="true" />
+      </> : <PagedEntitySelect<{id:number;name:string}> id="printer-customer" label="Cliente"
+        searchLabel="Buscar cliente da impressora" placeholder="Buscar cliente por nome..."
+        emptyLabel="Selecione um cliente" value={customerId} onChange={setCustomerId}
+        queryKey={['printer-customer-options']} endpoint="/customers" filters={{active_only:true}}
+        optionLabel={customer => customer.name} required/>}
       <div className="form-columns"><div><label htmlFor="printer-brand">Fabricante <em>*</em></label>
         <input id="printer-brand" required maxLength={100} value={manufacturer} onChange={(event) => setManufacturer(event.target.value)}/></div>
         <div><label htmlFor="printer-model">Modelo <em>*</em></label>
@@ -428,11 +429,6 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
     queryKey: ['printers', page, delayed, activeOnly],
     queryFn: () => api<Page<Printer>>('/printers' + queryString({ page, q: delayed, active_only: activeOnly }), token),
     placeholderData: keepPreviousData,
-  });
-  const customers = useQuery({
-    queryKey: ['customer-options'],
-    queryFn: () => api<Page<Customer>>('/customers' + queryString({ active_only: true, per_page: 100 }), token),
-    enabled: canWrite && editing !== null,
   });
 
   const save = useMutation({
@@ -511,12 +507,10 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
     {assignmentPrinter && <PrinterAssignmentPanel key={assignmentPrinter.id} printer={assignmentPrinter} token={token} canWrite={canWrite} onClose={() => setAssignmentPrinter(null)} />}
     {historyPrinter && <PrinterReadingHistoryPanel key={historyPrinter.id} printer={historyPrinter}
       token={token} onClose={() => setHistoryPrinter(null)} />}
-    {editing && (customers.isPending ? <div className="modal-overlay"><div className="modal"><LoadingState/></div></div> :
-      customers.error ? <div className="modal-overlay"><div className="modal"><ErrorMessage error={customers.error}/><button className="button ghost" onClick={() => setEditing(null)}>Fechar</button></div></div> :
-      <PrinterDialog key={editing === 'new' ? 'new' : editing.id}
-        printer={editing === 'new' ? null : editing} customers={customers.data?.data ?? []}
-        onClose={() => setEditing(null)} pending={save.isPending}
-        onSave={async (values) => { await save.mutateAsync(values); }}/>)}
+    {editing && <PrinterDialog key={editing === 'new' ? 'new' : editing.id}
+      printer={editing === 'new' ? null : editing}
+      onClose={() => setEditing(null)} pending={save.isPending}
+      onSave={async (values) => { await save.mutateAsync(values); }}/>}
   </>;
 }
 

@@ -29,6 +29,9 @@ final class ServiceTicketController extends Controller
             'per_page'=>['sometimes','integer','between:1,100'],
             'status'=>['sometimes','string','in:triage,unassigned,pending,in_progress,resolved,closed'],
             'q'=>['sometimes','string','max:100'],
+            'printer_id'=>['sometimes','integer','min:1'],
+            'customer_id'=>['sometimes','integer','min:1'],
+            'open_only'=>['sometimes','in:0,1,true,false'],
         ]);
         $tenant=$request->attributes->get('nexa_tenant');
         $query=ServiceTicket::query()->where('tenant_id',$tenant->id);
@@ -38,6 +41,9 @@ final class ServiceTicketController extends Controller
         return ServiceTicketResource::collection(
             $query->with(['customer:id,name','assignee:id,name'])
                 ->when(isset($filters['status']),fn ($q)=>$q->where('status',$filters['status']))
+                ->when(isset($filters['printer_id']),fn ($q)=>$q->where('printer_id',(int)$filters['printer_id']))
+                ->when(isset($filters['customer_id']),fn ($q)=>$q->where('customer_id',(int)$filters['customer_id']))
+                ->when($request->boolean('open_only'),fn ($q)=>$q->whereNotIn('status',['resolved','closed']))
                 ->when(isset($filters['q']),fn ($q)=>$q->where('subject','like','%'.$filters['q'].'%'))
                 ->orderByDesc('id')->paginate($filters['per_page']??25)
         );

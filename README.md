@@ -5,9 +5,27 @@
 
 **Nexa System** é uma plataforma para monitorar e administrar impressoras, dispositivos de TI, clientes, suprimentos, técnicos, chamados, contratos, produção, alertas, logística e faturamento em um único sistema.
 
+## Execução local com Docker Compose
+
+Esta pilha é para desenvolvimento e laboratório: a API usa `artisan serve`, as portas ficam restritas a `127.0.0.1` e não há TLS público. Requer Docker Compose e credenciais locais próprias.
+
+1. Copie `.env.example` para `.env` na raiz e `backend/.env.example` para `backend/.env`.
+2. Defina `POSTGRES_PASSWORD` forte no `.env` da raiz. O Compose passa essa senha ao PostgreSQL, à API e ao scheduler, substituindo o valor ilustrativo de `DB_PASSWORD` em `backend/.env`.
+3. Gere uma chave com `docker compose build api` e `docker compose run --rm --no-deps api php artisan key:generate --show`; coloque a saída em `APP_KEY` de `backend/.env`. Defina também `NEXA_BOOTSTRAP_EMAIL` e `NEXA_BOOTSTRAP_PASSWORD` para o primeiro usuário. Não registre esses valores no Git.
+4. Execute as migrações e crie o usuário inicial:
+
+   ```sh
+   docker compose up -d postgres
+   docker compose run --rm api php artisan migrate --force
+   docker compose run --rm api php artisan nexa:bootstrap
+   docker compose up -d api scheduler portal
+   ```
+
+Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendados do Laravel; os monitores e notificações opcionais continuam desligados até sua ativação explícita em `backend/.env`. Migrações posteriores devem ser aplicadas explicitamente antes de subir a nova versão. Não use esta pilha como implantação pública sem servidor de aplicação, HTTPS, backups, gestão de segredos e supervisão adequados.
+
 ## Especificações técnicas complementares
 
-- **[Nexa Collector — referência funcional do PrintWayy Client e projeto de implementação](docs/NEXA-COLLECTOR.md):** telas originais, serviços publicados, instalação, busca SNMP/USB, proxy, e-mail, filas locais, atualizações, diagnóstico, segurança, arquitetura Rust e validação ponta a ponta. **Documento de projeto — não implementado.**
+- **[Nexa Collector — referência funcional do PrintWayy Client e projeto de implementação](docs/NEXA-COLLECTOR.md):** telas originais, serviços publicados, instalação, busca SNMP/USB, proxy, e-mail, filas locais, atualizações, diagnóstico, segurança, arquitetura Rust e validação ponta a ponta. **Documento de projeto; somente um subconjunto foi implementado**, conforme [estado verificável](docs/IMPLEMENTATION-STATUS.md).
 
 ## Controle de cobertura
 
@@ -16,6 +34,13 @@
 - **Fonte**: documentação pública oficial consultada em 08/10/2026.
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
+
+### Correções de seleção, Collector e execução local — incremento 43 (parcial)
+
+- Formulários de impressoras, chamados e alertas consultam opções paginadas e pesquisáveis; novos filtros da API restringem cliente, impressora e chamados abertos antes da paginação, preservando empresa e carteira.
+- O Console do Collector lê a fila SQLite sem permissão de escrita; o watchdog rejeita reset com data futura; retentativas aceitam `Retry-After` como data HTTP ou segundos.
+- O Compose local executa o scheduler, o build da API exclui `.env` e dependências da máquina hospedeira, e lockfiles fixam as versões de Composer, Cargo e npm. O CI foi configurado para verificar a imagem e a exclusão do `.env`.
+- Permanecem pendentes os outros seletores limitados, validação de imagem neste host sem daemon Docker, ensaios de hardware e aceite completo. Veja [rastreamento](docs/EXECUTION-TRACKER.md).
 
 ### Prévia conservadora de incrementos observados — incremento 42 (parcial)
 
@@ -210,9 +235,9 @@
 ### Retentativas de upload do Collector — incremento 17 (parcial)
 
 - O daemon desacopla tentativas de transmissão do intervalo SNMP: verifica a fila em ciclos de 5 segundos, enviando lotes de até 100 amostras quando há janela de tentativa aberta.
-- Falhas de rede e respostas HTTP usam backoff exponencial a partir de 15 segundos, até 1 hora mais jitter determinístico; `429/503` respeitam `Retry-After` numérico até 6 horas. Erros HTTP de autorização/payload e ACK inválido têm intervalo mínimo de 15 minutos para evitar tempestades.
+- Falhas de rede e respostas HTTP usam backoff exponencial a partir de 15 segundos, até 1 hora mais jitter determinístico; `429/503` respeitam `Retry-After` em segundos ou data HTTP até 6 horas. Erros HTTP de autorização/payload e ACK inválido têm intervalo mínimo de 15 minutos para evitar tempestades.
 - Um ACK só remove UUIDs reconhecidos e pertencentes ao lote enviado; ACK vazio, desconhecido ou repetido não confirma leituras. Falhas de armazenamento SQLite terminam o processo com erro para supervisão, sem fingir sucesso.
-- Ainda faltam backoff persistente após reinicialização, interpretação de `Retry-After` no formato data HTTP, conexão via proxy autenticado, alertas operacionais, testes de rede/hardware e quarentena supervisionada de amostras definitivamente rejeitadas. **NX-034/035/036/038 continuam parciais.**
+- Ainda faltam backoff persistente após reinicialização, conexão via proxy autenticado, alertas operacionais, testes de rede/hardware e quarentena supervisionada de amostras definitivamente rejeitadas. **NX-034/035/036/038 continuam parciais.**
 
 ### Outbox SQLite com capacidade limitada — incremento em desenvolvimento
 

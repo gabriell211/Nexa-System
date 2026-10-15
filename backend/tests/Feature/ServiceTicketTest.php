@@ -69,6 +69,39 @@ final class ServiceTicketTest extends TestCase
         $this->assertDatabaseCount('service_tickets',1);
     }
 
+    public function test_list_filters_by_printer_before_pagination_and_validates_the_id(): void
+    {
+        extract($this->fixture());
+        $otherPrinter=$tenant->printers()->create([
+            'customer_id'=>$customer->id,'manufacturer'=>'Ricoh','model'=>'Other',
+        ]);
+        $wanted=$this->create($token,$customer->id,$printer->id)->assertCreated()->json('data.id');
+        $this->create($token,$customer->id,$otherPrinter->id)->assertCreated();
+
+        $this->withToken($token)->getJson('/api/v1/tickets?printer_id='.$printer->id.'&per_page=1')
+            ->assertOk()->assertJsonCount(1,'data')->assertJsonPath('meta.total',1)
+            ->assertJsonPath('data.0.id',$wanted);
+        $this->withToken($token)->getJson('/api/v1/tickets?printer_id=invalid')->assertUnprocessable();
+        $this->withToken($token)->getJson('/api/v1/tickets?printer_id=0')->assertUnprocessable();
+    }
+
+    public function test_list_filters_by_customer_and_open_state_before_pagination(): void
+    {
+        extract($this->fixture());
+        $wanted=$this->create($token,$customer->id,$printer->id)->assertCreated()->json('data.id');
+        $closed=$this->create($token,$customer->id,$printer->id)->assertCreated()->json('data.id');
+        $other=$this->create($token,$foreignCustomer->id,null)->assertCreated()->json('data.id');
+        \App\Models\ServiceTicket::query()->whereKey($closed)->update(['status'=>'closed']);
+
+        $this->withToken($token)->getJson('/api/v1/tickets?customer_id='.$customer->id.'&open_only=1&per_page=1')
+            ->assertOk()->assertJsonCount(1,'data')->assertJsonPath('meta.total',1)
+            ->assertJsonPath('data.0.id',$wanted);
+        $this->withToken($token)->getJson('/api/v1/tickets?customer_id='.$foreignCustomer->id.'&open_only=true')
+            ->assertOk()->assertJsonCount(1,'data')->assertJsonPath('data.0.id',$other);
+        $this->withToken($token)->getJson('/api/v1/tickets?customer_id=invalid')->assertUnprocessable();
+        $this->withToken($token)->getJson('/api/v1/tickets?open_only=maybe')->assertUnprocessable();
+    }
+
     public function test_transitions_require_assignee_and_prevent_close_before_resolution(): void
     {
         extract($this->fixture());
@@ -131,6 +164,10 @@ final class ServiceTicketTest extends TestCase
         Auth::forgetGuards();
         $this->withToken($techToken)->getJson('/api/v1/tickets')
             ->assertOk()->assertJsonCount(1,'data')->assertJsonPath('data.0.id',$first);
+        $this->withToken($techToken)->getJson('/api/v1/tickets?printer_id='.$printer->id)
+            ->assertOk()->assertJsonCount(1,'data')->assertJsonPath('data.0.id',$first);
+        $this->withToken($techToken)->getJson('/api/v1/tickets?customer_id='.$foreignCustomer->id.'&open_only=1')
+            ->assertOk()->assertJsonCount(0,'data');
         $this->withToken($techToken)->getJson('/api/v1/tickets/'.$second)->assertNotFound();
         $this->withToken($techToken)->getJson('/api/v1/tickets/'.$internal)->assertForbidden();
         $this->withToken($techToken)->postJson("/api/v1/tickets/{$second}/comments",[

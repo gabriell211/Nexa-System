@@ -17,6 +17,7 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
     await page.goto('/parque');
     await page.getByRole('button',{name:'Nova impressora'}).click();
     const dialog=page.getByRole('dialog');
+    await dialog.getByLabel('Buscar cliente da impressora').fill(customer);
     await dialog.locator('#printer-customer').selectOption({label:customer});
     await dialog.locator('#printer-brand').fill('Kyocera');
     await dialog.locator('#printer-model').fill(model);
@@ -40,7 +41,9 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
 
   await test.step('Open a ticket for the same printer from the ticket form',async()=>{
     await page.goto('/chamados');
+    await page.getByLabel('Buscar cliente do chamado').fill(customer);
     await page.getByLabel('Cliente',{exact:true}).selectOption({label:customer});
+    await page.getByLabel('Buscar impressora do chamado').fill(model);
     const option=page.locator('#ticket-printer option').filter({hasText:model}).first();
     const printerId=await option.getAttribute('value');
     expect(printerId).not.toBeNull();
@@ -54,6 +57,7 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
   await test.step('Register manual alert and correlate it with a ticket',async()=>{
     await page.goto('/alertas');
     await expect(page.getByRole('heading',{name:'Alertas operacionais'})).toBeVisible();
+    await page.getByLabel('Buscar impressora do alerta').fill(model);
     const option=page.locator('#alert-printer option').filter({hasText:model}).first();
     const printerId=await option.getAttribute('value');
     expect(printerId).not.toBeNull();
@@ -68,6 +72,7 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
       .getByRole('button',{name:'Detalhes do alerta'}).click();
     const detail=page.getByRole('dialog');
     await expect(detail.getByText('Origem: registrado por operador',{exact:false})).toBeVisible();
+    await detail.getByLabel('Buscar chamado para o alerta').fill(subject);
     const ticketOption=detail.locator('#alert-ticket option').filter({hasText:subject}).first();
     const ticketId=await ticketOption.getAttribute('value');
     expect(ticketId).not.toBeNull();

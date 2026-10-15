@@ -14,7 +14,7 @@ use std::{
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     str::FromStr,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 use thiserror::Error;
 use uuid::Uuid;
@@ -158,16 +158,27 @@ pub fn upload_error_kind(error: &CollectorError) -> &'static str {
     }
 }
 
-/// Retry-After delta seconds: malformed values (including HTTP dates) do not
-/// bypass the exponential fallback. Absolute-date support remains pending.
+/// Retry-After accepts either delta seconds or an HTTP date. Malformed values
+/// fall back to exponential delay; a valid value is bounded to six hours.
 fn retry_after_delta(value: Option<&reqwest::header::HeaderValue>) -> Option<u64> {
-    value?
-        .to_str()
-        .ok()?
-        .trim()
-        .parse::<u64>()
-        .ok()
-        .map(|seconds| seconds.min(21_600))
+    retry_after_delta_at(value, SystemTime::now())
+}
+
+fn retry_after_delta_at(
+    value: Option<&reqwest::header::HeaderValue>,
+    now: SystemTime,
+) -> Option<u64> {
+    let raw = value?.to_str().ok()?.trim();
+    if let Ok(seconds) = raw.parse::<u64>() {
+        return Some(seconds.min(21_600));
+    }
+    let deadline = httpdate::parse_http_date(raw).ok()?;
+    let duration = deadline.duration_since(now).unwrap_or_default();
+    // Round up fractional seconds so a restart never retries before the
+    // server's deadline merely because the header has one-second precision.
+    Some(duration.as_secs()
+        .saturating_add(u64::from(duration.subsec_nanos() > 0))
+        .min(21_600))
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -388,7 +399,18 @@ impl Outbox {
         max_pending_payload_bytes: u64,
         max_sqlite_files_bytes: u64,
     ) -> Result<Self, CollectorError> {
-        Self::open_database(path, max_pending_samples, max_pending_payload_bytes, max_sqlite_files_bytes, None, false)
+        Self::open_database(path, max_pending_samples, max_pending_payload_bytes, max_sqlite_files_bytes, None, false, false)
+    }
+
+    /// Inspect an existing plaintext database without opening it for writes
+    /// or creating a missing database. Intended for the local Console.
+    pub fn open_read_only_with_disk_guard(
+        path: impl AsRef<Path>,
+        max_pending_samples: u64,
+        max_pending_payload_bytes: u64,
+        max_sqlite_files_bytes: u64,
+    ) -> Result<Self, CollectorError> {
+        Self::open_database(path, max_pending_samples, max_pending_payload_bytes, max_sqlite_files_bytes, None, false, true)
     }
 
     /// Opt-in for new, empty databases. Existing plaintext databases with
@@ -403,7 +425,23 @@ impl Outbox {
         let cipher = PayloadCipher::from_hex(hex_key)?;
         Self::open_database(
             path, max_pending_samples, max_pending_payload_bytes,
-            max_sqlite_files_bytes, Some(cipher), false,
+            max_sqlite_files_bytes, Some(cipher), false, false,
+        )
+    }
+
+    /// Read encrypted metadata and samples using a read-only SQLite handle.
+    /// The same AEAD key check applies as in daemon mode.
+    pub fn open_encrypted_read_only_disk_guard(
+        path: impl AsRef<Path>,
+        max_pending_samples: u64,
+        max_pending_payload_bytes: u64,
+        max_sqlite_files_bytes: u64,
+        hex_key: &str,
+    ) -> Result<Self, CollectorError> {
+        let cipher = PayloadCipher::from_hex(hex_key)?;
+        Self::open_database(
+            path, max_pending_samples, max_pending_payload_bytes,
+            max_sqlite_files_bytes, Some(cipher), false, true,
         )
     }
 
@@ -414,6 +452,7 @@ impl Outbox {
         max_sqlite_files_bytes: u64,
         cipher: Option<PayloadCipher>,
         fresh_migration: bool,
+        read_only: bool,
     ) -> Result<Self, CollectorError> {
         if !(1..=1_000_000).contains(&max_pending_samples) {
             return Err(CollectorError::Configuration(
@@ -434,10 +473,15 @@ impl Outbox {
         // Refuse in-place encryption of *any* prior SQLite file, even if the
         // current tables are empty: deleted plaintext may persist in WAL/pages.
         let previously_existing = database_path.exists();
-        let mut db = Connection::open(&database_path)?;
-        db.pragma_update(None, "journal_mode", "WAL")?;
-        db.pragma_update(None, "busy_timeout", 5000_i64)?;
-        db.execute_batch(
+        let mut db = if read_only {
+            Connection::open_with_flags(&database_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?
+        } else {
+            Connection::open(&database_path)?
+        };
+        db.busy_timeout(Duration::from_secs(5))?;
+        if !read_only {
+            db.pragma_update(None, "journal_mode", "WAL")?;
+            db.execute_batch(
             "CREATE TABLE IF NOT EXISTS outbox (
                 sample_id TEXT PRIMARY KEY,
                 payload TEXT NOT NULL,
@@ -454,7 +498,8 @@ impl Outbox {
                 quarantined_at TEXT NOT NULL,
                 reason TEXT NOT NULL
             );"
-        )?;
+            )?;
+        }
         // Explicit mode marker: encrypted stores cannot be opened without a
         // matching key; plaintext stores with readings cannot be auto-migrated.
         let mode: Option<String> = db.query_row(
@@ -483,7 +528,7 @@ impl Outbox {
                 }
             }
             (None, Some(cipher)) => {
-                if previously_existing && !fresh_migration {
+                if read_only || (previously_existing && !fresh_migration) {
                     return Err(CollectorError::EncryptionMigrationRequired);
                 }
                 let retained: u64 = db.query_row(
@@ -642,7 +687,7 @@ impl Outbox {
         drop(handle);
         let mut destination = Self::open_database(
             destination_path, max_pending_samples, max_pending_payload_bytes,
-            max_sqlite_files_bytes, Some(cipher), true,
+            max_sqlite_files_bytes, Some(cipher), true, false,
         )?;
         destination.connection.pragma_update(None, "synchronous", "FULL")?;
         let cipher = destination.cipher.as_ref().ok_or(CollectorError::Crypto)?;
@@ -1265,6 +1310,42 @@ mod tests {
     use super::*;
     const TEST_DB_KEY: &str = "ce7af92eab45e368f57e0998d3fcb36c9dc3ec6a8857352a24ef106952841eb0";
     const OTHER_DB_KEY: &str = "cafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00dcafef00d";
+
+    #[test]
+    fn console_open_is_read_only_and_never_creates_a_missing_queue() {
+        let temp = tempfile::tempdir().unwrap();
+        let plain_path = temp.path().join("plain.sqlite");
+        assert!(matches!(
+            Outbox::open_read_only_with_disk_guard(&plain_path, 10, 16_384, 512 * 1024 * 1024),
+            Err(CollectorError::Storage(_))
+        ));
+        assert!(!plain_path.exists());
+
+        let plain_sample = sample_with_meter(17);
+        {
+            let daemon = Outbox::open(&plain_path).unwrap();
+            daemon.enqueue(&plain_sample).unwrap();
+        }
+        let snapshot = Outbox::open_read_only_with_disk_guard(
+            &plain_path, 10, 16_384, 512 * 1024 * 1024,
+        ).unwrap();
+        assert_eq!(snapshot.next_batch(1).unwrap()[0].sample_id, plain_sample.sample_id);
+        assert!(matches!(snapshot.mark_run(), Err(CollectorError::Storage(_))));
+
+        let encrypted_path = temp.path().join("encrypted.sqlite");
+        let encrypted_sample = sample_with_meter(42);
+        {
+            let daemon = Outbox::open_encrypted_disk_guard(
+                &encrypted_path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY,
+            ).unwrap();
+            daemon.enqueue(&encrypted_sample).unwrap();
+        }
+        let encrypted_snapshot = Outbox::open_encrypted_read_only_disk_guard(
+            &encrypted_path, 10, 16_384, 512 * 1024 * 1024, TEST_DB_KEY,
+        ).unwrap();
+        assert_eq!(encrypted_snapshot.next_batch(1).unwrap()[0].sample_id, encrypted_sample.sample_id);
+        assert!(matches!(encrypted_snapshot.mark_run(), Err(CollectorError::Storage(_))));
+    }
 
     #[test]
     fn heartbeat_watchdog_status_excludes_secrets_devices_and_sample_payloads() {
@@ -2185,13 +2266,25 @@ mod tests {
     }
 
     #[test]
-    fn ignores_malformed_or_untrusted_retry_after_values() {
+    fn accepts_bounded_retry_after_seconds_and_http_dates() {
         use reqwest::header::HeaderValue;
-        assert_eq!(retry_after_delta(Some(&HeaderValue::from_static("23"))), Some(23));
-        assert_eq!(retry_after_delta(Some(&HeaderValue::from_static("99999999"))), Some(21600));
-        assert_eq!(retry_after_delta(Some(&HeaderValue::from_static("Wed, 21 Oct 2030 07:28:00 GMT"))), None);
-        assert_eq!(retry_after_delta(Some(&HeaderValue::from_static("bad"))), None);
-        assert_eq!(retry_after_delta(None), None);
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let future = HeaderValue::from_str(&httpdate::fmt_http_date(
+            now + Duration::from_secs(2400),
+        )).unwrap();
+        let capped = HeaderValue::from_str(&httpdate::fmt_http_date(
+            now + Duration::from_secs(30_000),
+        )).unwrap();
+        let past = HeaderValue::from_str(&httpdate::fmt_http_date(
+            now - Duration::from_secs(20),
+        )).unwrap();
+        assert_eq!(retry_after_delta_at(Some(&HeaderValue::from_static("23")), now), Some(23));
+        assert_eq!(retry_after_delta_at(Some(&HeaderValue::from_static("99999999")), now), Some(21_600));
+        assert_eq!(retry_after_delta_at(Some(&future), now), Some(2400));
+        assert_eq!(retry_after_delta_at(Some(&capped), now), Some(21_600));
+        assert_eq!(retry_after_delta_at(Some(&past), now), Some(0));
+        assert_eq!(retry_after_delta_at(Some(&HeaderValue::from_static("bad")), now), None);
+        assert_eq!(retry_after_delta_at(None, now), None);
     }
 
     #[test]

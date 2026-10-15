@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { CheckCircle2, Link2, Plus, ShieldAlert, X } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
 import type { Page, Printer } from '../types';
+import { PagedEntitySelect } from '../components/PagedEntitySelect';
 
 type Severity = 'info'|'warning'|'critical';
 type Status = 'active'|'acknowledged'|'linked'|'resolved'|'ignored';
@@ -36,10 +37,6 @@ function OpenAlert({onCreated}:{onCreated:(deduplicated:boolean)=>Promise<void>}
   const [severity,setSeverity]=useState<Severity>('warning');
   const [title,setTitle]=useState('');
   const [description,setDescription]=useState('');
-  const printers=useQuery({
-    queryKey:['alert-printer-options'],
-    queryFn:()=>api<Page<Printer>>('/printers'+queryString({per_page:100,active_only:true}),null),
-  });
   const create=useMutation({
     mutationFn:()=>api<{data:Alert;deduplicated:boolean}>('/alerts',null,{
       method:'POST',
@@ -60,13 +57,13 @@ function OpenAlert({onCreated}:{onCreated:(deduplicated:boolean)=>Promise<void>}
       <p className="stock-footnote">Origem: operador. Este cadastro não simula telemetria SNMP nem alertas automáticos.
         Um código ativo por impressora é deduplicado no servidor.</p>
       <div className="stock-form-grid">
-        <div className="stock-field"><label htmlFor="alert-printer">Impressora</label>
-          <select id="alert-printer" required value={printerId} onChange={e=>setPrinterId(e.target.value)}>
-            <option value="">Selecione uma impressora</option>
-            {(printers.data?.data??[]).map(printer=><option key={printer.id} value={printer.id}>
-              #{printer.id} {printer.manufacturer} {printer.model} · {printer.customer?.name??'Cliente'}
-            </option>)}
-          </select></div>
+        <div className="stock-field"><PagedEntitySelect<Printer>
+          id="alert-printer" label="Impressora" searchLabel="Buscar impressora do alerta"
+          placeholder="Buscar fabricante, modelo ou série..."
+          emptyLabel="Selecione uma impressora" value={printerId} onChange={setPrinterId}
+          queryKey={['alert-printer-options']} endpoint="/printers" filters={{active_only:true}}
+          optionLabel={printer=>`#${printer.id} ${printer.manufacturer} ${printer.model} · ${printer.customer?.name??'Cliente'}`}
+          required/></div>
         <div className="stock-field"><label htmlFor="alert-code">Código da ocorrência</label>
           <input id="alert-code" required minLength={2} maxLength={64}
             pattern="[A-Za-z0-9][A-Za-z0-9_.-]{1,63}" value={code}
@@ -88,10 +85,9 @@ function OpenAlert({onCreated}:{onCreated:(deduplicated:boolean)=>Promise<void>}
       <div className="stock-field"><label htmlFor="alert-description">Descrição (opcional)</label>
         <textarea id="alert-description" rows={2} maxLength={5000}
           value={description} onChange={e=>setDescription(e.target.value)}/></div>
-      {printers.error&&<p role="alert" className="notice error">{readableError(printers.error)}</p>}
       {create.error&&<p role="alert" className="notice error">{readableError(create.error)}</p>}
       <button type="submit" className="button primary"
-        disabled={create.isPending||printers.isPending||Boolean(printers.error)}>
+        disabled={create.isPending}>
         <Plus size={16}/> {create.isPending?'Registrando...':'Registrar alerta'}
       </button>
     </form>
@@ -106,10 +102,6 @@ function AlertDetail({id,onClose,onChanged}:{id:number;onClose:()=>void;onChange
   const alert=useQuery({
     queryKey:['alert-detail',id],
     queryFn:()=>api<{data:Alert}>('/alerts/'+id,null),
-  });
-  const tickets=useQuery({
-    queryKey:['alert-ticket-options'],
-    queryFn:()=>api<Page<TicketOption>>('/tickets'+queryString({per_page:100}),null),
   });
   const mutateStatus=useMutation({
     mutationFn:()=>api('/alerts/'+id+'/transition',null,{
@@ -136,10 +128,6 @@ function AlertDetail({id,onClose,onChanged}:{id:number;onClose:()=>void;onChange
     ? (['acknowledged','resolved','ignored'] as const)
     : data?.status==='acknowledged'||data?.status==='linked'
       ? (['resolved','ignored'] as const) : [];
-  const availableTickets=(tickets.data?.data??[]).filter(t=>
-    data!==undefined && t.customer_id===data.customer_id && t.printer_id===data.printer_id &&
-    !['closed','resolved'].includes(t.status)
-  );
   function transition(e:FormEvent<HTMLFormElement>){e.preventDefault();mutateStatus.mutate();}
   function linkTicket(e:FormEvent<HTMLFormElement>){e.preventDefault();link.mutate();}
   return <div className="modal-overlay">
@@ -161,14 +149,14 @@ function AlertDetail({id,onClose,onChanged}:{id:number;onClose:()=>void;onChange
         {(data.status==='active'||data.status==='acknowledged')&&!data.ticket_id&&
           <form className="stock-form" onSubmit={linkTicket}>
             <h3>Vincular chamado da mesma impressora</h3>
-            <div className="stock-field">
-              <label htmlFor="alert-ticket">Chamado em andamento</label>
-              <select id="alert-ticket" required value={ticketId} onChange={e=>setTicketId(e.target.value)}>
-                <option value="">Selecione um chamado</option>
-                {availableTickets.map(t=><option key={t.id} value={t.id}>#{t.id} · {t.subject}</option>)}
-              </select>
-            </div>
-            {tickets.error&&<p role="alert" className="notice error">{readableError(tickets.error)}</p>}
+            <div className="stock-field"><PagedEntitySelect<TicketOption>
+              id="alert-ticket" label="Chamado em andamento"
+              searchLabel="Buscar chamado para o alerta" placeholder="Buscar assunto..."
+              emptyLabel="Selecione um chamado" value={ticketId} onChange={setTicketId}
+              queryKey={['alert-ticket-options',data.printer_id]} endpoint="/tickets"
+              filters={{printer_id:data.printer_id,customer_id:data.customer_id,open_only:true}}
+              optionLabel={ticket=>`#${ticket.id} · ${ticket.subject}`}
+              required/></div>
             {link.error&&<p role="alert" className="notice error">{readableError(link.error)}</p>}
             <button type="submit" className="button primary" disabled={!ticketId||link.isPending}>
               <Link2 size={16}/> Vincular chamado

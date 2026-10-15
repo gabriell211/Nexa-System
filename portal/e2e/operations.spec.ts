@@ -23,6 +23,7 @@ test('secure login, customers, tickets, stock and logout (real browser)', async 
     await expect(page.getByText(name,{exact:true})).toBeVisible();
     await page.goto('/chamados');
     await expect(page.getByRole('heading',{name:'Chamados técnicos'})).toBeVisible();
+    await page.getByLabel('Buscar cliente do chamado').fill(name);
     await page.getByLabel('Cliente',{exact:true}).selectOption({label:name});
   });
 

@@ -6,34 +6,26 @@ Interface React 19 + TypeScript estrito + TanStack Query conectada **exclusivame
 
 1. Inicialize PostgreSQL e a API conforme `backend/.env.example` e `docker-compose.yml`.
 2. Execute migrações e `php artisan nexa:bootstrap` com credenciais fortes configuradas.
-3. Em `portal/`: `npm install` e `npm run dev`.
+3. Em `portal/`: `npm ci` e `npm run dev`.
 4. Abra `http://127.0.0.1:5173/login`. Informe e-mail, senha e o slug do tenant.
 
-O servidor Vite faz proxy de `/api` para `127.0.0.1:8080`. Em produção, configure o proxy reverso **na mesma origem** para servir `/api` pelo backend Laravel e o restante pela build do React.
+O servidor Vite faz proxy de `/api` para `127.0.0.1:8080` por padrão. Defina `NEXA_API_PROXY_TARGET` (por exemplo, `http://127.0.0.1:18080`) para usar outra porta local. Em produção, configure o proxy reverso **na mesma origem** para servir `/api` pelo backend Laravel e o restante pela build do React.
 
 ## Entregue em código
 
-Login persistente por cookie HttpOnly e CSRF, logout, dashboard com contagens reais, listagem/pesquisa/paginação de clientes e impressoras, inclusão/edição/inativação auditada e histórico para administradores. O controle de acesso do menu não substitui as verificações no servidor.
+Login persistente por cookie HttpOnly e CSRF, logout, dashboard com contagens reais, listagem/pesquisa/paginação de clientes e impressoras, inclusão/edição/inativação auditada e histórico para administradores. Formulários de impressoras, chamados e alertas permitem buscar e paginar clientes/impressoras sem limitar a escolha aos 100 primeiros registros. O controle de acesso do menu não substitui as verificações no servidor.
 
 ## Limitações
 
-- O token de acesso está **somente na memória** (sem localStorage, sessionStorage ou cookies). Um reload requer novo login. Essa é uma restrição deliberada até existir autenticação web persistente por cookie HttpOnly/SameSite/CSRF.
-- A lista de clientes no formulário de impressoras consulta até 100 clientes ativos; seleção paginada/autocomplete remoto é trabalho pendente.
 - Portal do cliente, filtros avançados, colunas personalizadas, importações e exportações não estão prontos.
-- Ainda faltam build, testes de browser e homologação com API/PostgreSQL em execução.
-- Ainda não há MFA, recuperação de senha, revogação de sessões em outros dispositivos, testes reais de browser/HTTPS e auditoria completa de login. Não liberar produção sem finalizar esses itens.
+- A suíte Playwright executa jornadas reais em Chromium desktop e viewport mobile, mas a homologação com API/PostgreSQL em ambiente de produção e impressoras reais permanece pendente.
+- Ainda não há MFA, recuperação de senha, revogação de sessões em outros dispositivos, testes HTTPS em ambiente real e auditoria completa de login. Não liberar produção sem finalizar esses itens.
 
 ## Portal em contêiner
 
-Depois de configurar `backend/.env`, `.env` da raiz com a senha de PostgreSQL e aplicar as migrations:
+Siga a ordem de inicialização em [Execução local com Docker Compose](../README.md#execução-local-com-docker-compose): configure os segredos, inicie o PostgreSQL, execute migrações e bootstrap pela imagem da API e só então suba API, scheduler e portal.
 
-```sh
-docker compose up --build -d
-docker compose exec api php artisan migrate --force
-docker compose exec api php artisan nexa:bootstrap
-```
-
-O painel será servido em `http://127.0.0.1:8081` com proxy interno para `api:8080`. Este arranjo é **local/laboratório**, não uma pilha de produção: o Laravel ainda roda pelo servidor embutido `artisan serve`, há token temporário e não há TLS público, workers dedicados ou proteção de borda configurados.
+O painel será servido em `http://127.0.0.1:8081` com proxy interno para `api:8080`. Este arranjo é **local/laboratório**, não uma pilha de produção: o Laravel ainda roda pelo servidor embutido `artisan serve` e não há TLS público, workers dedicados ou proteção de borda configurados.
 
 Para uso remoto, publicar atrás de HTTPS e implantar API com um servidor de aplicação adequado, supervisão, backups e política de segredos.
 
@@ -74,7 +66,7 @@ A seção `/estoque` possui lista persistida de itens, depósitos/locais (proved
 
 Os papéis owner/admin/manager/warehouse com acesso à carteira inteira podem operar o estoque; usuários com carteira limitada não acessam os saldos de toda a operadora. O registro técnico exige vínculo do membro à operadora, e um local de cliente exige vínculo com unidade ativa.
 
-**Ainda não é um WMS completo:** catálogo de fornecedores, lote, custo, compatibilidade de consumíveis, reservas, envio/recebimento parcial, perdas, devoluções, documentos fiscais, inventário físico, mínimos e logística não estão implementados. A UI usa seleção dos primeiros 100 registros; listas volumosas precisam de pesquisa remota e seleção paginada. Não confundir saída/entrada direta com mercadoria em trânsito.
+**Ainda não é um WMS completo:** inventário físico, ajuste supervisionado, confirmação física de lote no picking, devoluções, mínimos, logística e integrações fiscais permanecem pendentes. Catálogo, custo, compatibilidade, reservas, remessas parciais e rastreamento contábil de lotes são descritos nas entregas seguintes. Alguns formulários de estoque ainda usam os primeiros 100 registros; listas volumosas precisam de pesquisa remota e seleção paginada. Não confundir saída/entrada direta com mercadoria em trânsito.
 
 ## Reservas e remessas (entrega 8)
 

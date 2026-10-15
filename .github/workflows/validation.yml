@@ -187,7 +187,7 @@ jobs:
           php artisan nexa:bootstrap
       - name: Install React and Playwright dependencies
         working-directory: portal
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Install real Chromium browser
         working-directory: portal
         run: npx playwright install --with-deps chromium
@@ -222,7 +222,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Typecheck and bundle
         run: npm run build
 
@@ -238,7 +238,7 @@ jobs:
         with:
           node-version: '22'
       - name: Install console dependencies
-        run: npm install --no-audit --no-fund
+        run: npm ci --no-audit --no-fund
       - name: Typecheck and build the actual desktop UI
         run: npm run build
 
@@ -251,6 +251,22 @@ jobs:
         run: docker build -t nexa-portal:test ./portal
       - name: Validate nginx configuration
         run: docker run --rm --add-host api:127.0.0.1 nexa-portal:test nginx -t
+
+  backend-image:
+    name: API container build and secret exclusion
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Plant a build-context canary
+        run: echo 'APP_KEY=must-not-be-in-image' > backend/.env
+      - name: Validate local Compose topology
+        run: POSTGRES_PASSWORD=compose-validation-only docker compose config --quiet
+      - name: Build API image from pinned dependencies
+        run: docker build -t nexa-api:test ./backend
+      - name: Verify CLI and absence of local secrets
+        run: |
+          docker run --rm nexa-api:test php artisan --version
+          docker run --rm nexa-api:test sh -ec 'test ! -e /app/.env && test ! -d /app/tests'
 
   collector-linux-package:
     name: Linux Collector service packaging checks
@@ -277,7 +293,7 @@ jobs:
           plutil -lint collector/macos/com.nexa.collector.plist
       - name: Run native macOS Collector core and daemon unit tests
         working-directory: collector
-        run: cargo test -p nexa-collector-core -p nexa-collector-daemon
+        run: cargo test --locked -p nexa-collector-core -p nexa-collector-daemon
 
   collector-windows-service:
     name: Windows Collector native SCM build and tests
@@ -289,7 +305,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Compile and execute Windows Collector core/daemon tests
-        run: cargo test -p nexa-collector-core -p nexa-collector-daemon
+        run: cargo test --locked -p nexa-collector-core -p nexa-collector-daemon
       - name: Validate Windows PowerShell installer syntax and service safety
         shell: pwsh
         working-directory: .
@@ -313,4 +329,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Test collector core and daemon
-        run: cargo test -p nexa-collector-core -p nexa-collector-daemon
+        run: cargo test --locked -p nexa-collector-core -p nexa-collector-daemon

@@ -3,10 +3,12 @@ RUN apk add --no-cache postgresql-dev sqlite-dev libzip-dev oniguruma-dev icu-de
     && docker-php-ext-install pdo_pgsql pdo_sqlite bcmath pcntl intl mbstring zip
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
-COPY composer.json composer.json
-RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --optimize-autoloader
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --no-progress --optimize-autoloader
 COPY . .
-RUN composer dump-autoload --optimize && chmod +x artisan \
-    && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache
+RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
+    && composer dump-autoload --no-dev --optimize && chmod +x artisan \
+    && chown -R www-data:www-data storage bootstrap/cache
 EXPOSE 8080
+USER www-data
 CMD ["php","artisan","serve","--host=0.0.0.0","--port=8080"]

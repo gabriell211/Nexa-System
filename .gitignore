@@ -2,6 +2,13 @@
 !**/.env.example
 **/vendor/
 **/node_modules/
+collector/target/
+collector/console/src-tauri/gen/
+collector/console/src-tauri/icons/android/
+collector/console/src-tauri/icons/ios/
 **/dist/
 **/.phpunit.cache/
+backend/.phpunit.result.cache
+portal/test-results/
+portal/playwright-report/
 .DS_Store

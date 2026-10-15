@@ -26,12 +26,14 @@ final class PrinterController extends Controller
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
             'active_only' => ['sometimes', 'in:0,1,true,false'],
+            'customer_id' => ['sometimes', 'integer', 'min:1'],
         ]);
         $term = mb_strtolower(trim($filters['q'] ?? ''));
 
         return PrinterResource::collection(
             $this->portfolio->printers($tenant->printers(), $request)
                 ->with(['customer:id,name','currentAssignment.location:id,name','latestReading'])
+                ->when(isset($filters['customer_id']), fn (Builder $query) => $query->where('customer_id', (int) $filters['customer_id']))
                 ->when($request->boolean('active_only'), fn (Builder $query) => $query->where('active', true))
                 ->when($term !== '', function (Builder $query) use ($term): void {
                     $query->where(function (Builder $match) use ($term): void {

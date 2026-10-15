@@ -240,6 +240,10 @@ td.mono { font-family: ui-monospace, monospace; }
 .ticket-comment small { color:#64748b; margin-left:8px; }
 .ticket-comment p { white-space:pre-wrap; overflow-wrap:anywhere; margin:8px 0 0; }
 .stock-field textarea { width:100%; border:1px solid #dce4f0; border-radius:9px; background:#fbfdff; padding:12px 13px; color:#1e3150; font:inherit; }
+.remote-picker { display:flex; flex-direction:column; gap:8px; min-width:0; }
+.remote-picker-pages { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.remote-picker-pages .button { padding:5px 9px; font-size:11px; }
+.remote-picker-pages small, .remote-picker > small { color:#64748b; }
 
 /* Keep the complete navigation scrollable without pushing the signed-in profile off-screen. */
 .sidebar { min-height: 0; overflow: hidden; }

@@ -19,6 +19,25 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     env_file: ./backend/.env
+    environment:
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD in .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8080/up') === false ? 1 : 0);"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+
+  scheduler:
+    build: ./backend
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    env_file: ./backend/.env
+    environment:
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD in .env}
     depends_on:
       postgres:
         condition: service_healthy
@@ -29,7 +48,8 @@ services:
     ports:
       - "127.0.0.1:8081:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
 volumes:
   postgres-data:

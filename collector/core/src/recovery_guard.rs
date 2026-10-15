@@ -108,13 +108,23 @@ impl RecoveryGuard {
         }).count()
     }
 
+    fn validate_clock(journal: &Journal, now: DateTime<Utc>) -> Result<(), RecoveryError> {
+        // count_recent excludes timestamps after `now`, and a future reset
+        // suppresses earlier incidents. No grace period is safe here: even a
+        // short clock rollback could reopen the circuit.
+        if journal.events.iter().any(|event| event.at > now)
+            || journal.last_reset_at.is_some_and(|reset| reset > now)
+        {
+            return Err(RecoveryError::Invalid("journal timestamp lies in the future"));
+        }
+        Ok(())
+    }
+
     /// Read-only projection shared by the daemon, Tauri console and optional
     /// heartbeat telemetry. Invalid journal data fails closed.
     pub fn snapshot(&self, now: DateTime<Utc>) -> Result<WatchdogSnapshot, RecoveryError> {
         let journal = self.load()?;
-        if journal.events.iter().any(|event| event.at > now + ChronoDuration::minutes(5)) {
-            return Err(RecoveryError::Invalid("incident timestamp lies in the future"));
-        }
+        Self::validate_clock(&journal, now)?;
         let recent = Self::count_recent(&journal, now);
         let retained = journal.events.len();
         Ok(WatchdogSnapshot {
@@ -132,9 +142,7 @@ impl RecoveryGuard {
         let journal = self.load()?;
         // Clock rollback or tampered future dates must never bypass the
         // circuit; refuse startup until the operator reviews the journal.
-        if journal.events.iter().any(|event| event.at > now + ChronoDuration::minutes(5)) {
-            return Err(RecoveryError::Invalid("incident timestamp lies in the future"));
-        }
+        Self::validate_clock(&journal, now)?;
         let recent = Self::count_recent(&journal, now);
         Ok((recent, recent >= MAX_STALLS, journal.events.len()))
     }
@@ -269,8 +277,22 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let guard = RecoveryGuard::for_queue(&tmp.path().join("queue.sqlite"));
         let now = Utc::now();
-        guard.record("main-loop", now + ChronoDuration::minutes(20)).unwrap();
+        guard.record("main-loop", now + ChronoDuration::minutes(1)).unwrap();
         assert!(matches!(guard.circuit_open(now), Err(RecoveryError::Invalid(_))));
+    }
+
+    #[test]
+    fn future_reset_cannot_suppress_the_watchdog_circuit() {
+        let tmp = tempfile::tempdir().unwrap();
+        let guard = RecoveryGuard::for_queue(&tmp.path().join("queue.sqlite"));
+        let now = Utc::now();
+        for _ in 0..MAX_STALLS {
+            guard.record("main-loop", now - ChronoDuration::minutes(1)).unwrap();
+        }
+        assert!(guard.circuit_open(now).unwrap());
+        guard.reset(now + ChronoDuration::minutes(1)).unwrap();
+        assert!(matches!(guard.circuit_open(now), Err(RecoveryError::Invalid(_))));
+        assert!(matches!(guard.snapshot(now), Err(RecoveryError::Invalid(_))));
     }
 
     #[test]
