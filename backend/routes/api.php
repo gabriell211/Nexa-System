@@ -33,6 +33,7 @@ use App\Http\Controllers\Api\V1\StockReceiptBatchController;
 use App\Http\Controllers\Api\V1\StockCountController;
 use App\Http\Controllers\Api\V1\StockReorderPolicyController;
 use App\Http\Controllers\Api\V1\StockReplenishmentPlanController;
+use App\Http\Controllers\Api\V1\StockPlanShipmentController;
 use App\Http\Controllers\Api\V1\ServiceTicketController;
 use App\Http\Controllers\Api\V1\PrinterAlertController;
 use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
@@ -102,6 +103,7 @@ $registerBackoffice = static function (): void {
         Route::put('/stock/reorder-policies/{item}/{location}', [StockReorderPolicyController::class, 'upsert']);
         Route::delete('/stock/reorder-policies/{item}/{location}', [StockReorderPolicyController::class, 'destroy']);
         Route::post('/stock/replenishment-plans', [StockReplenishmentPlanController::class, 'store']);
+        Route::post('/stock/replenishment-plans/{plan}/items/{line}/reserve-shipment', [StockPlanShipmentController::class, 'store']);
         Route::patch('/stock/replenishment-plans/{plan}', [StockReplenishmentPlanController::class, 'update']);
     });
 
