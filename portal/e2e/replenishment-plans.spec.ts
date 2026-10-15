@@ -362,7 +362,7 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       await matching.getByRole('button', { name: 'Confirmar conciliação sem movimentar estoque' }).click();
       await expect(matching.getByRole('status').filter({ hasText: 'sem nova entrada de estoque' })).toBeVisible();
       await expect(dialog.locator('p').filter({ hasText: 'Conciliação: Recebimento parcial' })).toBeVisible();
-      await expect(dialog.getByText(lot)).toBeVisible();
+      await expect(dialog.getByRole('cell', { name: lot, exact: true })).toBeVisible();
       expect(await paginatedTotal(owner.context().request, '/stock/movements')).toBe(movementCount + 1);
       const reconciled = await owner.context().request.get(apiRoot + '/stock/purchase-orders/' + orderId);
       expect(reconciled.status()).toBe(200);
