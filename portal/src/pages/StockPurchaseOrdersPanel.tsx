@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, queryString, readableError } from '../api';
 import { PagedEntitySelect } from '../components/PagedEntitySelect';
+import { PurchaseReceiptMatchPanel } from './PurchaseReceiptMatchPanel';
 import { centsFromBrazilianValue, currencyFromCents } from '../utils/currency';
 import type { Page } from '../types';
 
@@ -29,8 +30,11 @@ interface PurchaseOrder {
   items: Array<{
     id: number; plan_line_id: number; quantity: number;
     unit_cost_cents: number; line_total_cents: number;
-    item: { sku: string; name: string; unit: string } | null;
-    destination: { name: string } | null;
+    received_quantity: number; outstanding_quantity: number; cost_divergence: boolean;
+    receipts: Array<{ receipt_detail_id: number; invoice_reference: string; lot_number: string;
+      quantity: number; unit_cost_cents: number; variance_reason: string | null }>;
+    item: { id: number; sku: string; name: string; unit: string } | null;
+    destination: { id: number; name: string } | null;
   }>;
 }
 
@@ -91,16 +95,38 @@ function PurchaseOrderDetail({ orderId, token, role, userId, onClose, onChanged 
           <p><strong>Observações:</strong> {order.notes || '—'}</p>
           <div className="table-wrap"><table>
             <thead><tr><th>Material</th><th>Destino</th><th>Quantidade</th>
-              <th>Custo unitário</th><th>Subtotal</th></tr></thead>
+              <th>Recebido</th><th>Restante</th><th>Custo unitário</th><th>Subtotal</th></tr></thead>
             <tbody>{order.items.map(line => <tr key={line.id}>
               <td>{line.item?.sku ?? '#' + line.plan_line_id}
                 <small>{line.item?.name ?? '—'}</small></td>
               <td>{line.destination?.name ?? '—'}</td>
               <td>{line.quantity.toLocaleString('pt-BR')}</td>
+              <td>{line.received_quantity.toLocaleString('pt-BR')}</td>
+              <td>{line.outstanding_quantity.toLocaleString('pt-BR')}</td>
               <td>{currencyFromCents(line.unit_cost_cents)}</td>
               <td>{currencyFromCents(line.line_total_cents)}</td>
             </tr>)}</tbody></table></div>
           <p><strong>Valor planejado:</strong> {currencyFromCents(order.total_cents)}</p>
+          <p><strong>Conciliação:</strong> {order.items.every(line => line.outstanding_quantity === 0)
+            ? 'Recebimento integral' : order.items.some(line => line.received_quantity > 0)
+              ? 'Recebimento parcial' : 'Aguardando recebimentos conciliados'}</p>
+          {order.items.some(line => line.receipts.length > 0) && <div className="table-wrap">
+            <h3>Notas e lotes conciliados</h3>
+            <table><thead><tr><th>Material</th><th>Nota</th><th>Lote</th><th>Quantidade</th>
+              <th>Custo recebido</th><th>Diferença</th></tr></thead><tbody>
+              {order.items.flatMap(line => line.receipts.map(receipt => <tr key={receipt.receipt_detail_id}>
+                <td>{line.item?.sku ?? '#' + line.id}</td>
+                <td>{receipt.invoice_reference} <small>#{receipt.receipt_detail_id}</small></td>
+                <td>{receipt.lot_number}</td>
+                <td>{receipt.quantity}</td>
+                <td>{currencyFromCents(receipt.unit_cost_cents)}</td>
+                <td>{receipt.variance_reason ?? 'Sem diferença registrada'}</td>
+              </tr>))}
+            </tbody></table>
+          </div>}
+          {order.status === 'approved' && <PurchaseReceiptMatchPanel
+            orderId={order.id} supplierId={order.supplier_id} lines={order.items}
+            token={token} onChanged={async () => { await Promise.all([details.refetch(), onChanged()]); }} />}
           <p className="stock-hint">Aprovar registra o compromisso de compra. Não efetua pagamento,
             não envia pedido ao fornecedor e não credita estoque.</p>
           {canApprove && <div className="stock-form">
