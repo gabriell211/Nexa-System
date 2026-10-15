@@ -758,3 +758,10 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - A aprovação humana, sempre por outra pessoa da gestão, bloqueia o SKU e revalida lote físico no depósito de origem; registra uma única baixa `issue` no InventoryLedgerService, com alocação exata do lote original e trilha de auditoria.
 - APIs de criação, aprovação, cancelamento, lista e detalhe estão isoladas por empresa e carteira; portal em Compras exibe a fila e as quantidades devolvidas. Testes PHP e E2E cobrem ausência de baixa antes da confirmação, rastreabilidade, saldo insuficiente e autorização.
 - Pendente CI e homologação real. Não existe integração tributária de NF-e de devolução, compensação/estorno financeiro, emissão documental ao fornecedor ou logística reversa.
+
+## Entrega 56 — indicadores líquidos e nova conciliação após devolução física (15/10/2026)
+
+- Read-model StockPurchaseFulfillment calcula, sem novas tabelas ou movimentos, total aprovado, bruto recebido, devoluções concluídas e pendentes, retido líquido e saldo pendente por linha/pedido. Status operacional é derivado, não uma alteração do estado fiscal ou financeiro.
+- Serviço de conciliação calcula capacidade pelo `SUM(recebido) - SUM(devoluções concluídas)`; devoluções pendentes e canceladas não liberam cota. Reposição documentada após devolução física pode ser conciliada com o mesmo pedido, mantendo todo o histórico bruto e os lançamentos anteriores.
+- Portal Compras informa as métricas e explica que líquido retido não é saldo físico. Testes de API e Playwright cobrem devolução, pendência, cancelamento, nova entrada conciliada, limites, ausência de movimentação extra e fechamento líquido.
+- **Dependente da aprovação CI do PR #46**. Sem documento fiscal de substituição vinculado, contato com fornecedor, estorno de custos, substituição contratual ou aceite operacional em campo. Requisitos relacionados permanecem parciais.

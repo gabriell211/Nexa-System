@@ -28,10 +28,21 @@ interface PurchaseOrder {
   approved_by: { id: number; name: string } | null;
   review_note: string | null; cancel_reason: string | null;
   items_count: number;
+  fulfillment: {
+    ordered_quantity: number; gross_received_quantity: number;
+    returned_quantity: number; pending_return_quantity: number;
+    retained_quantity: number; outstanding_quantity: number;
+    replacement_needed_quantity: number;
+    status: 'return_review_pending' | 'replacement_required' |
+      'net_received' | 'awaiting_receipt' | 'partially_received';
+  };
   items: Array<{
     id: number; plan_line_id: number; quantity: number;
     unit_cost_cents: number; line_total_cents: number;
-    received_quantity: number; outstanding_quantity: number; cost_divergence: boolean;
+    received_quantity: number; gross_received_quantity: number;
+    returned_quantity: number; pending_return_quantity: number;
+    retained_quantity: number; replacement_needed_quantity: number;
+    outstanding_quantity: number; cost_divergence: boolean;
     receipts: Array<{ purchase_receipt_match_id: number; returned_quantity: number; pending_return_quantity: number;
       receipt_detail_id: number; invoice_reference: string; lot_number: string;
       quantity: number; unit_cost_cents: number; variance_reason: string | null }>;
@@ -96,22 +107,54 @@ function PurchaseOrderDetail({ orderId, token, role, userId, onClose, onChanged 
             <strong> Aprovado por:</strong> {order.approved_by?.name ?? '—'}</p>
           <p><strong>Observações:</strong> {order.notes || '—'}</p>
           <div className="table-wrap"><table>
-            <thead><tr><th>Material</th><th>Destino</th><th>Quantidade</th>
-              <th>Recebido</th><th>Restante</th><th>Custo unitário</th><th>Subtotal</th></tr></thead>
+            <thead><tr><th>Material</th><th>Destino</th><th>Pedido</th>
+              <th>Recebido bruto</th><th>Devolvido</th><th>Em análise</th>
+              <th>Retido líquido</th><th>Reposição estimada</th><th>Pendente líquido</th>
+              <th>Custo unitário</th><th>Subtotal</th></tr></thead>
             <tbody>{order.items.map(line => <tr key={line.id}>
               <td>{line.item?.sku ?? '#' + line.plan_line_id}
                 <small>{line.item?.name ?? '—'}</small></td>
               <td>{line.destination?.name ?? '—'}</td>
               <td>{line.quantity.toLocaleString('pt-BR')}</td>
-              <td>{line.received_quantity.toLocaleString('pt-BR')}</td>
+              <td>{line.gross_received_quantity.toLocaleString('pt-BR')}</td>
+              <td>{line.returned_quantity.toLocaleString('pt-BR')}</td>
+              <td>{line.pending_return_quantity.toLocaleString('pt-BR')}</td>
+              <td>{line.retained_quantity.toLocaleString('pt-BR')}</td>
+              <td>{line.replacement_needed_quantity.toLocaleString('pt-BR')}</td>
               <td>{line.outstanding_quantity.toLocaleString('pt-BR')}</td>
               <td>{currencyFromCents(line.unit_cost_cents)}</td>
               <td>{currencyFromCents(line.line_total_cents)}</td>
             </tr>)}</tbody></table></div>
           <p><strong>Valor planejado:</strong> {currencyFromCents(order.total_cents)}</p>
-          <p><strong>Conciliação:</strong> {order.items.every(line => line.outstanding_quantity === 0)
-            ? 'Recebimento integral' : order.items.some(line => line.received_quantity > 0)
-              ? 'Recebimento parcial' : 'Aguardando recebimentos conciliados'}</p>
+          <div className="shipment-metrics" aria-label="Indicadores de recebimento e devolução">
+            <div><strong>{order.fulfillment.ordered_quantity.toLocaleString('pt-BR')}</strong>
+              <small>Quantidade comprada</small></div>
+            <div><strong>{order.fulfillment.gross_received_quantity.toLocaleString('pt-BR')}</strong>
+              <small>Recebido bruto</small></div>
+            <div><strong>{order.fulfillment.returned_quantity.toLocaleString('pt-BR')}</strong>
+              <small>Devolvido</small></div>
+            <div><strong>{order.fulfillment.pending_return_quantity.toLocaleString('pt-BR')}</strong>
+              <small>Devolução pendente</small></div>
+            <div><strong>{order.fulfillment.retained_quantity.toLocaleString('pt-BR')}</strong>
+              <small>Retido líquido</small></div>
+            <div><strong>{order.fulfillment.replacement_needed_quantity.toLocaleString('pt-BR')}</strong>
+              <small>Reposição estimada</small></div>
+            <div><strong>{order.fulfillment.outstanding_quantity.toLocaleString('pt-BR')}</strong>
+              <small>Pendente líquido</small></div>
+          </div>
+          <p><strong>Conciliação líquida:</strong> {{
+            return_review_pending: 'Devolução aguardando revisão',
+            replacement_required: 'Reposição necessária após devolução',
+            net_received: 'Quantidade líquida integral',
+            awaiting_receipt: 'Aguardando recebimento',
+            partially_received: 'Recebimento líquido parcial',
+          }[order.fulfillment.status]}</p>
+          <p className="stock-hint">
+            Retido líquido é recebido bruto menos devoluções concluídas; não representa o
+            saldo físico atual (que pode ter sido consumido ou transferido).
+            Reposição estimada não é confirmação de envio do fornecedor nem pedido automático.
+            Devoluções pendentes não liberam nova conciliação.
+          </p>
           {order.items.some(line => line.receipts.length > 0) && <div className="table-wrap">
             <h3>Notas e lotes conciliados</h3>
             <table><thead><tr><th>Material</th><th>Nota</th><th>Lote</th><th>Quantidade</th>

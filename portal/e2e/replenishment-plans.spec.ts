@@ -361,7 +361,7 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
         .fill('Fornecedor cobrou valor atualizado e nota foi conferida');
       await matching.getByRole('button', { name: 'Confirmar conciliação sem movimentar estoque' }).click();
       await expect(matching.getByRole('status').filter({ hasText: 'sem nova entrada de estoque' })).toBeVisible();
-      await expect(dialog.locator('p').filter({ hasText: 'Conciliação: Recebimento parcial' })).toBeVisible();
+      await expect(dialog.locator('p').filter({ hasText: 'Conciliação líquida: Recebimento líquido parcial' })).toBeVisible();
       await expect(dialog.getByRole('cell', { name: lot, exact: true })).toBeVisible();
       expect(await paginatedTotal(owner.context().request, '/stock/movements')).toBe(movementCount + 1);
       const reconciled = await owner.context().request.get(apiRoot + '/stock/purchase-orders/' + orderId);
@@ -401,9 +401,74 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       expect(await paginatedTotal(owner.context().request, '/stock/movements')).toBe(movementCount + 2);
       const afterReturn = await owner.context().request.get(apiRoot + '/stock/purchase-orders/' + orderId);
       expect(afterReturn.status()).toBe(200);
-      const returnedOrder: { data: { items: Array<{ receipts: Array<{ returned_quantity: number }> }> } } =
-        await afterReturn.json();
+      const returnedOrder: { data: {
+        items: Array<{ receipts: Array<{ returned_quantity: number }> }>;
+        fulfillment: {
+          gross_received_quantity: number; returned_quantity: number;
+          retained_quantity: number; replacement_needed_quantity: number;
+          outstanding_quantity: number; status: string;
+        };
+      } } = await afterReturn.json();
       expect(returnedOrder.data.items[0].receipts[0].returned_quantity).toBe(1);
+
+      expect(returnedOrder.data.fulfillment).toMatchObject({
+        gross_received_quantity: 1,
+        returned_quantity: 1,
+        retained_quantity: 0,
+        replacement_needed_quantity: 1,
+        outstanding_quantity: 2,
+        status: 'replacement_required',
+      });
+
+      const replacementInvoice = 'NF-PO-REPLACEMENT-' + suffix;
+      const replacementLot = 'LOTE-PO-REPLACEMENT-' + suffix;
+      const replacementId = (await writeStock(owner.context().request, 'post', '/stock/receipts', {
+        request_id: randomUUID(),
+        supplier_id: supplierId,
+        item_id: manualItemId,
+        destination_location_id: locationId,
+        quantity: 2,
+        invoice_reference: replacementInvoice,
+        lot_number: replacementLot,
+        unit_cost_cents: 6875,
+        reason: 'Novo lote físico recebido após devolução confirmada',
+      }, 201)).data.id;
+      const countBeforeMatching = await paginatedTotal(owner.context().request, '/stock/movements');
+      expect(countBeforeMatching).toBe(movementCount + 3);
+
+      const replacementForm = owner.getByRole('dialog')
+        .getByRole('region', { name: 'Conciliação de recebimentos' });
+      await replacementForm.getByLabel('Linha do pedido *')
+        .selectOption({ label: manualSku + ' — 2 restantes' });
+      await replacementForm.getByLabel('Buscar nota ou lote para conciliar').fill(replacementInvoice);
+      await replacementForm.getByLabel('Entrada documentada *', { exact: true })
+        .selectOption({
+          label: '#' + replacementId + ' · ' + replacementInvoice + ' · ' +
+            replacementLot + ' · 2 un. · R$ 68,75',
+        });
+      await replacementForm.getByRole('button', {
+        name: 'Confirmar conciliação sem movimentar estoque',
+      }).click();
+      await expect(replacementForm.getByRole('status').filter({
+        hasText: 'sem nova entrada de estoque',
+      })).toBeVisible();
+      expect(await paginatedTotal(owner.context().request, '/stock/movements'))
+        .toBe(countBeforeMatching);
+
+      const finalResponse = await owner.context().request.get(
+        apiRoot + '/stock/purchase-orders/' + orderId,
+      );
+      expect(finalResponse.status()).toBe(200);
+      const finalOrder: { data: { fulfillment: {
+        gross_received_quantity: number; returned_quantity: number;
+        retained_quantity: number; replacement_needed_quantity: number;
+        outstanding_quantity: number; status: string;
+      } } } = await finalResponse.json();
+      expect(finalOrder.data.fulfillment).toMatchObject({
+        gross_received_quantity: 3, returned_quantity: 1, retained_quantity: 2,
+        replacement_needed_quantity: 0, outstanding_quantity: 0,
+        status: 'net_received',
+      });
     });
 
   } finally {

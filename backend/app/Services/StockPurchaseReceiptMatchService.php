@@ -7,6 +7,7 @@ use App\Models\StockPurchaseOrder;
 use App\Models\StockPurchaseOrderLine;
 use App\Models\StockPurchaseReceiptMatch;
 use App\Models\StockReceiptDetail;
+use App\Models\StockSupplierReturn;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -60,9 +61,17 @@ final class StockPurchaseReceiptMatchService
             $received = (int) StockPurchaseReceiptMatch::query()
                 ->where('tenant_id', $tenantId)->where('purchase_order_line_id', $line->id)
                 ->sum('quantity');
-            if ($received + (int) $movement->quantity > (int) $line->quantity) {
+            $returned = (int) StockSupplierReturn::query()
+                ->where('tenant_id', $tenantId)->where('status', 'completed')
+                ->whereHas('purchaseMatch', static fn ($matches) => $matches
+                    ->where('tenant_id', $tenantId)
+                    ->where('purchase_order_line_id', $line->id))
+                ->sum('quantity');
+            // A replacement may consume only confirmed return capacity. Pending
+            // or cancelled requests must never release purchase order quota.
+            if ($received - $returned + (int) $movement->quantity > (int) $line->quantity) {
                 throw ValidationException::withMessages([
-                    'receipt_detail_id' => 'Quantidade recebida supera a linha aprovada do pedido.',
+                    'receipt_detail_id' => 'A quantidade líquida, após devoluções confirmadas, excederia a compra aprovada.',
                 ]);
             }
             if ((int) $receipt->unit_cost_cents !== (int) $line->unit_cost_cents
