@@ -1,6 +1,6 @@
 # Nexa System — matriz de rastreabilidade verificável
 
-**Data da revisão de evidências:** 2026-10-14.
+**Data da revisão de evidências:** 2026-10-15.
 **Fonte de verdade funcional:** [README principal](../README.md).
 **Base verificada:** `main` após PR #8; console PR #9 em validação separada.
 **Regra:** nenhum requisito abaixo significa "CONCLUÍDO" sem prova do fluxo integral em execução real, incluindo autorização, persistência, erros e UI.
@@ -64,9 +64,9 @@
 | NX-036 | Agente local e comunicação | PARCIAL — HTTPS outbound e retry/status; proxy autenticado e testes reais pendentes | Envio por HTTPS/TLS usando apenas conexão iniciada pelo agente; compatibilidade com proxy autenticado. |
 | NX-037 | Agente local e comunicação | NÃO COMPROVADO | Canal alternativo de transporte por e-mail SMTP/POP3 somente se autorizado e implementado com cifragem, autenticação e limites. |
 | NX-038 | Agente local e comunicação | PARCIAL — console local de fila e histórico de upload sanitizado; SNMP/proxy avançado e homologação pendentes | Diagnóstico local, teste de comunicação, teste de SNMP, validação de IP e logs sanitizados. |
-| NX-039 | Agente local e comunicação | PARCIAL — watchdog e alertas de silêncio com orçamento persistente de e-mails, sem homologação operacional real | Monitoramento e recuperação de serviços travados com supervisor, sem loop infinito de reinicialização. |
+| NX-039 | Agente local e comunicação | PARCIAL — watchdog e avisos de silêncio com replay único por falha revisada e cotas persistentes; sem SMTP/DSN real | Monitoramento e recuperação de serviços travados com supervisor, sem loop infinito de reinicialização. |
 | NX-040 | Agente local e comunicação | NÃO COMPROVADO | Atualização automática controlada, assinatura/verificação de artefatos, rollback e política de versões mínimas. |
-| NX-041 | Agente local e comunicação | PARCIAL — notificações opt-in com cotas e revisão manual de bounce/complaint; sem confirmação real de entrega, DSN ou replay supervisionado | Monitoramento de pontos instalados com data de última comunicação, versão, rede e estado. |
+| NX-041 | Agente local e comunicação | PARCIAL — notificações e reenvios auditados sem comprovação de recebimento ou telemetria física | Monitoramento de pontos instalados com data de última comunicação, versão, rede e estado. |
 | NX-042 | Agente local e comunicação | NÃO COMPROVADO | Reinstalação e recuperação dos dados locais sem replicar leituras já recebidas. |
 | NX-043 | Agente local e comunicação | NÃO COMPROVADO | Configuração remota segura limitada aos agentes do próprio provedor e a usuários autorizados. |
 | NX-044 | Agente local e comunicação | NÃO COMPROVADO | Identificação de duplicidade de agentes ou colisão de identidade de impressora. |
