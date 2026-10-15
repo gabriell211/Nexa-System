@@ -35,6 +35,14 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Progresso logístico real do planejamento — incremento 52 (parcial)
+
+- O detalhe de cada proposta aprovada agrega, diretamente dos registros de remessa vinculados, quantidades reservadas, expedidas, ainda em trânsito, recebidas, extraviadas e canceladas. Cada número provém do mesmo ledger existente; nenhum status de transporte é inferido de uma compra ou criado artificialmente.
+- A API de remessas filtra também pelo ID da proposta, mantendo tenant/carteira e retornando o vínculo da linha. As somas são calculadas por consultas agregadas no banco, sem laços N+1 de consultas para cada remessa.
+- O portal exibe um resumo das quantidades em Reserva, Trânsito, Recebimento e Perdas, além do progresso por linha. O fluxo de reserva continua manual e expedição/recebimento continuam ações explícitas e auditadas.
+- Testes verificam as métricas nos estados reservado → expedido → recebido, filtros por proposta e E2E após atualização de uma remessa real. **O CI da Entrega 52 precisa confirmar os testes antes de integrar.**
+- NX-107, NX-108 e NX-110 seguem **PARCIAIS**: não há integração de transportadora, baixa fiscal, pedido de compra, SLA de entrega ou homologação física de extravio/divergência.
+
 ### Reserva de remessas vinculadas a planos aprovados — incremento 51 (parcial)
 
 - Planos aprovados podem gerar **reservas manuais de remessa por linha**, com origem escolhida pelo operador, destino imutável conforme proposta e limite de quantidade aprovada. A reserva reutiliza o serviço de estoque e **não** dispara expedição, recebimento nem compra automaticamente.
