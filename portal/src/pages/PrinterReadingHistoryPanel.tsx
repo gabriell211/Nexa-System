@@ -13,6 +13,25 @@ interface MeterSample {
   received_at: string;
 }
 
+interface PreviewChannel {
+  observed_delta: string | null;
+  paired_intervals: number;
+  missing_intervals: number;
+  decrease_intervals: number;
+}
+interface ProductionPreview {
+  start_date: string;
+  end_date: string;
+  scope: 'observed_pairs_only';
+  billing_ready: false;
+  status: 'observed' | 'review_required' | 'insufficient_data';
+  sample_count: number;
+  distinct_timestamps: number;
+  repeated_timestamps: number;
+  conflicting_timestamps: number;
+  channels: { total: PreviewChannel; mono: PreviewChannel; color: PreviewChannel };
+}
+
 interface Props {
   printer: Printer;
   token: string | null;
@@ -35,6 +54,20 @@ export function PrinterReadingHistoryPanel({ printer, token, onClose }: Props) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const invalid = Boolean(startDate && endDate && startDate > endDate);
+  const [previewRange, setPreviewRange] = useState<{ start: string; end: string } | null>(null);
+  const preview = useQuery({
+    queryKey: ['printer-production-preview', printer.id, previewRange?.start, previewRange?.end],
+    queryFn: () => api<ProductionPreview>(
+      '/printers/' + printer.id + '/production-preview' + queryString({
+        start_date: previewRange!.start,
+        end_date: previewRange!.end,
+      }),
+      token,
+    ),
+    enabled: previewRange !== null,
+    retry: false,
+  });
+
 
   const listing = useQuery({
     queryKey: ['printer-reading-history', printer.id, page, startDate, endDate],
@@ -53,6 +86,12 @@ export function PrinterReadingHistoryPanel({ printer, token, onClose }: Props) {
   const current = listing.data?.meta?.current_page ?? listing.data?.current_page ?? 1;
   const last = listing.data?.meta?.last_page ?? listing.data?.last_page ?? 1;
   const total = listing.data?.meta?.total ?? listing.data?.total ?? 0;
+
+  const previewStatus = (value: ProductionPreview['status']): string => ({
+    observed: 'Pares observados, sem anomalia detectada',
+    review_required: 'Revisão necessária: lacunas ou quedas de contador',
+    insufficient_data: 'Dados insuficientes para comparar',
+  })[value];
 
   return <div className="modal-overlay">
     <section className="modal meter-history-modal" role="dialog" aria-modal="true"
@@ -73,13 +112,38 @@ export function PrinterReadingHistoryPanel({ printer, token, onClose }: Props) {
       </p>
       <div className="inline meter-history-filters">
         <label>Data inicial <input type="date" value={startDate}
-          onChange={event => {setStartDate(event.target.value); setPage(1);}} /></label>
+          onChange={event => {setStartDate(event.target.value); setPage(1); setPreviewRange(null);}} /></label>
         <label>Data final <input type="date" value={endDate}
-          onChange={event => {setEndDate(event.target.value); setPage(1);}} /></label>
+          onChange={event => {setEndDate(event.target.value); setPage(1); setPreviewRange(null);}} /></label>
         <button type="button" className="button ghost" onClick={() => {
-          setStartDate(''); setEndDate(''); setPage(1);
+          setStartDate(''); setEndDate(''); setPage(1); setPreviewRange(null);
         }}>Limpar período</button>
       </div>
+      {previewRange && <section className="meter-preview" aria-label="Prévia não faturável de incrementos">
+        <h3>Incrementos observados — não faturáveis</h3>
+        {preview.isPending ? <p role="status">Calculando prévia a partir de amostras reais...</p>
+          : preview.error ? <p role="alert" className="notice error">{readableError(preview.error)}</p>
+          : preview.data ? <>
+            <p role="status">{previewStatus(preview.data.status)} · {preview.data.sample_count} amostra(s)</p>
+            <div className="meter-preview-grid">
+              {(['total','mono','color'] as const).map(channel => {
+                const info = preview.data!.channels[channel];
+                return <div key={channel}>
+                  <strong>{({total:'Total',mono:'P&B',color:'Cor'})[channel]}</strong>
+                  <span>{meter(info.observed_delta)}</span>
+                  <small>{info.paired_intervals} intervalo(s) comparáveis</small>
+                  <small>{info.missing_intervals} lacuna(s) · {info.decrease_intervals} queda(s)</small>
+                </div>;
+              })}
+            </div>
+            <p className="stock-footnote">
+              {preview.data.conflicting_timestamps} carimbo(s) de coleta contraditório(s);
+              {preview.data.repeated_timestamps} duplicidade(s) no mesmo horário.
+              A prévia não cobre produção fora das amostras, resets entre coletas
+              ou limites do período. Não utilizar para faturamento automático.
+            </p>
+          </> : null}
+      </section>}
       {invalid ? <p role="alert" className="notice error">A data final não pode ser anterior à inicial.</p>
         : listing.isPending ? <p role="status">Carregando leituras...</p>
         : listing.error ? <p role="alert" className="notice error">{readableError(listing.error)}</p>
