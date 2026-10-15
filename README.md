@@ -35,6 +35,14 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Pedidos de compra de suprimentos com revisão humana — incremento 53 (parcial)
+
+- Nova entidade de **pedido de compra de suprimentos**, vinculada a uma proposta de reposição aprovada, fornecedor cadastrado e até 30 linhas aprovadas. Cada linha mantém quantidade e custo unitário em centavos inteiros; o valor previsto é calculado sem arredondamento de ponto flutuante.
+- Um operador autorizado registra um pedido em **rascunho** com UUID idempotente e hash de conteúdo/autor. Outra pessoa com papel owner/admin/manager precisa aprovar, desde que fornecedor, plano, material e destino continuem válidos. Versão de revisão, cancelamento, trilha de auditoria e consultas paginadas preservam o histórico. Linhas são isoladas por tenant e plano com chaves estrangeiras compostas.
+- O volume autorizado é partilhado por compras **aprovadas** e reservas de remessas: a decisão usa locks por SKU/planos e recusa qualquer excesso em concorrência. Pedidos cancelados liberam quantidade planejada; o plano não pode ser cancelado enquanto houver compras aprovadas. A consulta do plano expõe quantidade comprada e restante calculado após reservas e compras.
+- Portal Estoque → Compras permite criar, consultar, aprovar e cancelar pedidos. Testes Laravel verificam aprovação independente, idempotência, fornecedor inativo, limites, isolamento e ausência de lançamentos; E2E percorre almoxarifado → aprovação gerencial sem alterar saldo. **CI do incremento 53 ainda precisa aprovar.**
+- NX-099/NX-105/NX-106/NX-107 e compras continuam **PARCIAIS**: não há envio externo ao fornecedor, aprovação financeira fiscal, integração de pagamentos, NF-e/XML, conciliação de mercadoria recebida com o pedido, devolução ou homologação real. **Pedido aprovado não é compra executada** e não efetua entrada de estoque ou pagamento.
+
 ### Progresso logístico real do planejamento — incremento 52 (parcial)
 
 - O detalhe de cada proposta aprovada agrega, diretamente dos registros de remessa vinculados, quantidades reservadas, expedidas, ainda em trânsito, recebidas, extraviadas e canceladas. Cada número provém do mesmo ledger existente; nenhum status de transporte é inferido de uma compra ou criado artificialmente.

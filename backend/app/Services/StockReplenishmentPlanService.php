@@ -8,6 +8,7 @@ use App\Models\StockLocation;
 use App\Models\StockReorderPolicy;
 use App\Models\StockReplenishmentPlan;
 use App\Models\StockShipment;
+use App\Models\StockPurchaseOrder;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +29,8 @@ final class StockReplenishmentPlanService
                 'responsible:id,name', 'createdBy:id,name', 'approvedBy:id,name', 'cancelledBy:id,name',
                 'items' => static fn ($q) => $q->orderBy('id')
                     ->withSum('shipments as allocated_quantity', DB::raw('quantity - cancelled_quantity'))
+                    ->withSum(['purchaseOrderLines as purchased_quantity' => static fn ($query) =>
+                        $query->whereHas('purchaseOrder', static fn ($orders) => $orders->where('status', 'approved'))], 'quantity')
                     ->withSum('shipments as shipped_quantity_total', 'shipped_quantity')
                     ->withSum('shipments as received_quantity_total', 'received_quantity')
                     ->withSum('shipments as lost_quantity_total', 'lost_quantity')
@@ -210,6 +213,11 @@ final class StockReplenishmentPlanService
             }
             if ((int) $plan->version !== (int) $data['expected_version']) {
                 abort(409, 'Versão desatualizada. Recarregue o plano.');
+            }
+            if ($plan->status === 'approved' && StockPurchaseOrder::query()
+                ->where('tenant_id', $tenant->id)->where('plan_id', $planId)
+                ->where('status', 'approved')->exists()) {
+                abort(409, 'Há pedidos de compra aprovados vinculados. Cancele a compra antes da proposta.');
             }
             if ($plan->status === 'approved' && StockShipment::query()
                 ->where('tenant_id', $tenant->id)

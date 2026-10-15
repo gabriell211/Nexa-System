@@ -27,6 +27,7 @@ final class StockReplenishmentPlanController extends Controller
             'page' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'between:1,100'],
             'status' => ['sometimes', Rule::in(['draft', 'approved', 'cancelled'])],
+            'q' => ['sometimes','nullable','string','max:100'],
             'responsible_user_id' => ['sometimes', 'integer', 'min:1'],
             'due_before' => ['sometimes', 'date_format:Y-m-d'],
         ]);
@@ -34,6 +35,10 @@ final class StockReplenishmentPlanController extends Controller
             StockReplenishmentPlan::query()
                 ->where('tenant_id', $request->attributes->get('nexa_tenant')->id)
                 ->when(isset($filter['status']), fn ($q) => $q->where('status', $filter['status']))
+                ->when(isset($filter['q']) && ctype_digit(trim($filter['q'])),
+                    fn ($q) => $q->where('id', (int) $filter['q']))
+                ->when(isset($filter['q']) && trim($filter['q']) !== '' && !ctype_digit(trim($filter['q'])),
+                    fn ($q) => $q->whereRaw('1 = 0'))
                 ->when(isset($filter['responsible_user_id']), fn ($q) => $q->where('responsible_user_id', $filter['responsible_user_id']))
                 ->when(isset($filter['due_before']), fn ($q) => $q->whereDate('due_on', '<=', $filter['due_before']))
                 ->with(['responsible:id,name', 'createdBy:id,name', 'approvedBy:id,name', 'cancelledBy:id,name'])

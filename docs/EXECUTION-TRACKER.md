@@ -735,3 +735,11 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - O portal mostra resumo por plano e colunas por linha, sempre sem confirmação automática de eventos; operador deve continuar expedindo e recebendo no módulo Remessas.
 - Testes de API comparam medidas após reserva/expedição/recebimento, validam filtro e rejeição de parâmetros; E2E consulta indicadores após recebimento real. CI final ainda não concluído.
 - Limitações: sem integração de transportadora, sem ordem de compra associada, sem indicadores contratuais ou homologação em hardware/estoque físico; NX-107/108/110 continuam parciais.
+
+## Entrega 53 — pedidos de compra auditados para reposição (15/10/2026)
+
+- Migração cria cabeçalho e linhas de pedido de compra com escopo composto por tenant, plano, fornecedor e responsável. Não há alterações retroativas em movimentações nem saldos; aprovações e cancelamentos permanecem históricos.
+- Endpoint GET/POST /stock/purchase-orders, detalhe e aprovar/cancelar com versionamento, UUID/hash imutável, Form Request tipado, guarda transacional de gestor/solicitante e segunda pessoa na aprovação. Pedido de compra em rascunho não consome cota até aprovado.
+- Na aprovação, o sistema confere quantidades já comprometidas por remessas e outras compras aprovadas antes de aceitar nova linha. Remessa vinculada também subtrai compras aprovadas do restante. O plano bloqueia cancelamento se houver pedido aprovado. Aprovação, cancelamento, consulta e repetição de request são auditados ou não mutam (replay).
+- Portal Estoque → Compras permite selecionar proposta aprovada e fornecedor, marcar até 30 linhas, indicar quantidade e custo, criar pedido e aprovar com usuário distinto. Testes de Laravel e Playwright verificam revisão humana sem criar movimentos de estoque.
+- **CI pendente na branch da entrega 53.** Sem pedido enviado a fornecedor, código externo, integração financeira/fiscal, XML NF-e, conciliação com recebimento documentado, aceite em campo ou compras automatizadas. Todos os requisitos afetados continuam PARCIAIS.
