@@ -608,3 +608,12 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - `ResendWebhookProcessor` trata `email.delivered`, `email.bounced`, `email.complained` por `email_id` exatamente associado a notificação original ou replay e audita transições. Devoluções/denúncias prevalecem sobre eventos positivos atrasados; nunca usa assunto ou e-mail como chave.
 - API/portal passam a diferenciar contagem `delivered` reportada pelo provedor, aceite técnico de envio e estados de bounce/reclamação; testes fake HTTP/Resend cobrem assinaturas, data, idempotência, correlação, ordem e isolamentos.
 - **Aceite pendente:** testagem real com domínio Resend verificado, DNS/remetente, HTTP webhook público, rotação de segredo, webhook precoce `unmatched` e validação de entrega real. Não há prova de abertura da caixa postal nem E2E físico. NX-039 e NX-041 continuam PARCIAIS.
+
+## Entrega 37 — reconciliation de webhook Resend antecipado (15/10/2026)
+
+- Migração amplia `collector_mail_webhook_events` com `provider_email_id` e `bounce_category` sanitizada e dois índices para consultas pendentes, preservando o hash único Svix de redelivery. Sem dados pessoais, assunto ou corpo de e-mail.
+- Ingestão de evento verificado HMAC cria `pending` caso UUID ainda não seja conhecido e aplica de maneira transacional quando ele é localizado. `duplicate` continua bloqueado pelo hash único. Precedência de status não permite que entrega tardia reverta bounce/complaint.
+- Após `accepted` de envio original ou reenvio, `reconcileForProviderEmailId` tenta aplicar pendências desse UUID, sem novo envio. O comando adicional `nexa:mail:reconcile-resend-webhooks` faz sweep de 1 minuto com `withoutOverlapping`, limitado a 100 eventos correlacionáveis por padrão, sem starvation de eventos desconhecidos.
+- Pendências expiradas após 72 horas por padrão recebem `expired`, **sem apagar hash de deduplicação**. Configuração permite lote 1..500 e retenção 1..168 horas; inválida falha fechada.
+- Testes Laravel integram chegada antecipada, aplicação imediata, replay, correção por sweep agendado, eventos desconhecidos, sanitização, expiração e opt-in.
+- **Ainda parcial:** sem ensaio de webhook físico de Resend, política de limpeza de hashes, alarmes de filas pendentes, validação carga concorrente/restart e testes de entregabilidade real. NX-039/041 permanecem PARCIAIS.
