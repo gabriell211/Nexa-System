@@ -17,6 +17,15 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Prévia conservadora de incrementos observados — incremento 42 (parcial)
+
+- Novo endpoint autenticado `GET /api/v1/printers/{printer}/production-preview?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD` (também `/browser`), com isolamento por tenant e carteira. Aceita no máximo **31 dias inclusivos**, 20.000 amostras e consulta indexada por impressora/horário; se exceder o limite, retorna erro validado, não uma prévia parcial silenciosa.
+- Compara **somente pares consecutivos de coletas dentro do período**. Não atribui à janela a diferença entre um contador anterior à data inicial e a primeira leitura interna. Não extrapola intervalos sem observação; resets e rollover são tratados como **queda/possível descontinuidade**, não como produção positiva ou negativa.
+- Amostras de mesmo timestamp são agrupadas; duplicatas idênticas não somam duas vezes; valores contraditórios invalidam ambos os intervalos vizinhos. Leituras ausentes (`null`) interrompem apenas o respectivo canal (Total, P&B ou Cor); nunca equivalem a zero. Somas de valores grandes usam cálculo decimal exato sem ponto flutuante ou dependências nativas opcionais.
+- A prévia relata `observed_delta` por canal, pares comparáveis, intervalos com ausência de leitura ou queda, timestamps conflitantes e status `observed/review_required/insufficient_data`. `billing_ready=false` **sempre**; não comprova produção completa no período nem serve de base automática para contratos/faturas.
+- A janela de histórico de contadores agora permite solicitar explicitamente a prévia para o intervalo escolhido. Testes Laravel abrangem precisão, valores nulos, registros fora de ordem, resets, conflitos, fronteiras UTC, janela máxima e isolamento multiempresa/carteira; E2E verifica prévia sem leituras de equipamento novo.
+- **Pendente:** medição física SNMP/USB, validação de reset em campo, janelas de competência, baseline por contrato, reconciliação operacional e faturamento homologado. NX permanecem PARCIAIS.
+
 ### Histórico paginado de contadores por impressora — incremento 41 (parcial)
 
 - Novo endpoint `GET /api/v1/printers/{printer}/readings` (incluindo versão `/browser`) com autenticação, escopo de empresa e carteira, datas UTC opcionais `start_date/end_date` no formato `YYYY-MM-DD` e `per_page` de 1 a 100 (25 padrão).
