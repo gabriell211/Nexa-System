@@ -21,6 +21,11 @@ return [
         'resend_webhook_secret'=>env('NEXA_RESEND_WEBHOOK_SECRET'),
         'resend_reconcile_batch'=>(int)env('NEXA_RESEND_RECONCILE_BATCH',100),
         'resend_pending_hours'=>(int)env('NEXA_RESEND_PENDING_HOURS',72),
+        // Read-only, global, opt-in operational check. Never tenant-facing.
+        'resend_monitor_enabled'=>(bool)env('NEXA_RESEND_MONITOR_ENABLED',false),
+        'resend_warn_unknown_minutes'=>(int)env('NEXA_RESEND_WARN_UNKNOWN_MINUTES',15),
+        'resend_critical_known_minutes'=>(int)env('NEXA_RESEND_CRITICAL_KNOWN_MINUTES',2),
+        'resend_critical_pending_count'=>(int)env('NEXA_RESEND_CRITICAL_PENDING_COUNT',100),
         'escalation_minutes'=>(int)env('NEXA_COLLECTOR_ESCALATION_MINUTES',60),
         'max_per_run'=>(int)env('NEXA_COLLECTOR_MAIL_MAX_PER_RUN',50),
         'max_per_tenant_hour'=>(int)env('NEXA_COLLECTOR_MAIL_MAX_PER_TENANT_HOUR',20),
