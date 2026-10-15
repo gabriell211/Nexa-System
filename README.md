@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Últimos contadores reais no parque — incremento 40 (parcial)
+
+- A listagem paginada `/printers` inclui `latest_reading` para cada equipamento autorizado: `meter_total`, `meter_mono`, `meter_color`, `collected_at` e `received_at`. A API carrega somente a leitura mais recente por **horário da coleta** e desempata por ID de inserção, sem consultas por linha (N+1).
+- Contadores ausentes permanecem `null` (indisponível, **nunca zero**). Contadores existentes são serializados como strings decimais, preservando a precisão de inteiros de 64 bits no frontend, formatados com `BigInt`.
+- A tela Parque mostra os contadores e a data de origem, ou **Sem leituras registradas**, sem apresentar os dados como telemetria ao vivo, status SNMP real ou prova de que a impressora está online. Criado índice `(printer_id, collected_at, id)`.
+- Testes Laravel cobrem coleta fora de ordem, timestamps idênticos, precisão acima de 2^53, ausência de amostras, carteira de clientes, isolamento multiempresa e limite de consultas com 30 impressoras; navegador E2E verifica a ausência de dados de impressão em novo equipamento.
+- **Ainda parcial:** sem homologação física SNMP/USB, níveis de toner, contadores por período, faturamento ou atualização automática em tempo real. Os requisitos completos de coleta e painel permanecem pendentes.
+
 ### Recuperação de webhooks correlacionados após parada longa — incremento 39 (parcial)
 
 - Corrigida a expiração do reconciliador: após 72 horas (configuráveis), **somente eventos pendentes sem UUID associado a notificação original ou reenvio** podem expirar. Eventos cuja mensagem já é conhecida permanecem elegíveis para reconciliação, mesmo após uma parada prolongada do Scheduler.
