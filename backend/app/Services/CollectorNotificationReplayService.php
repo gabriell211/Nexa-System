@@ -156,6 +156,14 @@ final class CollectorNotificationReplayService
                 $reservation['stage']
             ),'nexa-collector-replay-'.$reservation['replay_id']);
             $this->finish((int)$reservation['replay_id'],'accepted',null,$now,$providerId);
+            if ($providerId!==null) {
+                try {
+                    app(ResendWebhookProcessor::class)->reconcileForProviderEmailId($providerId);
+                 catch (\Throwable $error) {
+                    // A scheduled reconciliation sweep repairs transient DB races.
+                    logger()->warning('Collector provider event reconciliation deferred');
+                }
+            }
             return 'accepted';
         } catch (\Throwable $error) {
             // Never log an SMTP exception, recipient address, or credentials.
