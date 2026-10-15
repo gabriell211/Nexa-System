@@ -264,6 +264,50 @@ final class CollectorResendWebhookTest extends TestCase
         ]);
     }
 
+    public function test_old_signed_event_with_known_uuid_survives_expiration_and_recovers_after_scheduler_outage(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-10-15T12:00:00Z'));
+        $this->enabled();
+        [$tenant,$agent,$incident,$owner]=$this->fixture();
+
+        $notice=CollectorIncidentNotification::query()->create([
+            'tenant_id'=>$tenant->id,
+            'collector_health_incident_id'=>$incident->id,
+            'recipient_user_id'=>$owner->id,
+            'stage'=>'initial',
+            'status'=>'attempting',
+            'attempted_at'=>now('UTC'),
+        ]);
+        $this->webhook($this->event('email.bounced',self::EMAIL_ID,[
+            'bounce'=>['type'=>'Permanent'],
+        ]),'known_before_long_outage')->assertOk()->assertJsonPath('result','unmatched');
+        $this->webhook($this->event('email.complained',
+            'aa89ef10-c0b1-4d9a-8e12-235689ae0999'
+        ),'unknown_before_long_outage')->assertOk()->assertJsonPath('result','unmatched');
+
+        // The Resend API UUID was persisted, but scheduled reconciliation
+        // was unavailable for longer than the 72-hour retention window.
+        $notice->update(['status'=>'accepted','provider_email_id'=>self::EMAIL_ID]);
+        $this->travel(73)->hours();
+
+        $this->artisan('nexa:mail:reconcile-resend-webhooks')->assertSuccessful();
+        $this->assertSame('returned',$notice->fresh()->status);
+        $this->assertSame('hard_bounce',$notice->fresh()->error_category);
+        $this->assertDatabaseHas('collector_mail_webhook_events',[
+            'event_hash'=>hash('sha256','resend:known_before_long_outage'),
+            'outcome'=>'applied','target_type'=>'original','target_id'=>$notice->id,
+        ]);
+        $this->assertDatabaseHas('collector_mail_webhook_events',[
+            'event_hash'=>hash('sha256','resend:unknown_before_long_outage'),
+            'outcome'=>'expired',
+        ]);
+        $this->assertSame(1,DB::table('audit_entries')
+            ->where('action','collector.notice.provider_returned')->count());
+        $this->artisan('nexa:mail:reconcile-resend-webhooks')->assertSuccessful();
+        $this->assertSame(1,DB::table('audit_entries')
+            ->where('action','collector.notice.provider_returned')->count());
+    }
+
     public function test_pending_events_expire_without_reprocessing_duplicate_or_saving_payload(): void
     {
         $this->travelTo(CarbonImmutable::parse('2026-10-15T12:00:00Z'));
