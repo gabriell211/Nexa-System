@@ -371,3 +371,23 @@ NEXA_RESEND_PENDING_HOURS=72
 São aceitos lotes 1..500 e retenção de pendências 1..168 horas. Depois de expirar uma pendência não correlacionada, o sistema marca `expired`, **retém o hash** e não aplica automaticamente o evento se o UUID aparecer só após o prazo. Investigue atrasos operacionais antes de ajustar a retenção. Mantenha o Laravel Scheduler realmente ativo; sem ele, somente a tentativa imediata ocorre. Eventos entregues com atraso após reinício podem ser recuperados sem exigir replay do webhook pelo provedor quando dentro da janela.
 
 **Limites:** não é fila de mensagens genérica, não confirma recebimento em caixa postal nem reenvia e-mails. O estado `delivered` é uma informação assinada reportada pelo provedor. Persistência de hashes e metadados exige políticas futuras de retenção e limpeza auditada; falta carga concorrente de múltiplos processos, métricas centrais de atraso e testes com Resend em produção. NX-039/NX-041 seguem PARCIAIS.
+
+
+## Inspeção operacional do backlog de webhooks — entrega 38
+
+Este diagnóstico é **global e exclusivamente CLI**: eventos assinados sem UUID correlacionado não têm vínculo confiável com tenant. Nunca publique os contadores em uma rota de cliente.
+
+```dotenv
+NEXA_RESEND_MONITOR_ENABLED=true
+NEXA_RESEND_WARN_UNKNOWN_MINUTES=15
+NEXA_RESEND_CRITICAL_KNOWN_MINUTES=2
+NEXA_RESEND_CRITICAL_PENDING_COUNT=100
+```
+
+Exige `NEXA_COLLECTOR_MAIL_DRIVER=resend` e `NEXA_RESEND_WEBHOOKS_ENABLED=true`. Com um provedor de monitoramento externo, execute sob privilégios de operador:
+
+```sh
+php artisan nexa:mail:check-resend-backlog --json --fail-on-alert
+```
+
+O retorno é somente agregado. Código zero significa ausência de alerta ou monitor **desabilitado** (nesse caso o JSON informa `disabled`); código não zero pode indicar alerta ou configuração inválida, que devem ser distinguidos pela saída. Eventos correlacionáveis com atraso de pelo menos 2 minutos ou total pendente >= 100 são críticos; pendências ainda desconhecidas com 15 minutos são aviso. Todos esses limiares são configuráveis. O comando não processa pendências: mantenha o scheduler `nexa:mail:reconcile-resend-webhooks` funcionando separadamente. Números históricos de `expired` não provam erro novo nem entrega real. Sem integração automática com sistema externo de alertas, testes reais de domínio Resend ou homologação de produção.
