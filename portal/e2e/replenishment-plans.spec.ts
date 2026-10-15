@@ -150,9 +150,9 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
     await dialog.getByLabel('Responsável *').selectOption({ label: 'Administrador Nexa' });
 
     await dialog.getByLabel('Buscar material para proposta').fill(manualSku);
-    await dialog.getByLabel('Material').selectOption({ label: `${manualSku} — ${manualName}` });
+    await dialog.getByLabel('Material', { exact: true }).selectOption({ label: `${manualSku} — ${manualName}` });
     await dialog.getByLabel('Buscar local para proposta').fill(locationName);
-    await dialog.getByLabel('Local').selectOption({ label: locationName });
+    await dialog.getByLabel('Local', { exact: true }).selectOption({ label: locationName });
     await dialog.getByRole('button', { name: 'Incluir item' }).click();
     await dialog.getByLabel(`Quantidade do item ${manualSku}`).fill('3');
     await dialog.getByLabel(`Nota do item ${manualSku}`).fill('Inclusão manual para manutenção preventiva');
