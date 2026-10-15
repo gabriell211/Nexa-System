@@ -32,11 +32,11 @@ final class PrinterResource extends JsonResource
                 $this->latestReading
                     ? [
                         'meter_total' => $this->latestReading->meter_total === null
-                            ? null : (int) $this->latestReading->meter_total,
+                            ? null : (string) $this->latestReading->meter_total,
                         'meter_mono' => $this->latestReading->meter_mono === null
-                            ? null : (int) $this->latestReading->meter_mono,
+                            ? null : (string) $this->latestReading->meter_mono,
                         'meter_color' => $this->latestReading->meter_color === null
-                            ? null : (int) $this->latestReading->meter_color,
+                            ? null : (string) $this->latestReading->meter_color,
                         'collected_at' => $this->latestReading->collected_at?->toIso8601String(),
                         'received_at' => $this->latestReading->received_at?->toIso8601String(),
                     ]
