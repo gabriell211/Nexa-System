@@ -19,7 +19,7 @@ final class InventoryLedgerService
         private readonly StockLotLedgerService $lots,
     ) {}
 
-    public function move(Tenant $tenant, User $actor, array $input): StockMovement
+    public function move(Tenant $tenant, User $actor, array $input, ?int $specificLotId = null): StockMovement
     {
         // Validator accepts integer-like strings. Normalize IDs before strict
         // comparisons so "1" and 1 cannot evade the same-location guard.
@@ -29,7 +29,7 @@ final class InventoryLedgerService
             $input[$key] = $input[$key] === null ? null : (int) $input[$key];
         }
 
-        return DB::transaction(function () use ($tenant, $actor, $input): StockMovement {
+        return DB::transaction(function () use ($tenant, $actor, $input, $specificLotId): StockMovement {
             // PostgreSQL serializes all movements of the same SKU on this row lock.
             // This includes duplicate retries, preventing concurrent last-unit issues.
             $item = StockItem::query()->where('tenant_id', $tenant->id)
@@ -118,7 +118,7 @@ final class InventoryLedgerService
                 'destination_before' => $beforeTo, 'destination_after' => $afterTo,
                 'actor_user_id' => $actor->id, 'reason' => $input['reason'],
             ]);
-            $this->lots->applyMovement($movement);
+            $this->lots->applyMovement($movement, $specificLotId);
             $this->audit->write($tenant, $actor, 'stock.movement.created', $movement, null,
                 $movement->only([
                     'request_id','kind','item_id','source_location_id','destination_location_id',
