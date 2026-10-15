@@ -335,3 +335,24 @@ Requer incidentes e e-mails opt-in ativos, alerta ainda aberto, destinatário at
 `collector_notification_replays` preserva a evidência de autorização e os resultados `attempting/accepted/failed/skipped`; a tentativa original nunca é sobrescrita. Índice único por original limita a uma tentativa independente da quantidade de operadores ou processos. O envio ocorre fora da transação, mas a reserva usa a mesma trava persistente de orçamento dos e-mails automáticos. O log e as auditorias armazenam apenas categoria genérica para erro de transporte; nenhum erro SMTP bruto ou endereço de destinatário é exposto no painel.
 
 **Limites:** o sinal `accepted` indica somente que a biblioteca Mail retornou sem exceção, não entrega. Ainda não há API de provider/webhook assinada, DSN automático, prova de entrega, controle de preferência/opt-out por destinatário nem testes de SMTP real. Só operadores com autorização para executar Artisan no host podem usar o comando. NX-039/041 permanecem PARCIAIS.
+
+## Webhooks assinados do Resend — entrega 36
+
+Esta integração é **opcional e desligada por padrão**. Para relacionar um aviso enviado ao retorno do provedor, o sistema precisa obter o `email_id` diretamente na API de saída. Envios pelo SMTP genérico/driver `laravel` continuam disponíveis, mas **não permitem correlação automática segura** por UUID do Resend.
+
+Após provisionar um domínio remetente verificado no Resend, configure os segredos **apenas no ambiente do backend Laravel**:
+```dotenv
+NEXA_COLLECTOR_NOTIFICATIONS_ENABLED=true
+NEXA_COLLECTOR_HEALTH_ALERTS_ENABLED=true
+NEXA_COLLECTOR_MAIL_DRIVER=resend
+NEXA_RESEND_API_KEY=re_...                  # segredo real: não comitar
+NEXA_RESEND_WEBHOOKS_ENABLED=true
+NEXA_RESEND_WEBHOOK_SECRET=whsec_...        # segredo diferente da chave de API
+MAIL_FROM_ADDRESS=notify@seu-dominio-verificado.example
+```
+
+Cadastre no Resend o endpoint HTTPS `POST https://seu-backend.example/api/v1/webhooks/resend` e selecione `email.delivered`, `email.bounced` e `email.complained`. A rota é isolada da autenticação de usuários e recebe requisições externas, mas só aceita eventos com **assinatura Svix autêntica**. É aplicada janela de ±300 segundos ao `svix-timestamp`, assinatura HMAC-SHA256 com segredo `whsec_` (base64), comparação constante, validação do corpo bruto e limite de 64 KiB. Rotação do segredo ainda exige atualização coordenada do ambiente: esta entrega não implementa janela de coexistência de segredos antigos.
+
+Cada tentativa de e-mail originária de Resend persiste o `provider_email_id` (UUID). A assinatura do evento não autoriza atribuir fatos a outro cliente: o serviço consulta **somente o UUID exato** da tentativa original ou reenvio. O ID Svix é armazenado unicamente como hash SHA-256 para deduplicar redelivery, mesmo após novas execuções do processo. Eventos fora de ordem nunca revertem `returned` ou `complaint` para `delivered`; reclamação prevalece sobre devolução. Eventos desconhecidos ou sem vínculo válido são reconhecidos sem alterar status, com resultado sanitizado. Auditoria guarda código de evento, estado anterior/final, tenant e tentativa identificada, nunca nome, endereço, mensagem de bounce ou corpo de webhook.
+
+**Atenção operacional:** o Resend pode disparar o webhook antes de o UUID da resposta de envio ser gravado na tentativa. Nesse caso o evento é classificado `unmatched`, sem retentativa automática desta versão: o operador deve investigar e solicitar novo replay válido do webhook no painel do provedor, com novo ID de evento. Falhas HTTP podem ser ambíguas; idempotency key limita repetições na API, mas o Nexa **não reexecuta automaticamente** envios com status incerto. O retorno de evento `delivered` confirma apenas o que o provedor reportou, não abertura/leitura por destinatário. Sem testes reais de Resend, DNS/domínio e webhook de produção; NX-039/041 permanecem PARCIAIS.
