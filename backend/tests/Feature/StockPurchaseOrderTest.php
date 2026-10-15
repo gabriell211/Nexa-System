@@ -506,4 +506,109 @@ final class StockPurchaseOrderTest extends TestCase
         $this->assertDatabaseCount('stock_movements', 1);
     }
 
+
+    public function test_completed_return_releases_quota_for_replacement_without_changing_gross_history(): void
+    {
+        $fixture = $this->fixture();
+        [$order, $line, $originalReceipt, $match] =
+            $this->reconciledForReturn($fixture, 3, 'NF-REPLACEMENT-ORIGINAL');
+        $returnRequest = [
+            'request_id' => (string) Str::uuid(),
+            'purchase_receipt_match_id' => $match,
+            'quantity' => 2,
+            'reason' => 'Material com defeito confirmado na inspeção',
+        ];
+        $return = $this->as($fixture['creatorToken'])
+            ->postJson('/api/v1/stock/supplier-returns', $returnRequest)
+            ->assertCreated()->json('data.id');
+        $otherReceipt = $this->documentedPurchaseReceipt(
+            $fixture, 2, 6875, 'NF-REPLACEMENT-ARRIVAL'
+        );
+        $uri = "/api/v1/stock/purchase-orders/{$order}/reconcile-receipt";
+        $attach = ['purchase_order_line_id' => $line, 'receipt_detail_id' => $otherReceipt];
+
+        $this->as($fixture['creatorToken'])->getJson("/api/v1/stock/purchase-orders/{$order}")
+            ->assertOk()
+            ->assertJsonPath('data.fulfillment.status', 'return_review_pending')
+            ->assertJsonPath('data.fulfillment.ordered_quantity', 3)
+            ->assertJsonPath('data.fulfillment.gross_received_quantity', 3)
+            ->assertJsonPath('data.fulfillment.pending_return_quantity', 2)
+            ->assertJsonPath('data.fulfillment.returned_quantity', 0)
+            ->assertJsonPath('data.fulfillment.retained_quantity', 3)
+            ->assertJsonPath('data.fulfillment.outstanding_quantity', 0)
+            ->assertJsonPath('data.items.0.replacement_needed_quantity', 0);
+        $this->as($fixture['creatorToken'])->postJson($uri, $attach)
+            ->assertUnprocessable()->assertJsonValidationErrors('receipt_detail_id');
+
+        $this->as($fixture['managerToken'])->postJson(
+            "/api/v1/stock/supplier-returns/{$return}/approve",
+            ['expected_version' => 1, 'review_note' => 'Conferência física da devolução']
+        )->assertOk()->assertJsonPath('data.status', 'completed');
+
+        $this->as($fixture['creatorToken'])->getJson("/api/v1/stock/purchase-orders/{$order}")
+            ->assertOk()
+            ->assertJsonPath('data.fulfillment.status', 'replacement_required')
+            ->assertJsonPath('data.fulfillment.gross_received_quantity', 3)
+            ->assertJsonPath('data.fulfillment.returned_quantity', 2)
+            ->assertJsonPath('data.fulfillment.retained_quantity', 1)
+            ->assertJsonPath('data.fulfillment.outstanding_quantity', 2)
+            ->assertJsonPath('data.fulfillment.replacement_needed_quantity', 2)
+            ->assertJsonPath('data.items.0.received_quantity', 3)
+            ->assertJsonPath('data.items.0.pending_return_quantity', 0);
+
+        $movementCount = (int) DB::table('stock_movements')->count();
+        $this->assertSame(3, $movementCount);
+        $this->as($fixture['creatorToken'])->postJson($uri, $attach)
+            ->assertCreated()
+            ->assertJsonPath('data.fulfillment.status', 'net_received')
+            ->assertJsonPath('data.fulfillment.gross_received_quantity', 5)
+            ->assertJsonPath('data.fulfillment.returned_quantity', 2)
+            ->assertJsonPath('data.fulfillment.retained_quantity', 3)
+            ->assertJsonPath('data.fulfillment.outstanding_quantity', 0)
+            ->assertJsonPath('data.fulfillment.replacement_needed_quantity', 0)
+            ->assertJsonPath('data.items.0.received_quantity', 5)
+            ->assertJsonPath('data.items.0.outstanding_quantity', 0);
+        $this->as($fixture['creatorToken'])->postJson($uri, $attach)
+            ->assertOk()->assertJsonPath('data.items.0.received_quantity', 5);
+        $this->assertDatabaseCount('stock_purchase_receipt_matches', 2);
+        $this->assertDatabaseCount('stock_movements', $movementCount);
+        $this->assertSame(2, (int) DB::table('audit_entries')
+            ->where('action', 'stock.purchase_order.receipt_matched')->count());
+    }
+
+    public function test_cancelled_return_does_not_release_receipt_quota(): void
+    {
+        $fixture = $this->fixture();
+        [$order, $line, , $match] =
+            $this->reconciledForReturn($fixture, 1, 'NF-REPLACEMENT-CANCEL');
+        $request = $this->as($fixture['creatorToken'])
+            ->postJson('/api/v1/stock/supplier-returns', [
+                'request_id' => (string) Str::uuid(),
+                'purchase_receipt_match_id' => $match,
+                'quantity' => 1, 'reason' => 'Solicitação que será cancelada',
+            ])->assertCreated()->json('data.id');
+        $receipt = $this->documentedPurchaseReceipt(
+            $fixture, 1, 6875, 'NF-REPLACEMENT-BLOCKED'
+        );
+        $uri = "/api/v1/stock/purchase-orders/{$order}/reconcile-receipt";
+        $attach = ['purchase_order_line_id' => $line, 'receipt_detail_id' => $receipt];
+
+        $this->as($fixture['creatorToken'])->postJson($uri, $attach)->assertUnprocessable();
+        $this->as($fixture['creatorToken'])
+            ->postJson("/api/v1/stock/supplier-returns/{$request}/cancel", [
+                'expected_version' => 1,
+                'reason' => 'Revisão interna cancelou a devolução',
+            ])->assertOk()->assertJsonPath('data.status', 'cancelled');
+
+        $this->as($fixture['creatorToken'])->postJson($uri, $attach)->assertUnprocessable();
+        $this->as($fixture['creatorToken'])->getJson("/api/v1/stock/purchase-orders/{$order}")
+            ->assertOk()
+            ->assertJsonPath('data.fulfillment.status', 'net_received')
+            ->assertJsonPath('data.fulfillment.returned_quantity', 0)
+            ->assertJsonPath('data.fulfillment.pending_return_quantity', 0)
+            ->assertJsonPath('data.fulfillment.outstanding_quantity', 0);
+        $this->assertDatabaseCount('stock_purchase_receipt_matches', 1);
+        $this->assertDatabaseCount('stock_movements', 2);
+    }
+
 }
