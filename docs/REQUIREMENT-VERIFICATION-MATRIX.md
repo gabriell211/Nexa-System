@@ -550,3 +550,8 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 
 - NX-099/NX-107/NX-286: read-model mostra quantidade histórica recebida, devoluções concluídas/pendentes, quantidade líquida e necessidade operacional estimada de reposição. Uma devolução concluída libera nova conciliação de entrada substituta dentro da mesma cota aprovada; pendente/cancelada não libera.
 - Continua PARCIAL: dados não comprovam estoque físico disponível, compromisso do fornecedor de substituir, nota fiscal de devolução/substituição, repasse financeiro ou estorno/contabilidade tributária.
+
+## Entrega 57 — acompanhamento documentado das substituições (15/10/2026)
+
+- NX-099/NX-107/NX-286: acompanham-se prazo, responsável, contato, confirmação com referência documental e encerramento de substituição associada a devolução concluída. Eventos auditados não alteram estoque nem atestam chegada de mercadoria.
+- **PARCIAL**: sem comprovação externa de entrega, documento anexado/assinado, nota fiscal, crédito, SLA em operação real, ERP ou aceitação física.

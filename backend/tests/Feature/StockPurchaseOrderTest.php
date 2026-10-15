@@ -611,4 +611,175 @@ final class StockPurchaseOrderTest extends TestCase
         $this->assertDatabaseCount('stock_movements', 2);
     }
 
+
+    private function completedSupplierReturnForFollowup(array $fixture): int
+    {
+        [, , , $match] = $this->reconciledForReturn($fixture, 2, 'NF-REP-FOLLOWUP-'.Str::upper(Str::random(6)));
+        $return = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-returns', [
+            'request_id' => (string) Str::uuid(),
+            'purchase_receipt_match_id' => $match,
+            'quantity' => 1, 'reason' => 'Material danificado devolvido ao fornecedor',
+        ])->assertCreated()->json('data.id');
+        $this->as($fixture['managerToken'])
+            ->postJson("/api/v1/stock/supplier-returns/{$return}/approve", [
+                'expected_version' => 1, 'review_note' => 'Material enviado para devolução',
+            ])->assertOk()->assertJsonPath('data.status', 'completed');
+        return (int) $return;
+    }
+
+    public function test_supplier_followup_records_contact_reschedule_and_documentary_confirmation_without_stock_movement(): void
+    {
+        $fixture = $this->fixture();
+        $return = $this->completedSupplierReturnForFollowup($fixture);
+        $before = DB::table('stock_movements')->count();
+        $start = [
+            'request_id' => (string) Str::uuid(),
+            'supplier_return_id' => $return,
+            'assigned_user_id' => $fixture['creator']->id,
+            'due_on' => now()->addDays(5)->toDateString(),
+            'note' => 'Aguardar confirmação de substituição do lote devolvido',
+        ];
+        $created = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-replacements', $start)
+            ->assertCreated()->assertJsonPath('data.status', 'awaiting_supplier')
+            ->assertJsonPath('data.version', 1)
+            ->assertJsonPath('data.events.0.action', 'opened');
+        $case = $created->json('data.id');
+        $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-replacements', $start)
+            ->assertOk()->assertJsonPath('data.id', $case);
+        $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-replacements', [
+            ...$start, 'due_on' => now()->addDays(6)->toDateString(),
+        ])->assertUnprocessable();
+
+        $contact = [
+            'request_id' => (string) Str::uuid(), 'expected_version' => 1,
+            'action' => 'follow_up', 'note' => 'Solicitada previsão ao atendimento do fornecedor',
+        ];
+        $this->as($fixture['creatorToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", $contact)
+            ->assertCreated()->assertJsonPath('data.version', 2)
+            ->assertJsonPath('data.events.1.action', 'follow_up');
+        $this->as($fixture['creatorToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", $contact)
+            ->assertOk()->assertJsonPath('data.version', 2);
+        $this->as($fixture['creatorToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", [
+                ...$contact, 'note' => 'Alteração do evento reenviado',
+            ])->assertUnprocessable();
+
+        $reschedule = [
+            'request_id' => (string) Str::uuid(), 'expected_version' => 2,
+            'action' => 'rescheduled', 'note' => 'Prazo atualizado após contato com fornecedor',
+            'due_on' => now()->addDays(7)->toDateString(),
+        ];
+        $this->as($fixture['creatorToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", $reschedule)
+            ->assertForbidden();
+        $this->as($fixture['managerToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", $reschedule)
+            ->assertCreated()->assertJsonPath('data.version', 3)
+            ->assertJsonPath('data.due_on', $reschedule['due_on']);
+        $this->as($fixture['managerToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", [
+                'request_id' => (string) Str::uuid(), 'expected_version' => 2,
+                'action' => 'supplier_confirmed', 'note' => 'Confirmação recebida por mensagem oficial',
+                'supplier_reference' => 'PROT-REPO-4242',
+            ])->assertStatus(409);
+        $this->as($fixture['managerToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", [
+                'request_id' => (string) Str::uuid(), 'expected_version' => 3,
+                'action' => 'supplier_confirmed', 'note' => 'Confirmação recebida por mensagem oficial',
+            ])->assertUnprocessable();
+
+        $confirmation = [
+            'request_id' => (string) Str::uuid(), 'expected_version' => 3,
+            'action' => 'supplier_confirmed',
+            'supplier_reference' => 'PROT-REPO-4242',
+            'note' => 'Fornecedor confirmou a substituição por protocolo',
+        ];
+        $this->as($fixture['managerToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", $confirmation)
+            ->assertCreated()->assertJsonPath('data.status', 'supplier_confirmed')
+            ->assertJsonPath('data.version', 4)
+            ->assertJsonPath('data.supplier_reference', 'PROT-REPO-4242')
+            ->assertJsonCount(4, 'data.events');
+        $this->as($fixture['managerToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", $confirmation)
+            ->assertOk()->assertJsonPath('data.version', 4);
+        $this->as($fixture['managerToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", [
+                'request_id' => (string) Str::uuid(), 'expected_version' => 4,
+                'action' => 'follow_up', 'note' => 'Tentativa de alterar caso confirmado',
+            ])->assertStatus(409);
+        $this->as($fixture['creatorToken'])
+            ->getJson('/api/v1/stock/supplier-replacements?status=supplier_confirmed')
+            ->assertOk()->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.assignee.id', $fixture['creator']->id);
+        $this->assertSame($before, DB::table('stock_movements')->count());
+        $this->assertDatabaseCount('stock_supplier_replacement_cases', 1);
+        $this->assertDatabaseCount('stock_supplier_replacement_events', 4);
+        $this->assertDatabaseHas('audit_entries', [
+            'tenant_id' => $fixture['tenant']->id,
+            'entity_type' => 'StockSupplierReplacementCase', 'entity_id' => $case,
+            'action' => 'stock.supplier_replacement.supplier_confirmed',
+        ]);
+    }
+
+    public function test_replacement_followup_rejects_unfinished_returns_foreign_tenant_invalid_assignee_and_unauthorized_closure(): void
+    {
+        $fixture = $this->fixture();
+        [, , , $match] = $this->reconciledForReturn($fixture, 1, 'NF-REP-RESTRICTED');
+        $pending = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-returns', [
+            'request_id' => (string) Str::uuid(), 'purchase_receipt_match_id' => $match,
+            'quantity' => 1, 'reason' => 'Avaria identificada para a troca',
+        ])->assertCreated()->json('data.id');
+        $payload = [
+            'request_id' => (string) Str::uuid(), 'supplier_return_id' => $pending,
+            'assigned_user_id' => $fixture['creator']->id,
+            'due_on' => now()->addDays(3)->toDateString(),
+            'note' => 'Solicitação ao fornecedor após devolução',
+        ];
+        $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-replacements', $payload)
+            ->assertStatus(409);
+        $this->as($fixture['managerToken'])
+            ->postJson("/api/v1/stock/supplier-returns/{$pending}/approve", ['expected_version' => 1])
+            ->assertOk();
+        $other = Tenant::query()->create(['name'=>'Empresa externa','slug'=>'replacement-other']);
+        [$otherUser,$otherToken] = $this->token($other);
+        $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-replacements', [
+            ...$payload, 'assigned_user_id' => $otherUser->id,
+        ])->assertUnprocessable();
+        $this->as($otherToken)->postJson('/api/v1/stock/supplier-replacements', $payload)
+            ->assertNotFound();
+
+        $case = $this->as($fixture['creatorToken'])
+            ->postJson('/api/v1/stock/supplier-replacements', $payload)
+            ->assertCreated()->json('data.id');
+        $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-replacements', [
+            ...$payload, 'request_id' => (string) Str::uuid(),
+        ])->assertUnprocessable();
+        $this->as($otherToken)->getJson("/api/v1/stock/supplier-replacements/{$case}")
+            ->assertNotFound();
+        $this->as($otherToken)->postJson("/api/v1/stock/supplier-replacements/{$case}/events", [
+            'request_id' => (string) Str::uuid(), 'expected_version' => 1,
+            'action' => 'follow_up', 'note' => 'Tentativa de outro tenant',
+        ])->assertNotFound();
+        $this->as($fixture['creatorToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", [
+                'request_id' => (string) Str::uuid(), 'expected_version' => 1,
+                'action' => 'supplier_confirmed', 'supplier_reference' => 'XYZ123',
+                'note' => 'Tentativa de confirmar sem permissão',
+            ])->assertForbidden();
+        $this->as($fixture['managerToken'])
+            ->postJson("/api/v1/stock/supplier-replacements/{$case}/events", [
+                'request_id' => (string) Str::uuid(), 'expected_version' => 1,
+                'action' => 'closed_unresolved', 'note' => 'Fornecedor recusou formalmente a troca',
+            ])->assertCreated()->assertJsonPath('data.status','closed_unresolved');
+        $this->as($fixture['creatorToken'])
+            ->getJson('/api/v1/stock/supplier-replacements?status=closed_unresolved')
+            ->assertOk()->assertJsonPath('meta.total', 1);
+        [, $technician] = $this->token($fixture['tenant'], 'technician');
+        $this->as($technician)->getJson('/api/v1/stock/supplier-replacements')->assertForbidden();
+        $this->assertDatabaseCount('stock_supplier_replacement_events', 2);
+    }
+
 }
