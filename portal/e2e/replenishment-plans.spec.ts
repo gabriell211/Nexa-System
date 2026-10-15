@@ -92,6 +92,7 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
   const warehouseRequest = page.context().request;
   let itemId = 0;
   let manualItemId = 0;
+  let locationId = 0;
   let baselineShipments = 0;
   let baselineMovements = 0;
 
@@ -102,7 +103,7 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
     manualItemId = (await writeStock(warehouseRequest, 'post', '/stock/items', {
       sku: manualSku, name: manualName, category: 'part', unit: 'un',
     }, 201)).data.id;
-    const locationId = (await writeStock(warehouseRequest, 'post', '/stock/locations', {
+    locationId = (await writeStock(warehouseRequest, 'post', '/stock/locations', {
       name: locationName, kind: 'provider',
     }, 201)).data.id;
     await writeStock(warehouseRequest, 'put', `/stock/reorder-policies/${itemId}/${locationId}`, {
@@ -293,9 +294,9 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
 
     await test.step('Criar compra vinculada por almoxarifado e aprovar com gestor sem entrada automática', async () => {
       const supplierCode = 'PO-E2E-' + suffix;
-      await writeStock(warehouseRequest, 'post', '/stock/suppliers', {
+      const supplierId = (await writeStock(warehouseRequest, 'post', '/stock/suppliers', {
         code: supplierCode, name: 'Distribuidora compra ' + suffix,
-      }, 201);
+      }, 201)).data.id;
       const movementCount = await paginatedTotal(warehouseRequest, '/stock/movements');
 
       await page.goto(baseUrl + '/estoque');
@@ -333,6 +334,43 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
         await response.json();
       expect(body.data.items.find(line => line.item_id === manualItemId)).toMatchObject({
         purchased_quantity: 2, remaining_quantity: 1,
+      });
+
+      const invoice = 'NF-PO-MATCH-' + suffix;
+      const lot = 'LOTE-PO-MATCH-' + suffix;
+      const receiptId = (await writeStock(owner.context().request, 'post', '/stock/receipts', {
+        request_id: randomUUID(),
+        supplier_id: supplierId,
+        item_id: manualItemId,
+        destination_location_id: locationId,
+        quantity: 1,
+        invoice_reference: invoice,
+        lot_number: lot,
+        unit_cost_cents: 7000,
+        reason: 'Recebimento físico conferido no local aprovado',
+      }, 201)).data.id;
+      expect(await paginatedTotal(owner.context().request, '/stock/movements')).toBe(movementCount + 1);
+
+      const matching = dialog.getByRole('region', { name: 'Conciliação de recebimentos' });
+      await matching.getByLabel('Linha do pedido *')
+        .selectOption({ label: manualSku + ' — 2 restantes' });
+      await matching.getByLabel('Buscar nota ou lote para conciliar').fill(invoice);
+      await matching.getByLabel('Entrada documentada *', { exact: true })
+        .selectOption({ label: '#' + receiptId + ' · ' + invoice + ' · ' + lot + ' · 1 un. · R$ 70,00' });
+      await matching.getByLabel('Justificativa da diferença de custo *')
+        .fill('Fornecedor cobrou valor atualizado e nota foi conferida');
+      await matching.getByRole('button', { name: 'Confirmar conciliação sem movimentar estoque' }).click();
+      await expect(matching.getByRole('status').filter({ hasText: 'sem nova entrada de estoque' })).toBeVisible();
+      await expect(dialog.locator('p').filter({ hasText: 'Conciliação: Recebimento parcial' })).toBeVisible();
+      await expect(dialog.getByText(lot)).toBeVisible();
+      expect(await paginatedTotal(owner.context().request, '/stock/movements')).toBe(movementCount + 1);
+      const reconciled = await owner.context().request.get(apiRoot + '/stock/purchase-orders/' + orderId);
+      expect(reconciled.status()).toBe(200);
+      const bodyReconciled: { data: { items: Array<{
+        received_quantity: number; outstanding_quantity: number; cost_divergence: boolean;
+      }> } } = await reconciled.json();
+      expect(bodyReconciled.data.items[0]).toMatchObject({
+        received_quantity: 1, outstanding_quantity: 1, cost_divergence: true,
       });
     });
 
