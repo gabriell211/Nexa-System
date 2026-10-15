@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Cotas de notificações e revisão manual de devoluções — incremento 34 (parcial)
+
+- O agendador de e-mail mantém limites rigorosos de **50 tentativas por execução**, **20 por tenant na última hora** e **100 globais na última hora** (valores configuráveis, com validação antes do envio). A reserva de envio bloqueia uma linha global no banco para serializar os contadores em SQLite e PostgreSQL. Isso evita explosões de e-mail entre workers da mesma base.
+- Notificações que excedem uma cota são **adiadas sem reserva nem envio**, permanecendo elegíveis em execuções futuras. Tentativas com falha, incertas ou marcadas `skipped` ainda consomem a cota da janela, preferindo segurança. A lista de agentes e o histórico permanecem íntegros.
+- A reserva valida novamente empresa, cliente, agente, papel e endereço verificado antes da tentativa. E-mails continuam opt-in e só são encaminhados a responsáveis autorizados; SMTP não é chamado enquanto locks do banco estão retidos.
+- Com o comando administrativo local `nexa:alerts:reconcile-collector-mail`, um operador pode registrar **devoluções ou denúncias de spam** após verificar uma evidência externa, com tipo fixo, confirmação explícita e auditoria. Não existe webhook público nem retransmissão automática. O portal exibe somente contagens agregadas, sem e-mails.
+- Testes cobrem limites por execução, tenant e global, recuperação após janela, tentativas falhas contabilizadas, validação negativa, revisão manual e isolamento. Não há comprovação de entrega em SMTP real nem processamento automático de eventos de provedor; NX-039/041 continuam PARCIAIS.
+
 ### Notificações opt-in de incidentes por e-mail — incremento 33 (parcial)
 
 - Avisos iniciais por Laravel Mail somente a owners/admins ativos com e-mail verificado dentro do tenant; escalonamento após 60 minutos (configurável 15..10080) somente a owners.
