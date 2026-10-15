@@ -31,6 +31,8 @@ final class CollectorHealthIncidentController extends Controller
                 'notifications as email_failed_count'=>fn($q)=>$q->whereIn('status',['failed','attempting']),
                 'notifications as email_returned_count'=>fn($q)=>$q->where('status','returned'),
                 'notifications as email_complaint_count'=>fn($q)=>$q->where('status','complaint'),
+                'notificationReplays as email_replay_accepted_count'=>fn($q)=>$q->where('status','accepted'),
+                'notificationReplays as email_replay_unconfirmed_count'=>fn($q)=>$q->whereIn('status',['attempting','failed']),
             ])
             ->when(isset($filters['status']),fn($q)=>$q->where('status',$filters['status']))
             ->when(isset($filters['collector_agent_id']),fn($q)=>$q->where('collector_agent_id',$filters['collector_agent_id']))
@@ -57,6 +59,8 @@ final class CollectorHealthIncidentController extends Controller
                 'email_unconfirmed_count'=>(int)$incident->email_failed_count,
                 'email_returned_count'=>(int)$incident->email_returned_count,
                 'email_complaint_count'=>(int)$incident->email_complaint_count,
+                'email_replay_accepted_count'=>(int)$incident->email_replay_accepted_count,
+                'email_replay_unconfirmed_count'=>(int)$incident->email_replay_unconfirmed_count,
             ];
         }));
     }

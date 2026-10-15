@@ -30,6 +30,11 @@ final class CollectorHealthIncident extends Model
         return $this->hasMany(CollectorIncidentNotification::class,'collector_health_incident_id');
     }
 
+    public function notificationReplays(): HasMany
+    {
+        return $this->hasMany(CollectorNotificationReplay::class,'collector_health_incident_id');
+    }
+
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);

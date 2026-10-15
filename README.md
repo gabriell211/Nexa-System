@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Reenvio supervisionado de notificação — incremento 35 (parcial)
+
+- Após análise independente do provedor e confirmação explícita de **não aceitação do envio original**, um operador autorizado no backend pode usar `nexa:alerts:replay-collector-mail ID --review-reference=CASO-123 --confirm-not-accepted`. Não há reenvio por scheduler, endpoint público, clique acidental no portal ou webhook não autenticado.
+- A operação é permitida **somente** para notificação original `failed`, incidente ainda ativo, cliente/agente/empresa ativos e destinatário administrador/proprietário com e-mail verificado; não reenvia originais `accepted/attempting/skipped/returned/complaint`. Há uma única autorização e uma única tentativa de reenvio por original, garantida por índice UNIQUE.
+- O reenvio tem tabela própria de auditoria e histórico, sem alterar o resultado da tentativa original. Consome os mesmos orçamentos de hora por empresa e global dos envios automáticos, usando a mesma trava transacional; quando a cota acaba não reserva nem envia.
+- O portal apresenta apenas contagens agregadas dos reenvios aceitos pelo transporte e não confirmados, sem destinatários. **Falha original não comprova que o servidor de e-mail não recebeu a mensagem:** a avaliação de evidência externa permanece sob responsabilidade administrativa. A aceitação do reenvio tampouco comprova recebimento no inbox.
+- Testes verificam confirmação, ID/caso, exclusões, idempotência, revogação, incidentes resolvidos, cotas e falhas de SMTP sanitizadas. Integração automática de DSN/webhooks assinados e entrega real continuam pendentes; NX-039/041 permanecem PARCIAIS.
+
 ### Cotas de notificações e revisão manual de devoluções — incremento 34 (parcial)
 
 - O agendador de e-mail mantém limites rigorosos de **50 tentativas por execução**, **20 por tenant na última hora** e **100 globais na última hora** (valores configuráveis, com validação antes do envio). A reserva de envio bloqueia uma linha global no banco para serializar os contadores em SQLite e PostgreSQL. Isso evita explosões de e-mail entre workers da mesma base.

@@ -321,3 +321,17 @@ php artisan nexa:alerts:reconcile-collector-mail 124 --type=complaint --confirm-
 Tipos aceitos: `hard_bounce`, `soft_bounce`, `complaint`. O comando recusa IDs inválidos, registros não aceitos, tipos desconhecidos e ausência da confirmação explícita. Atualiza status para `returned` ou `complaint` e cria auditoria com categoria fixa sem dados de transporte, nome ou endereço. Repetições não modificam o registro. **Não consulta uma caixa de e-mail, não verifica a autenticidade da evidência, não envia/reenvia mensagens**; a revisão é responsabilidade do operador. A API administrativa e o portal exibem quantidades agregadas de aceitos, não confirmados, devolvidos e denúncias, com as mesmas restrições de tenant/carteira.
 
 **Limites pendentes:** falta integração segura com DSN/webhooks do provedor, confirmação de entrega no destinatário, reenvio supervisionado com prova/controle de duplicidade, testes de concorrência cross-process do orçamento de e-mails, SMTP de produção e políticas de privacidade/retenção. NX-039/041 permanecem PARCIAIS.
+
+## Reenvio manual supervisionado — entrega 35
+
+O comando administrativo **não é agendado** e não está exposto por HTTP:
+```sh
+php artisan nexa:alerts:replay-collector-mail 123 --review-reference=CASE-123 --confirm-not-accepted
+```
+O argumento 123 é o ID de uma tentativa original com `status=failed`; a referência de caso deve ter 4–64 caracteres ASCII alfanuméricos, ponto, hífen ou sublinhado. A flag explícita exige que o responsável tenha revisado evidências externas suficientes para concluir que o provedor **não aceitou** a mensagem. A aplicação não consegue validar essa evidência automaticamente; use procedimento administrativo que registre a decisão fora do sistema. Um erro SMTP original pode ocorrer **depois** de uma entrega, portanto reenvio sem investigação pode duplicar o aviso.
+
+Requer incidentes e e-mails opt-in ativos, alerta ainda aberto, destinatário ativo e verificado com o papel permitido, cliente/agente/tenant ativos e orçamento horário disponível. Apenas o erro original `failed` pode receber uma **única** tentativa de replay; tentativas originais ambíguas (`attempting`), aceitas, devolvidas, reclamadas ou puladas **nunca** são elegíveis. Uma falha de reenvio não desencadeia segunda tentativa.
+
+`collector_notification_replays` preserva a evidência de autorização e os resultados `attempting/accepted/failed/skipped`; a tentativa original nunca é sobrescrita. Índice único por original limita a uma tentativa independente da quantidade de operadores ou processos. O envio ocorre fora da transação, mas a reserva usa a mesma trava persistente de orçamento dos e-mails automáticos. O log e as auditorias armazenam apenas categoria genérica para erro de transporte; nenhum erro SMTP bruto ou endereço de destinatário é exposto no painel.
+
+**Limites:** o sinal `accepted` indica somente que a biblioteca Mail retornou sem exceção, não entrega. Ainda não há API de provider/webhook assinada, DSN automático, prova de entrega, controle de preferência/opt-out por destinatário nem testes de SMTP real. Só operadores com autorização para executar Artisan no host podem usar o comando. NX-039/041 permanecem PARCIAIS.
