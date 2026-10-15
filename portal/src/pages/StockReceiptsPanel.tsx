@@ -72,7 +72,8 @@ export function StockReceiptsPanel({ token }: { token: string | null }) {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['stock-receipts'] }),
         queryClient.invalidateQueries({ queryKey: ['stock-list'] }),
-        queryClient.invalidateQueries({ queryKey: ['reorder-needs'] }),
+        queryClient.invalidateQueries({ queryKey: ['stock-reorder-needs'] }),
+        queryClient.invalidateQueries({ queryKey: ['plan-reorder-needs'] }),
       ]);
     },
   });
