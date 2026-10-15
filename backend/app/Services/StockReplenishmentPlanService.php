@@ -29,6 +29,8 @@ final class StockReplenishmentPlanService
                 'responsible:id,name', 'createdBy:id,name', 'approvedBy:id,name', 'cancelledBy:id,name',
                 'items' => static fn ($q) => $q->orderBy('id')
                     ->withSum('shipments as allocated_quantity', DB::raw('quantity - cancelled_quantity'))
+                    ->withSum(['purchaseOrderLines as purchased_quantity' => static fn ($query) =>
+                        $query->whereHas('purchaseOrder', static fn ($orders) => $orders->where('status', 'approved'))], 'quantity')
                     ->withSum('shipments as shipped_quantity_total', 'shipped_quantity')
                     ->withSum('shipments as received_quantity_total', 'received_quantity')
                     ->withSum('shipments as lost_quantity_total', 'lost_quantity')
