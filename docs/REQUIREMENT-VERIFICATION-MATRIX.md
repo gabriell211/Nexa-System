@@ -311,7 +311,7 @@
 | NX-283 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Validação manual/algorítmica de trocas espúrias; IA opcional futura deve ser explicável, aferível e sem dependência obrigatória. |
 | NX-284 | Operação da plataforma, SaaS e cobrança do provedor | PARCIAL — cadastro de marca/categoria, fornecedor e compatibilidade; sem taxonomia completa e qualificação operacional | Permitir cadastrar tipos, marcas, fornecedores e compatibilidades; bloquear exclusão de cadastro com histórico dependente. |
 | NX-285 | Operação da plataforma, SaaS e cobrança do provedor | PARCIAL — cor, rendimento nominal e preço do SKU; sem SKU externo, rendimento por compatibilidade e vínculo por atendimento | SKU externo, cor, rendimento por compatibilidade, preço de venda e fornecedor associados a estoque e atendimentos. |
-| NX-286 | Operação da plataforma, SaaS e cobrança do provedor | PARCIAL — entrada documentada por linha, com fornecedor/lote/custo; sem entrada múltipla, XML/NF-e e validação fiscal | Entrada múltipla para estoque do provedor ou cliente, com nota fiscal e origem documental. |
+| NX-286 | Operação da plataforma, SaaS e cobrança do provedor | PARCIAL — entrada de até 30 linhas por nota, transação atômica, fornecedor/lote/custo; sem XML/NF-e e homologação fiscal | Entrada múltipla para estoque do provedor ou cliente, com nota fiscal e origem documental. |
 | NX-287 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Definir explicitamente compatibilidade ao criar SKU; vazio não pode significar todos os modelos inadvertidamente. |
 | NX-288 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Permitir avaliação de troca prematura por nível informado, estimativa ou eficiência e limiar por tipo. |
 | NX-289 | Operação da plataforma, SaaS e cobrança do provedor | NÃO COMPROVADO | Falha de comunicação só gera alerta após carência configurada, com recuperação por três leituras estáveis como referência. |
@@ -525,3 +525,8 @@ Essa prova não valida reservas vinculadas a chamados, cluster PostgreSQL, outro
 - NX-105/106/107: planos de reposição com prazo, itens sugeridos e manuais, ajuste e segunda aprovação; Playwright corrigido passou no CI. Periodicidade, previsão por equipamentos e acompanhamento da execução do envio continuam fora de escopo.
 - NX-099/284/285: gestão de fornecedores buscável e auditada, sem exclusão do histórico; testes SQLite/PostgreSQL e navegador da Entrega 47 aprovados no PR #37. Não comprova cadastro fiscal homologado nem rendimento específico por modelo.
 - NX-101/286: formulário de recebimento documentado de uma linha utiliza o ledger já existente, mantém UUID em tentativas inalteradas e disponibiliza histórico com lote, custo e local. E2E da Entrega 48 e aceitação física/fiscal ainda dependem do CI e homologação. Não é importação de NF-e nem recebimento em massa.
+
+## Entrega 49 — incremento técnico de entradas múltiplas (15/10/2026)
+
+- NX-099/NX-286: recebimento documentado com cabeçalho, 1 a 30 linhas, idempotência por UUID e conteúdo, reversão transacional total, registro real de estoque e lotes via ledger existente. O teste com uma segunda linha inválida precisa comprovar rollback de saldo, lote, documento e auditoria; E2E valida duas linhas pelo navegador.
+- Não há homologação fiscal com notas reais, XML NF-e, anexos ou assinatura, contas a pagar, código de barras e conferência física automatizada. Nunca marcar esses requisitos como completos apenas com CI verde.
