@@ -21,9 +21,11 @@ interface CollectorIncident {
   customer_id:number;customer:{id:number;name:string}|null;
   status:IncidentStatus;code:string;last_heartbeat_at:string;
   detected_at:string;resolved_at:string|null;resolution_reason:string|null;
-  email_accepted_count:number;email_unconfirmed_count:number;
+  email_accepted_count:number;email_provider_delivered_count:number;
+  email_unconfirmed_count:number;
   email_returned_count:number;email_complaint_count:number;
-  email_replay_accepted_count:number;email_replay_unconfirmed_count:number;
+  email_replay_accepted_count:number;email_replay_delivered_count:number;
+  email_replay_unconfirmed_count:number;
 }
 const incidentStates:Record<IncidentStatus,string> = {
   active:'Sem heartbeat recente',resolved:'Heartbeat restabelecido',closed:'Cadastro/organização desativado',
@@ -144,10 +146,12 @@ export function CollectorsPage() {
             <td>{dateOrUnknown(incident.detected_at)}</td>
             <td>{dateOrUnknown(incident.resolved_at)}</td>
             <td>{incident.email_accepted_count} aceita(s) pelo transporte
+              {incident.email_provider_delivered_count>0?`, ${incident.email_provider_delivered_count} entregue(s) pelo provedor`:''}
               {incident.email_unconfirmed_count>0?`, ${incident.email_unconfirmed_count} sem confirmação`:''}
               {incident.email_returned_count>0?`, ${incident.email_returned_count} devolvida(s)`:''}
               {incident.email_complaint_count>0?`, ${incident.email_complaint_count} denúncia(s) de spam`:''}
               {incident.email_replay_accepted_count>0?`, ${incident.email_replay_accepted_count} reenvio(s) supervisionado(s) aceito(s)`:''}
+              {incident.email_replay_delivered_count>0?`, ${incident.email_replay_delivered_count} reenvio(s) entregue(s) pelo provedor`:''}
               {incident.email_replay_unconfirmed_count>0?`, ${incident.email_replay_unconfirmed_count} reenvio(s) sem confirmação`:''}</td>
           </tr>)}</tbody>
         </table></div>}

@@ -37,7 +37,8 @@ final class ReconcileCollectorMail extends Command
             $record=CollectorIncidentNotification::query()->lockForUpdate()->find($id);
             // A provider can bounce after the transport has accepted a
             // message; cannot declare a failed or ambiguous attempt bounced.
-            if ($record===null || $record->status!=='accepted') return false;
+            if ($record===null || !in_array($record->status,['accepted','delivered'],true)) return false;
+            $previous=$record->status;
             $record->status=$type==='complaint'?'complaint':'returned';
             $record->error_category=$type;
             $record->save();
@@ -48,7 +49,7 @@ final class ReconcileCollectorMail extends Command
                 'entity_type'=>'CollectorIncidentNotification',
                 'entity_id'=>$record->id,
                 'origin'=>'manual-backend-delivery-review',
-                'before_state'=>['status'=>'accepted'],
+                'before_state'=>['status'=>$previous],
                 'after_state'=>[
                     'status'=>$record->status,
                     'category'=>$type,

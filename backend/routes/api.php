@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V1\CollectorIngestController;
 use App\Http\Controllers\Api\V1\CollectorHeartbeatController;
 use App\Http\Controllers\Api\V1\CollectorAgentController;
 use App\Http\Controllers\Api\V1\CollectorHealthIncidentController;
+use App\Http\Controllers\Api\V1\ResendWebhookController;
 use App\Http\Controllers\Api\V1\CostCenterController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\CustomerDepartmentController;
@@ -107,6 +108,7 @@ $registerBackoffice = static function (): void {
 };
 
 Route::prefix('v1')->group(function () use ($registerBackoffice): void {
+    Route::post('/webhooks/resend', ResendWebhookController::class)->middleware('throttle:60,1');
     Route::post('/collector/ingest', CollectorIngestController::class)->middleware(['nexa.bearer','throttle:120,1']);
     Route::post('/collector/heartbeat', CollectorHeartbeatController::class)->middleware(['nexa.bearer','throttle:120,1']);
 

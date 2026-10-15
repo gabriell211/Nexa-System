@@ -17,6 +17,14 @@
 - **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
 
+### Resend opt-in: webhook assinado e eventos de entrega — incremento 36 (parcial)
+
+- O backend agora oferece um adaptador de saída `NEXA_COLLECTOR_MAIL_DRIVER=resend` para a **API HTTPS do Resend**, com token provisionado em segredo, idempotency key por tentativa e captura do UUID de e-mail retornado. Sem opt-in, o Laravel Mail genérico continua funcionando e **não é associado automaticamente a webhooks**.
+- O endpoint `POST /api/v1/webhooks/resend` fica desativado por padrão. Em modo Resend exige `NEXA_RESEND_WEBHOOKS_ENABLED=true`, segredo de assinatura `whsec_...`, cabeçalhos `svix-id/timestamp/signature`, HMAC-SHA256 validado sobre **bytes originais do corpo**, janela estrita de ±5 minutos e limite de 64 KiB. Falhas são recusadas antes de processar JSON; endpoint usa rate limit.
+- Eventos válidos `email.delivered`, `email.bounced` e `email.complained` são relacionados **exclusivamente pelo UUID devolvido na API Resend**, nunca por destinatário/assunto. Deduplicação transacional do hash de ID Svix; evento válido não relacionado é marcado `unmatched`, sem modificar registros de outras empresas. Devolução e denúncia prevalecem sobre entrega tardia, com auditoria sanitizada.
+- Suporte a notificações originais e reenvios únicos. Histórico administrativo distingue aceitação pelo transporte de **entrega reportada pelo provedor**, sem confundir com leitura da mensagem. Nenhuma credencial, corpo de webhook, destinatário ou erro SMTP bruto é persistido no diário de eventos.
+- Testes automatizados simulam API HTTP, eventos assinados, falsificações, replay, atraso de timestamp, evento sem correlação, transições fora de ordem e reenvio. **Ainda faltam configuração de domínio real, webhook real em produção, reconciliação de eventos recebidos antes de salvar o UUID, comprovação de caixa de entrada e homologação física**. NX-039/041 permanecem PARCIAIS.
+
 ### Reenvio supervisionado de notificação — incremento 35 (parcial)
 
 - Após análise independente do provedor e confirmação explícita de **não aceitação do envio original**, um operador autorizado no backend pode usar `nexa:alerts:replay-collector-mail ID --review-reference=CASO-123 --confirm-not-accepted`. Não há reenvio por scheduler, endpoint público, clique acidental no portal ou webhook não autenticado.

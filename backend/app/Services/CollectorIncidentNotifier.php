@@ -167,7 +167,8 @@ final class CollectorIncidentNotifier
             $stats['attempted']++;
             try {
                 $tenantName=DB::table('tenants')->where('id',$incident->tenant_id)->value('name')??'Nexa';
-                Mail::to($reservation['email'])->send(new CollectorHealthIncidentMail(
+                $providerId=app(CollectorMailTransport::class)->send(
+                    $reservation['email'],new CollectorHealthIncidentMail(
                     (string)$tenantName,
                     (string)$incident->customer->name,
                     (int)$incident->collector_agent_id,
@@ -175,8 +176,8 @@ final class CollectorIncidentNotifier
                     $incident->last_heartbeat_at->toIso8601String(),
                     $incident->detected_at->toIso8601String(),
                     $stage
-                ));
-                $this->complete($noticeId,'accepted',$now);
+                ),'nexa-collector-notice-'.$noticeId);
+                $this->complete($noticeId,'accepted',$now,$providerId);
                 $stats['accepted']++;
             } catch (\Throwable $error) {
                 // Never persist raw transport errors: SMTP exceptions can
@@ -187,13 +188,14 @@ final class CollectorIncidentNotifier
         }
     }
 
-    private function complete(int $noticeId,string $status,?CarbonImmutable $accepted): void
+    private function complete(int $noticeId,string $status,?CarbonImmutable $accepted,?string $providerId=null): void
     {
-        DB::transaction(function () use ($noticeId,$status,$accepted): void {
+        DB::transaction(function () use ($noticeId,$status,$accepted,$providerId): void {
             $record=CollectorIncidentNotification::query()->lockForUpdate()->findOrFail($noticeId);
             if ($record->status!=='attempting') return;
             $record->status=$status;
             $record->accepted_at=$accepted;
+            $record->provider_email_id=$providerId;
             $record->error_category=$status==='failed'?'transport_failure':null;
             $record->save();
             AuditEntry::query()->create([

@@ -27,11 +27,13 @@ final class CollectorHealthIncidentController extends Controller
             ->where('tenant_id',$tenant->id)
             ->with(['agent:id,collector_id,customer_id','customer:id,name'])
             ->withCount([
-                'notifications as email_accepted_count'=>fn($q)=>$q->where('status','accepted'),
+                'notifications as email_accepted_count'=>fn($q)=>$q->whereIn('status',['accepted','delivered']),
+                'notifications as email_provider_delivered_count'=>fn($q)=>$q->where('status','delivered'),
                 'notifications as email_failed_count'=>fn($q)=>$q->whereIn('status',['failed','attempting']),
                 'notifications as email_returned_count'=>fn($q)=>$q->where('status','returned'),
                 'notifications as email_complaint_count'=>fn($q)=>$q->where('status','complaint'),
-                'notificationReplays as email_replay_accepted_count'=>fn($q)=>$q->where('status','accepted'),
+                'notificationReplays as email_replay_accepted_count'=>fn($q)=>$q->whereIn('status',['accepted','delivered']),
+                'notificationReplays as email_replay_delivered_count'=>fn($q)=>$q->where('status','delivered'),
                 'notificationReplays as email_replay_unconfirmed_count'=>fn($q)=>$q->whereIn('status',['attempting','failed']),
             ])
             ->when(isset($filters['status']),fn($q)=>$q->where('status',$filters['status']))
@@ -56,10 +58,12 @@ final class CollectorHealthIncidentController extends Controller
                 'resolved_at'=>$incident->resolved_at?->toIso8601String(),
                 'resolution_reason'=>$incident->resolution_reason,
                 'email_accepted_count'=>(int)$incident->email_accepted_count,
+                'email_provider_delivered_count'=>(int)$incident->email_provider_delivered_count,
                 'email_unconfirmed_count'=>(int)$incident->email_failed_count,
                 'email_returned_count'=>(int)$incident->email_returned_count,
                 'email_complaint_count'=>(int)$incident->email_complaint_count,
                 'email_replay_accepted_count'=>(int)$incident->email_replay_accepted_count,
+                'email_replay_delivered_count'=>(int)$incident->email_replay_delivered_count,
                 'email_replay_unconfirmed_count'=>(int)$incident->email_replay_unconfirmed_count,
             ];
         }));
