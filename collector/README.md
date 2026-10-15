@@ -391,3 +391,8 @@ php artisan nexa:mail:check-resend-backlog --json --fail-on-alert
 ```
 
 O retorno é somente agregado. Código zero significa ausência de alerta ou monitor **desabilitado** (nesse caso o JSON informa `disabled`); código não zero pode indicar alerta ou configuração inválida, que devem ser distinguidos pela saída. Eventos correlacionáveis com atraso de pelo menos 2 minutos ou total pendente >= 100 são críticos; pendências ainda desconhecidas com 15 minutos são aviso. Todos esses limiares são configuráveis. O comando não processa pendências: mantenha o scheduler `nexa:mail:reconcile-resend-webhooks` funcionando separadamente. Números históricos de `expired` não provam erro novo nem entrega real. Sem integração automática com sistema externo de alertas, testes reais de domínio Resend ou homologação de produção.
+
+
+## Recuperação após indisponibilidade prolongada — entrega 39
+
+A expiração configurada por `NEXA_RESEND_PENDING_HOURS` aplica-se **somente a eventos assinados ainda sem UUID associado** no banco. Se o envio original ou reenvio já tiver `provider_email_id` persistido, o evento permanece `pending` até ser conciliado, mesmo após parada do Scheduler por mais que o período de retenção. O comando `nexa:mail:reconcile-resend-webhooks` continua seguro para repetição e não envia e-mails. Evento desconhecido expirado preserva seu hash de deduplicação e não é reativado automaticamente se a correspondência só for gravada depois da expiração. Ainda faltam ensaios físicos, validação multi-worker, provedor real e política de retenção de registros históricos.

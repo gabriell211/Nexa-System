@@ -98,9 +98,20 @@ final class ResendWebhookProcessor
         if ($limit<1 || $limit>500 || $maxAgeHours<1 || $maxAgeHours>168) {
             throw new \InvalidArgumentException('Invalid provider reconciliation bounds.');
         }
+        // Never discard a signed event that has a known provider UUID.
+        // A scheduler outage can outlast the unknown-event retention window:
+        // those correlated events must still be eligible for recovery.
         $expired=DB::table('collector_mail_webhook_events')
             ->where('outcome','pending')
             ->where('received_at','<',now('UTC')->subHours($maxAgeHours))
+            ->whereNotExists(function ($sub): void {
+                $sub->selectRaw('1')->from('collector_incident_notifications as notices')
+                    ->whereColumn('notices.provider_email_id','collector_mail_webhook_events.provider_email_id');
+            })
+            ->whereNotExists(function ($sub): void {
+                $sub->selectRaw('1')->from('collector_notification_replays as replays')
+                    ->whereColumn('replays.provider_email_id','collector_mail_webhook_events.provider_email_id');
+            })
             ->update(['outcome'=>'expired']);
 
         $hashes=DB::table('collector_mail_webhook_events')
