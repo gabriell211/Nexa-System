@@ -12,6 +12,7 @@ final class StockShipmentResource extends JsonResource
     {
         return [
             'id'=>$this->id, 'request_id'=>$this->request_id,
+            'replenishment_plan_item_id'=>$this->replenishment_plan_item_id,
             'item_id'=>$this->item_id, 'source_location_id'=>$this->source_location_id,
             'destination_location_id'=>$this->destination_location_id,
             'quantity'=>$this->quantity, 'shipped_quantity'=>$this->shipped_quantity,

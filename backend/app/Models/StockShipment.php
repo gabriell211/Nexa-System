@@ -12,7 +12,7 @@ final class StockShipment extends Model
     protected $fillable = [
         'tenant_id','request_id','item_id','source_location_id','destination_location_id',
         'quantity','shipped_quantity','received_quantity','lost_quantity','cancelled_quantity',
-        'status','reason','created_by',
+        'status','reason','created_by','replenishment_plan_item_id',
     ];
     protected function casts(): array
     {
@@ -30,4 +30,5 @@ final class StockShipment extends Model
     public function source(): BelongsTo { return $this->belongsTo(StockLocation::class, 'source_location_id'); }
     public function destination(): BelongsTo { return $this->belongsTo(StockLocation::class, 'destination_location_id'); }
     public function events(): HasMany { return $this->hasMany(StockShipmentEvent::class, 'shipment_id'); }
+    public function replenishmentLine(): BelongsTo { return $this->belongsTo(StockReplenishmentPlanItem::class, 'replenishment_plan_item_id'); }
 }

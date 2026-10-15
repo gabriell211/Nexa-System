@@ -7,6 +7,7 @@ use App\Models\StockItem;
 use App\Models\StockLocation;
 use App\Models\StockReorderPolicy;
 use App\Models\StockReplenishmentPlan;
+use App\Models\StockShipment;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +26,7 @@ final class StockReplenishmentPlanService
         return StockReplenishmentPlan::query()->where('tenant_id', $tenantId)
             ->with([
                 'responsible:id,name', 'createdBy:id,name', 'approvedBy:id,name', 'cancelledBy:id,name',
-                'items' => static fn ($q) => $q->orderBy('id'),
+                'items' => static fn ($q) => $q->orderBy('id')->withSum('shipments as allocated_quantity', DB::raw('quantity - cancelled_quantity')),
                 'items.item', 'items.location',
             ])->findOrFail($planId);
     }
@@ -204,6 +205,13 @@ final class StockReplenishmentPlanService
             }
             if ((int) $plan->version !== (int) $data['expected_version']) {
                 abort(409, 'Versão desatualizada. Recarregue o plano.');
+            }
+            if ($plan->status === 'approved' && StockShipment::query()
+                ->where('tenant_id', $tenant->id)
+                ->whereIn('replenishment_plan_item_id', DB::table('stock_replenishment_plan_items')
+                    ->select('id')->where('tenant_id', $tenant->id)->where('plan_id', $planId))
+                ->exists()) {
+                abort(409, 'Há remessas vinculadas ao plano. Encerre a logística antes de cancelar.');
             }
             $before = $this->summary($plan);
             $this->advance($plan, (int) $data['expected_version'], [

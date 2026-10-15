@@ -719,3 +719,11 @@ Pendentes: restrições por unidade/departamento, bloqueios contextuais por aç�
 - Portal de estoque mostra pesquisa de notas em lote, paginação e janela de consulta por linha. Ao confirmar uma nota em lote, a lista é invalidada e atualizada sem recarregar a página; lançamentos unitários não aparecem artificialmente como lote.
 - Novos testes Laravel cobrem dois lotes, buscas case-insensitive, paginação, ordenação, fornecedor, isolamento de empresa e limites de validação; o cenário E2E existente foi ampliado para consultar e abrir a nota criada.
 - Nenhuma edição retroativa de nota, exclusão fiscal, vínculo a ordem de compra ou aprovação automática foi introduzido. Estado ainda PARCIAL até integração do CI e homologação fiscal.
+
+## Entrega 51 — associação explícita de remessas a reposições aprovadas (15/10/2026)
+
+- Migração adiciona FK composta opcional de stock_shipments para a linha do plano no mesmo tenant, índice de consulta e unicidade tenant/id nas linhas. Remessas já existentes permanecem sem vínculo; nada é reatribuído retroativamente.
+- Nova API reserva uma remessa vinculada somente após ação do operador: plano aprovado, item/local da linha preservados, origem ativa, estoque disponível e quantidade total alocada à linha limitada pelo aprovado. Locks SKU → plano → linha serializam a decisão; a cota considera quantidade - cancelamentos de remessas, mantendo expedido/recebido/perdido na contabilidade da proposta.
+- Reenvio de UUID da mesma linha, dados e operador preserva a remessa; reutilização divergente é rejeitada. O serviço de remessas existente executa posteriormente dispatch/receive, lançando baixas/entradas somente nesses eventos auditados. Um plano aprovado com remessa vinculada não pode ser cancelado silenciosamente.
+- Portal exibe alocado/restante, seleção paginada do local de origem, confirmação de reserva e remessas vinculadas. Testes feature e E2E cobrem a ligação manual, não duplicação, limites e movimentações físicas confirmadas.
+- A validação do PR ainda depende do CI; sem fluxo de pedidos de compra, automação de envio, conciliação de entregas externas e homologação operacional. NX-105/106/107/108/110 ainda não têm aceite integral.
