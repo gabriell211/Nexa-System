@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, queryString, readableError } from '../api';
 import type { Page } from '../types';
+import { SupplierReplacementFollowupsPanel } from './SupplierReplacementFollowupsPanel';
 
 interface SupplierReturn {
   id: number; status: 'pending' | 'completed' | 'cancelled'; version: number;
@@ -197,5 +198,7 @@ export function SupplierReturnsPanel({ orderId, lines, token, role, userId, onCh
     {cancel.error && <p role="alert" className="notice error">{readableError(cancel.error)}</p>}
     {(returns.data?.meta?.total ?? returns.data?.total ?? 0) > 100 &&
       <p className="stock-hint">Exibindo as 100 devoluções mais recentes deste pedido.</p>}
+    <SupplierReplacementFollowupsPanel orderId={orderId}
+      returns={returns.data?.data ?? []} token={token} role={role} userId={userId} />
   </section>;
 }
