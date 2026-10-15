@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { History, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
 import type { Page, Printer } from '../types';
 
