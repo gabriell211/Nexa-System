@@ -18,27 +18,40 @@ use Illuminate\Support\Facades\Mail;
  */
 final class CollectorIncidentNotifier
 {
-    public function send(int $escalationMinutes): array
-    {
+    public function send(
+        int $escalationMinutes,
+        int $maxPerRun=50,
+        int $maxPerTenantHour=20,
+        int $maxGlobalHour=100
+    ): array {
         if ($escalationMinutes<15 || $escalationMinutes>10080) {
             throw new \InvalidArgumentException('Escalation must be 15..10080 minutes.');
         }
+        if ($maxPerRun<1 || $maxPerRun>500
+            || $maxPerTenantHour<1 || $maxPerTenantHour>1000
+            || $maxGlobalHour<1 || $maxGlobalHour>10000
+            || $maxPerTenantHour>$maxGlobalHour) {
+            throw new \InvalidArgumentException('Invalid mail budgets; per-tenant budget cannot exceed global hourly budget.');
+        }
         $now=CarbonImmutable::now('UTC');
-        $stats=['incidents'=>0,'attempted'=>0,'accepted'=>0,'failed'=>0,'skipped'=>0];
+        $stats=['incidents'=>0,'attempted'=>0,'accepted'=>0,'failed'=>0,'skipped'=>0,'deferred'=>0];
         CollectorHealthIncident::query()->where('status','active')
-            ->orderBy('id')->chunkById(100,function ($incidents) use ($now,$escalationMinutes,&$stats): void {
+            ->orderBy('id')->chunkById(100,function ($incidents) use ($now,$escalationMinutes,$maxPerRun,$maxPerTenantHour,$maxGlobalHour,&$stats): void {
                 foreach ($incidents as $incident) {
                     $stats['incidents']++;
-                    $this->dispatchStage((int)$incident->id,'initial',$now,$stats);
+                    $this->dispatchStage((int)$incident->id,'initial',$now,$maxPerRun,$maxPerTenantHour,$maxGlobalHour,$stats);
                     if ($incident->detected_at?->lessThanOrEqualTo($now->subMinutes($escalationMinutes))) {
-                        $this->dispatchStage((int)$incident->id,'escalation',$now,$stats);
+                        $this->dispatchStage((int)$incident->id,'escalation',$now,$maxPerRun,$maxPerTenantHour,$maxGlobalHour,$stats);
                     }
                 }
             });
         return $stats;
     }
 
-    private function dispatchStage(int $incidentId,string $stage,CarbonImmutable $now,array &$stats): void
+    private function dispatchStage(
+        int $incidentId,string $stage,CarbonImmutable $now,
+        int $maxPerRun,int $maxPerTenantHour,int $maxGlobalHour,array &$stats
+    ): void
     {
         $incident=CollectorHealthIncident::query()->with(['agent','customer'])
             ->find($incidentId);
@@ -61,28 +74,60 @@ final class CollectorIncidentNotifier
             ->select('users.id','users.email')->orderBy('users.id')->limit(50)->get();
 
         foreach ($recipients as $recipient) {
-            // Lock the incident as the check is made. The unique DB index is
-            // the final protection against concurrent scheduler instances.
-            $noticeId=DB::transaction(function () use ($incidentId,$recipient,$stage,$now): ?int {
+            if ($stats['attempted'] >= $maxPerRun) {
+                $stats['deferred']++;
+                continue;
+            }
+            // Lock order: global budget row -> incident. All senders take the
+            // same cross-tenant row lock before checking the persisted hourly
+            // reservation count. No external mail is sent inside a DB lock.
+            $reservation=DB::transaction(function () use (
+                $incidentId,$recipient,$stage,$now,$maxPerTenantHour,$maxGlobalHour
+            ): array {
+                $lock=DB::table('collector_notification_rate_locks')
+                    ->where('id',1)->lockForUpdate()->first();
+                if ($lock===null) {
+                    throw new \RuntimeException('Collector mail budget lock missing; run migrations.');
+                }
                 $fresh=CollectorHealthIncident::query()->lockForUpdate()->find($incidentId);
-                if ($fresh===null || $fresh->status!=='active') return null;
+                if ($fresh===null || $fresh->status!=='active') return ['kind'=>'skip'];
                 if (CollectorIncidentNotification::query()
                     ->where('collector_health_incident_id',$incidentId)
                     ->where('recipient_user_id',$recipient->id)
-                    ->where('stage',$stage)->exists()) return null;
-                return (int)CollectorIncidentNotification::query()->create([
+                    ->where('stage',$stage)->exists()) return ['kind'=>'skip'];
+
+                $since=$now->subHour();
+                $global=CollectorIncidentNotification::query()
+                    ->where('attempted_at','>',$since)->count();
+                $tenant=CollectorIncidentNotification::query()
+                    ->where('tenant_id',$fresh->tenant_id)
+                    ->where('attempted_at','>',$since)->count();
+                // Includes failed/ambiguous/skipped reservations: strict
+                // conservative admission, never exceeding configured quotas.
+                if ($global >= $maxGlobalHour || $tenant >= $maxPerTenantHour) {
+                    return ['kind'=>'deferred'];
+                }
+                $notification=CollectorIncidentNotification::query()->create([
                     'tenant_id'=>$fresh->tenant_id,
                     'collector_health_incident_id'=>$incidentId,
                     'recipient_user_id'=>$recipient->id,
                     'stage'=>$stage,
                     'status'=>'attempting',
                     'attempted_at'=>$now,
-                ])->id;
+                ]);
+                return ['kind'=>'reserved','id'=>(int)$notification->id];
             },3);
-            if ($noticeId===null) {
+            if ($reservation['kind']==='skip') {
                 $stats['skipped']++;
                 continue;
             }
+            if ($reservation['kind']==='deferred') {
+                // Do not write a notification row: the next scheduler tick
+                // may retry once space opens in the sliding budget window.
+                $stats['deferred']++;
+                continue;
+            }
+            $noticeId=$reservation['id'];
 
             // A concurrent heartbeat can resolve this incident between the
             // reservation and transport attempt. Avoid sending in that case.
