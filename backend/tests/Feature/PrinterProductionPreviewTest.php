@@ -153,6 +153,33 @@ final class PrinterProductionPreviewTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_more_than_twenty_thousand_samples_fails_without_partial_calculation(): void
+    {
+        [$tenant,,$printer,,$token]=$this->fixture();
+        $rows=[];
+        for ($i=0; $i<20001; $i++) {
+            $rows[]=[
+                'tenant_id'=>$tenant->id,
+                'printer_id'=>$printer->id,
+                'sample_id'=>sprintf('00000000-0000-4000-8000-%012d',$i+1),
+                'collected_at'=>'2026-10-14 09:00:00',
+                'received_at'=>'2026-10-14 09:01:00',
+                'meter_total'=>100,'meter_mono'=>null,'meter_color'=>null,
+            ];
+            if (count($rows)===250) {
+                DB::table('printer_readings')->insert($rows);
+                $rows=[];
+            }
+        }
+        if ($rows!==[]) {
+            DB::table('printer_readings')->insert($rows);
+        }
+
+        $this->withToken($token)->getJson($this->endpoint($printer->id))
+            ->assertUnprocessable()->assertJsonValidationErrors(['start_date']);
+        $this->assertDatabaseCount('printer_readings',20001);
+    }
+
     public function test_foreign_tenant_and_restricted_customer_cannot_read_derived_statistics(): void
     {
         [$tenant,$customer,$printer,$manager,$token]=$this->fixture();
