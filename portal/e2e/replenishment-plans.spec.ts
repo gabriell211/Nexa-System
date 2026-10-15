@@ -503,7 +503,7 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       const ownerFollowups = owner.getByRole('dialog')
         .getByRole('region', { name: 'Acompanhamento de substituições' });
       await ownerFollowups.getByRole('button', { name: 'Abrir acompanhamento ' + caseId }).click();
-      await ownerFollowups.getByLabel('Atualização *')
+      await ownerFollowups.getByLabel('Atualização *', { exact: true })
         .selectOption('supplier_confirmed');
       await ownerFollowups.getByLabel('Descrição da atualização *')
         .fill('Fornecedor respondeu formalmente e confirmou substituição futura');
