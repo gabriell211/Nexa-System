@@ -83,16 +83,9 @@ final class StockPurchaseOrderController extends Controller
             'expected_version' => ['required','integer','min:1'],
             'reason' => ['required','string','min:5','max:500'],
         ]);
-        $existing = $this->orders->find(
-            (int) $request->attributes->get('nexa_tenant')->id, $order
-        );
-        $manager = in_array($request->attributes->get('nexa_role'), ['owner','admin','manager'], true);
-        if (!$manager && ($existing->status !== 'draft'
-            || (int) $existing->created_by_user_id !== (int) $request->user()->id)) {
-            abort(403, 'Somente a gestão cancela compras aprovadas.');
-        }
         return new StockPurchaseOrderResource($this->orders->cancel(
-            $request->attributes->get('nexa_tenant'), $request->user(), $order, $data
+            $request->attributes->get('nexa_tenant'), $request->user(), $order, $data,
+            (string) $request->attributes->get('nexa_role')
         ));
     }
 }
