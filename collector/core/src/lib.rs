@@ -1,5 +1,6 @@
 pub mod recovery_guard;
 pub mod discovery;
+pub mod usb_canon;
 use aes_gcm::{
     aead::{Aead, AeadCore, OsRng, Payload},
     Aes256Gcm, KeyInit, Nonce,
