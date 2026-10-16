@@ -1,5 +1,20 @@
 # Nexa Collector — cliente e limites de homologação
 
+## Catálogo MIB/OID multi-fabricante (8 marcas)
+
+Novo catálogo local em `core/src/mib_registry.rs`, com os OIDs das
+MIBs públicas SNMPv2, Host Resources e Printer-MIB v2, além das raízes
+empresariais Ricoh, Konica Minolta, Kyocera, HP, Samsung, Canon, Epson
+e Xerox. Rode `nexa-collector-daemon --mib-catalog` para obter JSON
+sem ligar-se a qualquer impressora ou consultar credenciais.
+
+A base não configura automaticamente `marker_counter_oid`, não
+faz WALK SNMP e não ativa coleta/faturamento. Os índices são dinâmicos,
+e fabricante não significa modelo/firmware homologado. Verifique as
+fontes e os requisitos de teste em
+[`docs/NEXA-MIB-OID-CATALOG-2026-10-16.md`](../docs/NEXA-MIB-OID-CATALOG-2026-10-16.md).
+
+
 A **interface desktop usa Tauri 2.12 + React 19 + TypeScript**. A coleta roda no **daemon Rust separado**. Fechar o console não deve encerrar o daemon, desde que o serviço tenha sido iniciado pelo sistema operacional.
 
 ## Descoberta em CIDRs autorizados — incremento parcial
