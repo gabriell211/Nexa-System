@@ -122,6 +122,12 @@ export default function App() {
   const [rangeDraft, setRangeDraft] = useState("");
   const [rangeDiscovering, setRangeDiscovering] = useState(false);
   const [rangeError, setRangeError] = useState<string | null>(null);
+  const [scheduleEnabled, setScheduleEnabled] = useState(false);
+  const [scheduleHours, setScheduleHours] = useState(24);
+  const [scheduleRanges, setScheduleRanges] = useState("");
+  const [scheduleSaving, setScheduleSaving] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
+  const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
   const [reviewingIp, setReviewingIp] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewNotice, setReviewNotice] = useState<string | null>(null);
@@ -199,6 +205,38 @@ export default function App() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    if (!snapshot?.discovery_schedule) return;
+    setScheduleEnabled(snapshot.discovery_schedule.enabled);
+    setScheduleHours(snapshot.discovery_schedule.interval_hours);
+    setScheduleRanges(snapshot.discovery_schedule.cidrs.join("\n"));
+  }, [snapshot]);
+
+  const saveSchedule = useCallback(async () => {
+    setScheduleError(null);
+    setScheduleNotice(null);
+    const cidrs = scheduleRanges.split(/[\s,;]+/).filter(Boolean);
+    if (!Number.isInteger(scheduleHours) || scheduleHours < 6 || scheduleHours > 168) {
+      setScheduleError("A frequência deve ser um número inteiro entre 6 e 168 horas.");
+      return;
+    }
+    if (cidrs.length > 4 || (scheduleEnabled && cidrs.length === 0)) {
+      setScheduleError("Defina entre 1 e 4 faixas IPv4/CIDR ao ativar a agenda.");
+      return;
+    }
+    setScheduleSaving(true);
+    try {
+      await invoke<void>("save_discovery_schedule", {
+        schedule: { enabled: scheduleEnabled, interval_hours: scheduleHours, cidrs },
+      });
+      await refresh();
+      setScheduleNotice("Agenda salva no serviço local. A nova configuração será aplicada na próxima verificação.");
+    } catch (error) {
+      setScheduleError(String(error));
+    } finally {
+      setScheduleSaving(false);
+    }
+  }, [scheduleEnabled, scheduleHours, scheduleRanges, refresh]);
 
   const reviewCandidate = useCallback(async (
     ip: string, action: "save" | "ignore" | "reset",
@@ -654,6 +692,33 @@ export default function App() {
                   value={formatDate(snapshot?.discovery_report?.last_completed_at ?? null)} />
               </div>
               <div className="discovery-settings">
+                <h3>Agenda de descoberta automática</h3>
+                <p>Somente faixas contidas nas sub-redes autorizadas pelo administrador podem ser programadas. A configuração é salva no serviço local protegido, sem modificar credenciais.</p>
+                <label className="schedule-switch" htmlFor="schedule-enabled">
+                  <input id="schedule-enabled" type="checkbox" checked={scheduleEnabled}
+                    onChange={event => setScheduleEnabled(event.target.checked)}
+                    disabled={!snapshot?.local_control_supported || scheduleSaving} />
+                  Ativar busca periódica
+                </label>
+                <label htmlFor="schedule-hours">Frequência (6 a 168 horas)</label>
+                <input id="schedule-hours" type="number" min={6} max={168} step={1}
+                  value={scheduleHours} onChange={event => setScheduleHours(Number(event.target.value))}
+                  disabled={!snapshot?.local_control_supported || scheduleSaving} />
+                <label htmlFor="schedule-cidrs">Faixas IPv4/CIDR programadas (máximo 4)</label>
+                <textarea id="schedule-cidrs" rows={3} spellCheck={false} value={scheduleRanges}
+                  placeholder="192.168.1.0/24" maxLength={256}
+                  onChange={event => setScheduleRanges(event.target.value)}
+                  disabled={!snapshot?.local_control_supported || scheduleSaving} />
+                <button type="button" className="primary-button" onClick={() => void saveSchedule()}
+                  disabled={!snapshot?.configured || !snapshot?.local_control_supported || scheduleSaving}>
+                  <ShieldCheck size={16} aria-hidden="true" />
+                  {scheduleSaving ? "Salvando..." : "Salvar agenda no Collector"}
+                </button>
+                {scheduleError && <div role="alert" className="notice error">{scheduleError}</div>}
+                {scheduleNotice && <div role="status" className="notice">{scheduleNotice}</div>}
+                <p>Permissões locais do serviço são obrigatórias. No Windows, a edição da agenda permanece desabilitada nesta etapa. Desativar a agenda impede novas varreduras, mas uma busca já iniciada pode concluir suas conexões.</p>
+              </div>
+              <div className="discovery-settings">
                 <h3>Busca manual por faixa autorizada</h3>
                 <p>Informe até quatro faixas IPv4/CIDR privadas, separadas por vírgula ou linha.
                   Cada faixa deve caber em /24 e estar integralmente contida nas sub-redes já autorizadas pelo administrador.</p>
@@ -668,8 +733,7 @@ export default function App() {
                 </button>
                 {rangeError && <div className="notice error" role="alert">{rangeError}</div>}
                 <p>Resultados aparecem em Impressoras apenas como candidatos. Esta consulta não altera o cadastro
-                  e não habilita monitoramento. A agenda periódica somente pode ser habilitada no arquivo
-                  protegido pelo administrador; a interface não altera a configuração do serviço.</p>
+                  e não habilita monitoramento. Faixas fora do escopo autorizado continuam bloqueadas pelo serviço.</p>
               </div>
               <div className="notice">Tokens de acesso e comunidades SNMP nunca são carregados ou exibidos nesta interface.</div>
             </section>
