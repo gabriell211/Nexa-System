@@ -1,0 +1,12 @@
+#!/bin/bash
+# Refuse accidental replacement of a live service and its encrypted state.
+set -euo pipefail
+base='/Library/Application Support/NexaCollector'
+daemon='/Library/PrivilegedHelperTools/NexaCollector'
+plist='/Library/LaunchDaemons/com.nexa.collector.plist'
+if /bin/launchctl print system/com.nexa.collector >/dev/null 2>&1 ||
+   [[ -e "$base" || -L "$base" || -e "$daemon" || -L "$daemon" || -e "$plist" || -L "$plist" ]]; then
+  echo "Nexa Collector already has a service or customer state. Refusing unattended overwrite; preserve and migrate before upgrading." >&2
+  exit 1
+fi
+exit 0
