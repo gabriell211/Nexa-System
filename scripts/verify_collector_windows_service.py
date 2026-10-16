@@ -8,25 +8,45 @@ runtime = (root / "collector/daemon/src/windows_service_runtime.rs").read_text(e
 daemon = (root / "collector/daemon/src/main.rs").read_text(encoding="utf-8")
 manifest = (root / "collector/daemon/Cargo.toml").read_text(encoding="utf-8")
 
+# NSIS is the only supported installation route; no PowerShell installer.
+assert not (root / "collector/windows/install.ps1").exists()
+config = (root / "collector/console/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
+import json
+bundle = json.loads(config)["bundle"]
+assert bundle["active"] and bundle["targets"] == ["nsis"]
+assert bundle["windows"]["nsis"]["installMode"] == "perMachine"
+assert bundle["windows"]["nsis"]["installerHooks"] == "./windows/installer-hooks.nsh"
+assert bundle["externalBin"] == ["binaries/nexa-collector-daemon"]
+installer = (root / "collector/console/src-tauri/windows/installer-hooks.nsh").read_text(encoding="utf-8")
 for required in [
-    "obj= 'NT AUTHORITY\\LocalService'",
+    "!macro NSIS_HOOK_PREINSTALL",
+    "!macro NSIS_HOOK_POSTINSTALL",
+    "!macro NSIS_HOOK_PREUNINSTALL",
+    "!macro NSIS_HOOK_POSTUNINSTALL",
+    "sc.exe",
+    "create NexaCollector",
+    'binPath= "$\\\"$INSTDIR\\nexa-collector-daemon.exe$\\\" --service"',
     "start= demand",
-    "sc.exe failure ",
-    "sc.exe failureflag ",
-    "NEXA_COLLECTOR_DB_KEY_HEX",
-    "NEXA_COLLECTOR_TOKEN",
-    "NEXA_SNMP_COMMUNITY",
+    'obj= "NT AUTHORITY\\LocalService"',
+    "failure NexaCollector",
+    "failureflag NexaCollector",
+    "NexaCollector\\credentials",
+    "NexaCollector\\data",
     "S-1-5-19",
     "S-1-5-18",
     "S-1-5-32-544",
-    " /inheritance:r /T",
-    "refusing to overwrite files or inherited ACLs",
-    "Start-Service -Name NexaCollector",
+    "/inheritance:r",
+    "config.json",
+    "File /oname=config.json",
+    "IfFileExists",
+    "Abort",
 ]:
-    assert required.lower() in installer.lower(), f"Missing installer safety control: {required}"
-for forbidden in ["& sc.exe start ", "Start-Service -Name $serviceName", "New-Service", "Set-Service -StartupType Automatic"]:
-    assert forbidden.lower() not in installer.lower(), f"Unexpected autostart: {forbidden}"
-assert '" --service' in installer
+    assert required.lower() in installer.lower(), f"Missing NSIS installer control: {required}"
+for forbidden in ["powershell.exe", "Start-Service", "sc.exe start NexaCollector", "start= auto", "RMDir /r", "Delete $COMMONAPPDATA"]:
+    assert forbidden.lower() not in installer.lower(), f"Unsafe installer action: {forbidden}"
+assert "NSIS_HOOK_PREUNINSTALL" in installer
+assert "sc.exe\" delete NexaCollector" in installer
+assert " --service" in installer
 assert "define_windows_service!" in runtime
 assert "service_control_handler::register" in runtime
 assert "ServiceControl::Stop" in runtime
@@ -60,4 +80,4 @@ assert 'recovery_guard.circuit_open(Utc::now())' in daemon
 assert 'pub mod recovery_guard;' in (root / 'collector/core/src/lib.rs').read_text()
 assert "macos_launchd_mode: bool," in daemon
 assert 'windows-service = "=0.8.1"' in manifest
-print("Nexa Windows SCM packaging static checks passed (not a real service execution test)")
+print("Nexa NSIS Windows service packaging static checks passed (not a real install test)")
