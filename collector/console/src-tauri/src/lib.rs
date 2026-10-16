@@ -71,7 +71,7 @@ fn get_snapshot() -> CollectorSnapshot {
         discovery_report: None,
         candidate_reviews: Vec::new(),
         candidate_reviews_error: None,
-        local_control_supported: cfg!(unix),
+        local_control_supported: cfg!(any(unix, windows)),
         printers: Vec::new(),
         usb_scanners: Vec::new(),
         queue_pending: None,
@@ -248,10 +248,16 @@ async fn review_local_candidate(ip: String, action: String) -> Result<(), String
             )
         }).await.map_err(|_| "O canal local foi interrompido.".to_owned())?
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            nexa_collector_core::local_control::submit_windows(ip, action)
+        }).await.map_err(|_| "O canal de controle Windows foi interrompido.".to_owned())?
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (ip, action);
-        Err("Controle local ainda indisponível neste sistema; não há transporte com ACL homologada.".into())
+        Err("Controle local não suportado neste sistema.".into())
     }
 }
 
