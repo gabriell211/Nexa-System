@@ -11,3 +11,11 @@
 .discovery-settings .primary-button{justify-self:start}
 .discovery-settings .notice{margin:0}
 @media(max-width:700px){.discovery-settings{margin:0 15px 20px;padding:15px}}
+
+
+.candidate-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.secondary-button{border:1px solid #cbd7e9;background:#f6f9ff;color:#315184;
+  border-radius:8px;padding:8px 11px;font-size:12px;font-weight:700;white-space:nowrap}
+.secondary-button:hover:not(:disabled){background:#eaf1ff;border-color:#9fb8e8}
+.secondary-button:focus-visible{outline:2px solid #466fdf;outline-offset:2px}
+.secondary-button:disabled{opacity:.5;cursor:not-allowed}

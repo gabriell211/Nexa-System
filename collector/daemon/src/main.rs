@@ -12,6 +12,9 @@ use zeroize::Zeroizing;
 mod progress_watchdog;
 mod recovery_guard;
 
+#[cfg(unix)]
+mod local_control;
+
 #[cfg(windows)]
 mod windows_service_runtime;
 #[cfg(target_os = "macos")]
@@ -308,6 +311,24 @@ fn run_application(
         .unwrap_or(now);
     let mut discovery_receiver: Option<mpsc::Receiver<std::io::Result<Vec<nexa_collector_core::discovery::DiscoveryCandidate>>>> = None;
     on_ready()?;
+    // The OS protects this control channel, not a bearer token exposed to JS.
+    // No channel is started during one-shot maintenance or unsupervised runs.
+    #[cfg(unix)]
+    let _control_thread = if supervised_mode && !once {
+        match local_control::start(
+            Path::new(&args[2]), cfg.clone(),
+            db_key.clone().ok_or("encrypted service storage required for local control")?,
+            Arc::clone(&shutdown),
+        ) {
+            Ok(handle) => Some(handle),
+            Err(error) => {
+                eprintln!("Administrative local control disabled: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
     // Begin supervising both workers only after startup has completed.
     // The watcher cannot renew either worker's checkpoint itself.
     if let Some(ref monitor) = progress {

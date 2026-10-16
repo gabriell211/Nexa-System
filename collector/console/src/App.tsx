@@ -85,6 +85,7 @@ type CollectorSnapshot = {
   discovery_report: DiscoveryReport | null;
   candidate_reviews: CandidateReview[];
   candidate_reviews_error: string | null;
+  local_control_supported: boolean;
   printers: PrinterInfo[];
   usb_scanners: UsbScannerInfo[];
   queue_pending: number | null;
@@ -121,6 +122,9 @@ export default function App() {
   const [rangeDraft, setRangeDraft] = useState("");
   const [rangeDiscovering, setRangeDiscovering] = useState(false);
   const [rangeError, setRangeError] = useState<string | null>(null);
+  const [reviewingIp, setReviewingIp] = useState<string | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewNotice, setReviewNotice] = useState<string | null>(null);
   const [usbDevices, setUsbDevices] = useState<UsbDeviceCandidate[] | null>(null);
   const [usbDiscovering, setUsbDiscovering] = useState(false);
   const [usbError, setUsbError] = useState<string | null>(null);
@@ -195,6 +199,23 @@ export default function App() {
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  const reviewCandidate = useCallback(async (
+    ip: string, action: "save" | "ignore" | "reset",
+  ) => {
+    setReviewingIp(ip);
+    setReviewError(null);
+    setReviewNotice(null);
+    try {
+      await invoke<void>("review_local_candidate", { ip, action });
+      await refresh();
+      setReviewNotice(`Decisão local atualizada para ${ip}. Isto não ativa monitoramento.`);
+    } catch (error) {
+      setReviewError(String(error));
+    } finally {
+      setReviewingIp(null);
+    }
+  }, [refresh]);
 
   const queuePending = snapshot?.queue_pending ?? 0;
   const queueCapacity = snapshot?.queue_capacity ?? 0;
@@ -439,12 +460,22 @@ export default function App() {
               {snapshot?.discovery_report?.last_error_kind && <div role="alert" className="notice error">
                 A última busca terminou com falha ({snapshot.discovery_report.last_error_kind}). Os resultados anteriores não são tratados como atuais.
               </div>}
-              <div className="table-scroll"><table><thead><tr><th>IP</th><th>Portas</th><th>eSCL</th><th>Estado</th></tr></thead>
+              <div className="table-scroll"><table><thead><tr><th>IP</th><th>Portas</th><th>eSCL</th><th>Estado</th><th>Revisar</th></tr></thead>
                 <tbody>{snapshot?.discovery_report?.candidates.map(candidate => (
                   <tr key={candidate.ip}><td className="mono">{candidate.ip}</td>
                     <td>{candidate.print_ports.join(", ") || "—"}</td>
                     <td>{candidate.escl_scanner ? "Detectado" : "—"}</td>
-                    <td>{candidateReviewStatus(candidate, snapshot?.candidate_reviews ?? [])}</td></tr>
+                    <td>{candidateReviewStatus(candidate, snapshot?.candidate_reviews ?? [])}</td>
+                    <td><div className="candidate-actions">
+                      <button type="button" className="secondary-button"
+                        onClick={() => void reviewCandidate(candidate.ip, "save")}
+                        disabled={!snapshot?.local_control_supported || reviewingIp !== null}
+                        aria-label={`Salvar candidato ${candidate.ip}`}>Salvar</button>
+                      <button type="button" className="secondary-button"
+                        onClick={() => void reviewCandidate(candidate.ip, "ignore")}
+                        disabled={!snapshot?.local_control_supported || reviewingIp !== null}
+                        aria-label={`Ignorar candidato ${candidate.ip}`}>Ignorar</button>
+                    </div></td></tr>
                 ))}</tbody>
               </table></div>
               {snapshot?.candidate_reviews_error && <div className="notice error" role="alert">
@@ -453,7 +484,7 @@ export default function App() {
               <div className="panel-title"><h2>Decisões locais do operador</h2>
                 <span>Somente leitura · máximo de 200 decisões</span></div>
               <div className="table-scroll"><table>
-                <thead><tr><th>IP</th><th>Decisão</th><th>Data da decisão</th><th>Validação</th></tr></thead>
+                <thead><tr><th>IP</th><th>Decisão</th><th>Data da decisão</th><th>Validação</th><th>Ação</th></tr></thead>
                 <tbody>{snapshot?.candidate_reviews.map(review => {
                   const recent = snapshot?.discovery_report?.candidates.find(
                     item => item.ip === review.candidate.ip
@@ -465,17 +496,24 @@ export default function App() {
                     <td>{review.decision === "saved" ? "Salvo" : "Ignorado"}</td>
                     <td>{formatDate(review.decided_at)}</td>
                     <td>{current ? "Observação correspondente" : "Revisar: ausente ou evidência mudou"}</td>
+                    <td><button type="button" className="secondary-button"
+                      disabled={!snapshot?.local_control_supported || reviewingIp !== null}
+                      onClick={() => void reviewCandidate(review.candidate.ip, "reset")}
+                      aria-label={`Restaurar candidato ${review.candidate.ip}`}>Restaurar</button></td>
                   </tr>;
                 })}</tbody>
               </table></div>
               {!snapshot?.candidate_reviews.length && <div className="empty">
                 Nenhuma decisão local registrada. Os candidatos permanecem sem aprovação.
               </div>}
+              {reviewError && <div role="alert" className="notice error">{reviewError}</div>}
+              {reviewNotice && <div role="status" className="notice">{reviewNotice}</div>}
               <div className="notice">
-                Salvar ou ignorar exige acesso administrativo ao banco protegido do Collector e o comando
-                <code> --review-candidate IP save|ignore|reset</code>. Esta janela não possui permissão
-                para alterar a fila nem para ativar monitoramento. Um IP ou porta aberta nunca confirma a
-                identidade do equipamento; exige-se validação de fabricante, série e OID antes da coleta.
+                {snapshot?.local_control_supported
+                  ? "As decisões exigem acesso ao canal privado do serviço. Em caso de acesso negado, utilize uma conta do sistema operacional autorizada."
+                  : "A edição por Console está bloqueada neste sistema até existir transporte nativo com permissões homologadas."}
+                {" "}Salvar/ignorar não homologa contadores, não reserva IP e não ativa monitoramento.
+                Verifique modelo, número de série e OID antes de habilitar qualquer equipamento.
               </div>
               {!snapshot?.discovery_report?.candidates.length && <div className="empty">
                 Nenhum candidato disponível nesta varredura. Confira se a agenda foi habilitada pelo administrador.

@@ -36,6 +36,44 @@ reservas por ponto no backend, homologação física, reinícios/upgrade e teste
 em instalações reais. Portanto o recurso **não** completa o monitoramento
 automático de impressoras.
 
+## Canal de controle local protegido (Linux/macOS, incremento)
+
+O serviço supervisionado (systemd em Linux, launchd em macOS) inicia um
+**Unix-domain socket** no mesmo diretório de dados que `queue.sqlite`:
+`queue.sqlite.control.sock`. A API não aceita conexões TCP, HTTP, cloud ou
+comandos arbitrários. O diretório pai **deve** ser privado (`0700`, sem
+symlink) e o socket possui `0600`. O serviço recusa iniciar o canal de
+controle quando essa política não estiver satisfeita, sem bloquear as
+leituras e a fila existentes.
+
+O Console tem botões **Salvar**, **Ignorar** e **Restaurar**. Cada botão usa
+comando Tauri em Rust (sem token no React), envia mensagem JSON tipada com
+limite de 512 bytes e timeout, e exige permissão do sistema operacional
+para acessar o socket. A decisão usa a mesma validação transacional existente
+no núcleo Rust e não cadastra nem monitora automaticamente uma impressora.
+
+**Importante:** no Linux o diretório `/var/lib/nexa-collector` pertence à conta
+isolada `nexa-collector`, normalmente inacessível ao usuário gráfico comum.
+No macOS o socket fica em
+`/Library/Application Support/NexaCollector/data/queue.sqlite.control.sock`
+sob o serviço `_nexacollector`. Não amplie permissões do diretório nem
+execute a interface gráfica como serviço. A interface apresenta erro de
+permissão quando o usuário não tiver acesso explícito ao canal.
+A gestão de papéis para operadores comuns e a elevação de privilégio
+devem ser implementadas com autorização nativa/auditável, não liberando
+acesso geral ao arquivo SQLite.
+
+No Windows, a edição no Console fica **desabilitada** enquanto não houver
+um canal nomeado com ACLs equivalentes e verificação do processo chamador;
+o CLI administrativo existente continua disponível. O canal Unix e seus
+testes não comprovaram uma integração pronta para todos os sistemas.
+
+**Ainda faltam** UI para editar agenda/faixas (com reload validado),
+homologação de identidade/medidores, reserva de IP/cliente e Monitorar,
+testes de privilégios com contas reais, provisionamento da administração
+local e assinaturas dos pacotes. Não instalar nem promover o recurso para
+produção sem esses testes.
+
 ## Decisões locais de candidatos — incremento parcial
 
 A descoberta automática já guarda as observações na tabela `state` do SQLite.
