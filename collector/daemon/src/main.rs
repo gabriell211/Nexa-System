@@ -14,6 +14,8 @@ mod recovery_guard;
 
 #[cfg(unix)]
 mod local_control;
+#[cfg(windows)]
+mod windows_local_control;
 
 #[cfg(windows)]
 mod windows_service_runtime;
@@ -331,6 +333,24 @@ fn run_application(
             Ok(handle) => Some(handle),
             Err(error) => {
                 eprintln!("Administrative local control disabled: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    #[cfg(windows)]
+    let _windows_control = if windows_service_mode && !once
+        && env::var("NEXA_EXPERIMENTAL_WINDOWS_CONTROL").as_deref() == Ok("1")
+    {
+        match windows_local_control::start(
+            Path::new(&args[2]).to_path_buf(), cfg.clone(),
+            db_key.clone().ok_or("Windows protected database key required")?,
+            Arc::clone(&shutdown),
+        ) {
+            Ok(handle) => Some(handle),
+            Err(error) => {
+                eprintln!("Windows experimental named pipe disabled: {error}");
                 None
             }
         }
