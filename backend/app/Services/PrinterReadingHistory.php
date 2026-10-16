@@ -42,6 +42,7 @@ final class PrinterReadingHistory
                     'meter_total'=>$row->meter_total === null ? null : (string)$row->meter_total,
                     'meter_mono'=>$row->meter_mono === null ? null : (string)$row->meter_mono,
                     'meter_color'=>$row->meter_color === null ? null : (string)$row->meter_color,
+                    'meter_scan'=>$row->meter_scan === null ? null : (string)$row->meter_scan,
                     'collected_at'=>CarbonImmutable::parse((string)$row->collected_at,'UTC')->toIso8601String(),
                     'received_at'=>CarbonImmutable::parse((string)$row->received_at,'UTC')->toIso8601String(),
                 ];

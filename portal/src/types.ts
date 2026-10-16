@@ -41,6 +41,7 @@ export interface Printer {
     meter_total: string | null;
     meter_mono: string | null;
     meter_color: string | null;
+    meter_scan: string | null;
     collected_at: string;
     received_at: string;
   } | null;

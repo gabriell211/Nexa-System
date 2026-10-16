@@ -9,6 +9,7 @@ interface MeterSample {
   meter_total: string | null;
   meter_mono: string | null;
   meter_color: string | null;
+  meter_scan: string | null;
   collected_at: string;
   received_at: string;
 }
@@ -154,13 +155,14 @@ export function PrinterReadingHistoryPanel({ printer, token, onClose }: Props) {
         : listing.error ? <p role="alert" className="notice error">{readableError(listing.error)}</p>
         : listing.data.data.length === 0 ? <p>Nenhuma leitura encontrada para o período.</p>
         : <div className="table-wrap"><table>
-            <thead><tr><th>Coletado em</th><th>Recebido em</th><th>Total</th><th>P&B</th><th>Cor</th></tr></thead>
+            <thead><tr><th>Coletado em</th><th>Recebido em</th><th>Total</th><th>P&B</th><th>Cor</th><th>Digitalizações</th></tr></thead>
             <tbody>{listing.data.data.map(sample => <tr key={sample.id}>
               <td>{date(sample.collected_at)}</td>
               <td>{date(sample.received_at)}</td>
               <td>{meter(sample.meter_total)}</td>
               <td>{meter(sample.meter_mono)}</td>
               <td>{meter(sample.meter_color)}</td>
+              <td>{meter(sample.meter_scan)}</td>
             </tr>)}</tbody>
           </table></div>}
       {!invalid && listing.data && <div className="pagination">

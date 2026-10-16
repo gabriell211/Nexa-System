@@ -1,5 +1,6 @@
 use chrono::Utc;
 use nexa_collector_core::{
+    canon_drc225::{self, CanonDrc225Meter},
     discovery::{self, DiscoveryCandidate},
     usb_devices::{self, UsbDeviceCandidate},
     recovery_guard::{RecoveryGuard, WatchdogSnapshot},
@@ -9,10 +10,23 @@ use serde::Serialize;
 use std::env;
 
 #[derive(Serialize)]
+struct CanonMeterView {
+    meter_scan_total: String,
+    roller_count_resettable: String,
+    collected_at: String,
+}
+
+#[derive(Serialize)]
 struct PrinterInfo {
     printer_id: u64,
     ip: String,
     oid: String,
+}
+
+#[derive(Serialize)]
+struct UsbScannerInfo {
+    printer_id: u64,
+    profile: String,
 }
 
 #[derive(Serialize)]
@@ -22,6 +36,7 @@ struct CollectorSnapshot {
     endpoint: Option<String>,
     interval_seconds: Option<u64>,
     printers: Vec<PrinterInfo>,
+    usb_scanners: Vec<UsbScannerInfo>,
     queue_pending: Option<u64>,
     quarantine_count: Option<u64>,
     quarantine_preview: Vec<QuarantinedReading>,
@@ -45,6 +60,7 @@ fn get_snapshot() -> CollectorSnapshot {
         endpoint: None,
         interval_seconds: None,
         printers: Vec::new(),
+        usb_scanners: Vec::new(),
         queue_pending: None,
         quarantine_count: None,
         quarantine_preview: Vec::new(),
@@ -75,6 +91,10 @@ fn get_snapshot() -> CollectorSnapshot {
                     printer_id: p.printer_id,
                     ip: p.ip.to_string(),
                     oid: p.marker_counter_oid.iter().map(u64::to_string).collect::<Vec<_>>().join("."),
+                }).collect();
+                snapshot.usb_scanners = config.usb_scanners.into_iter().map(|s| UsbScannerInfo {
+                    printer_id: s.printer_id,
+                    profile: s.profile,
                 }).collect();
             }
             Err(_) => snapshot.error = Some("Configuração não encontrada ou inválida.".into()),
@@ -157,10 +177,22 @@ async fn discover_usb_printers() -> Result<Vec<UsbDeviceCandidate>, String> {
         .map_err(|_| "Não foi possível consultar as impressoras e dispositivos de imagem USB neste Windows.".to_owned())
 }
 
+#[tauri::command]
+async fn read_canon_drc225_meter() -> Result<CanonMeterView, String> {
+    tauri::async_runtime::spawn_blocking(canon_drc225::read)
+        .await.map_err(|_| "A leitura Canon foi interrompida.".to_owned())?
+        .map_err(|_| "O contador Canon está indisponível. Confira se há apenas um DR-C225 USB conectado e se o utilitário oficial está instalado.".to_owned())
+        .map(|meter: CanonDrc225Meter| CanonMeterView {
+            meter_scan_total: meter.meter_scan_total.to_string(),
+            roller_count_resettable: meter.roller_count_resettable.to_string(),
+            collected_at: meter.collected_at.to_rfc3339(),
+        })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers, discover_usb_printers])
+        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers, discover_usb_printers, read_canon_drc225_meter])
         .run(tauri::generate_context!())
         .expect("failed to start Nexa Collector Console");
 }

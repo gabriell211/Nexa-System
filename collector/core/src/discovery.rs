@@ -13,7 +13,7 @@ use std::{
         Arc, Mutex,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 const PRINT_PORTS: [u16; 3] = [9100, 515, 631];
@@ -27,6 +27,9 @@ pub struct DiscoveryCandidate {
     /// A reachable print port is evidence of a candidate, not a model or meter certification.
     pub print_ports: Vec<u16>,
     pub http_server: Option<String>,
+    /// A read-only eSCL capability response identifies a scanner endpoint.
+    /// It does not prove a successful scan or expose page counters.
+    pub escl_scanner: bool,
 }
 
 /// Clamp large interfaces to the host's own /24, and skip public, loopback and
@@ -83,7 +86,7 @@ fn scan_hosts(hosts: Vec<Ipv4Addr>) -> Vec<DiscoveryCandidate> {
                 let Some(ip) = hosts.get(index).copied() else {
                     break;
                 };
-                if let Some(candidate) = probe_ports(ip, &PRINT_PORTS) {
+                if let Some(candidate) = probe_candidate(ip, &PRINT_PORTS) {
                     found
                         .lock()
                         .expect("discovery result mutex poisoned")
@@ -97,7 +100,7 @@ fn scan_hosts(hosts: Vec<Ipv4Addr>) -> Vec<DiscoveryCandidate> {
     result
 }
 
-fn probe_ports(ip: Ipv4Addr, ports: &[u16]) -> Option<DiscoveryCandidate> {
+fn probe_candidate(ip: Ipv4Addr, ports: &[u16]) -> Option<DiscoveryCandidate> {
     let print_ports: Vec<u16> = ports
         .iter()
         .copied()
@@ -105,14 +108,65 @@ fn probe_ports(ip: Ipv4Addr, ports: &[u16]) -> Option<DiscoveryCandidate> {
             TcpStream::connect_timeout(&SocketAddr::from((ip, *port)), CONNECT_TIMEOUT).is_ok()
         })
         .collect();
-    if print_ports.is_empty() {
+    // Check eSCL even when no print port is open: dedicated network scanners
+    // must not disappear from the candidate list.
+    let escl_scanner = probe_escl(ip, 80);
+    if print_ports.is_empty() && !escl_scanner {
         return None;
     }
     Some(DiscoveryCandidate {
         ip,
         print_ports,
         http_server: http_server(ip),
+        escl_scanner,
     })
+}
+
+fn probe_escl(ip: Ipv4Addr, port: u16) -> bool {
+    let Ok(mut stream) = TcpStream::connect_timeout(&SocketAddr::from((ip, port)), CONNECT_TIMEOUT)
+    else {
+        return false;
+    };
+    let request = format!(
+        "GET /eSCL/ScannerCapabilities HTTP/1.1\r\nHost: {ip}\r\nConnection: close\r\n\r\n"
+    );
+    if stream
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .is_err()
+        || stream.set_write_timeout(Some(CONNECT_TIMEOUT)).is_err()
+        || stream.write_all(request.as_bytes()).is_err()
+    {
+        return false;
+    }
+    let mut response = Vec::with_capacity(2048);
+    let mut chunk = [0u8; 2048];
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while response.len() < 8192 && Instant::now() < deadline {
+        let Ok(size) = stream.read(&mut chunk) else {
+            break;
+        };
+        if size == 0 {
+            break;
+        }
+        response.extend_from_slice(&chunk[..size]);
+        if let Some(header_end) = response.windows(4).position(|part| part == b"\r\n\r\n") {
+            let (headers, body_with_separator) = response.split_at(header_end);
+            let body = &body_with_separator[4..];
+            let status_ok =
+                headers.starts_with(b"HTTP/1.0 200 ") || headers.starts_with(b"HTTP/1.1 200 ");
+            if status_ok
+                && (body
+                    .windows(b"<scan:ScannerCapabilities".len())
+                    .any(|part| part == b"<scan:ScannerCapabilities")
+                    || body
+                        .windows(b"<ScannerCapabilities".len())
+                        .any(|part| part == b"<ScannerCapabilities"))
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn http_server(ip: Ipv4Addr) -> Option<String> {
@@ -131,14 +185,26 @@ fn http_server(ip: Ipv4Addr) -> Option<String> {
         if !name.eq_ignore_ascii_case("server") {
             return None;
         }
-        let clean: String = value
-            .trim()
-            .chars()
-            .filter(|c| c.is_ascii_graphic() || *c == ' ')
-            .take(120)
-            .collect();
-        (!clean.is_empty()).then_some(clean)
+        sanitize_server_header(value)
     })
+}
+
+fn sanitize_server_header(value: &str) -> Option<String> {
+    // Some printers embed serial numbers in Server. The unauthenticated
+    // header is only a product hint, so do not surface a device identifier.
+    let end = value
+        .to_ascii_lowercase()
+        .find("serial")
+        .unwrap_or(value.len());
+    let clean: String = value[..end]
+        .trim()
+        .trim_end_matches(';')
+        .trim()
+        .chars()
+        .filter(|c| c.is_ascii_graphic() || *c == ' ')
+        .take(120)
+        .collect();
+    (!clean.is_empty()).then_some(clean)
 }
 
 #[cfg(test)]
@@ -174,11 +240,7 @@ mod tests {
         assert!(
             local_scan_net("8.8.8.8".parse().unwrap(), "255.255.255.0".parse().unwrap()).is_none()
         );
-        assert!(local_scan_net(
-            "10.1.1.1".parse().unwrap(),
-            "0.0.0.0".parse().unwrap()
-        )
-        .is_none());
+        assert!(local_scan_net("10.1.1.1".parse().unwrap(), "0.0.0.0".parse().unwrap()).is_none());
         assert!(
             local_scan_net("10.1.1.1".parse().unwrap(), "255.0.255.0".parse().unwrap()).is_none()
         );
@@ -188,8 +250,41 @@ mod tests {
     fn only_reachable_print_port_creates_a_candidate() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        let candidate = probe_ports(Ipv4Addr::LOCALHOST, &[port]).unwrap();
+        let candidate = probe_candidate(Ipv4Addr::LOCALHOST, &[port]).unwrap();
         assert_eq!(candidate.print_ports, vec![port]);
         assert!(candidate.http_server.is_none());
+    }
+
+    #[test]
+    fn escl_requires_successful_capabilities_response() {
+        fn probe_response(response: &'static [u8]) -> bool {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0u8; 512];
+                let size = stream.read(&mut request).unwrap();
+                assert!(request[..size].starts_with(b"GET /eSCL/ScannerCapabilities "));
+                stream.write_all(response).unwrap();
+            });
+            let found = probe_escl(Ipv4Addr::LOCALHOST, port);
+            server.join().unwrap();
+            found
+        }
+        assert!(probe_response(b"HTTP/1.0 200 OK\r\nContent-Type: text/xml\r\n\r\n<?xml version=\"1.0\"?><scan:ScannerCapabilities/>"));
+        assert!(!probe_response(
+            b"HTTP/1.0 500 Error\r\nContent-Type: text/xml\r\n\r\n<scan:ScannerCapabilities/>"
+        ));
+        assert!(!probe_response(
+            b"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<html>Printer only</html>"
+        ));
+    }
+
+    #[test]
+    fn does_not_expose_serial_from_printer_server_header() {
+        assert_eq!(
+            sanitize_server_header("HP HTTP Server; OfficeJet Pro 7740; Serial Number: secret"),
+            Some("HP HTTP Server; OfficeJet Pro 7740".into())
+        );
     }
 }

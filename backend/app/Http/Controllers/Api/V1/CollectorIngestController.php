@@ -43,7 +43,8 @@ final class CollectorIngestController extends Controller
             if ($collected->greaterThan($now->addMinutes(5)) || $collected->lessThan($now->subDays(14))) {
                 throw ValidationException::withMessages(['samples' => 'Sample collection timestamp is outside the accepted window.']);
             }
-            if ($sample['meter_total'] === null && $sample['meter_mono'] === null && $sample['meter_color'] === null) {
+            $scan = $sample['meter_scan'] ?? null;
+            if ($sample['meter_total'] === null && $sample['meter_mono'] === null && $sample['meter_color'] === null && $scan === null) {
                 throw ValidationException::withMessages(['samples' => 'At least one real meter value is required.']);
             }
             $rows[] = [
@@ -53,6 +54,7 @@ final class CollectorIngestController extends Controller
                 'meter_total' => $sample['meter_total'],
                 'meter_mono' => $sample['meter_mono'],
                 'meter_color' => $sample['meter_color'],
+                'meter_scan' => $scan,
                 'collected_at' => $collected,
                 'received_at' => $now,
             ];
@@ -76,6 +78,7 @@ final class CollectorIngestController extends Controller
                     && ($existing->meter_total === null ? $row['meter_total'] === null : (string) $existing->meter_total === (string) $row['meter_total'])
                     && ($existing->meter_mono === null ? $row['meter_mono'] === null : (string) $existing->meter_mono === (string) $row['meter_mono'])
                     && ($existing->meter_color === null ? $row['meter_color'] === null : (string) $existing->meter_color === (string) $row['meter_color'])
+                    && ($existing->meter_scan === null ? $row['meter_scan'] === null : (string) $existing->meter_scan === (string) $row['meter_scan'])
                     && CarbonImmutable::parse($existing->collected_at, 'UTC')->equalTo($row['collected_at']);
 
                 if (!$matches) {

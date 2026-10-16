@@ -37,15 +37,22 @@ final class PrinterResource extends JsonResource
                             ? null : (string) $this->latestReading->meter_mono,
                         'meter_color' => $this->latestReading->meter_color === null
                             ? null : (string) $this->latestReading->meter_color,
+                        'meter_scan' => $this->latestReading->meter_scan === null
+                            ? null : (string) $this->latestReading->meter_scan,
                         'collected_at' => $this->latestReading->collected_at?->toIso8601String(),
                         'received_at' => $this->latestReading->received_at?->toIso8601String(),
                     ]
                     : null
             ),
             'readings' => $this->whenLoaded('readings', fn () => $this->readings->map(
-                fn ($reading): array => $reading->only([
+                fn ($reading): array => array_replace($reading->only([
                     'sample_id', 'meter_total', 'meter_mono',
-                    'meter_color', 'collected_at', 'received_at',
+                    'meter_color', 'meter_scan', 'collected_at', 'received_at',
+                ]), [
+                    'meter_total' => $reading->meter_total === null ? null : (string) $reading->meter_total,
+                    'meter_mono' => $reading->meter_mono === null ? null : (string) $reading->meter_mono,
+                    'meter_color' => $reading->meter_color === null ? null : (string) $reading->meter_color,
+                    'meter_scan' => $reading->meter_scan === null ? null : (string) $reading->meter_scan,
                 ])
             )),
             'created_at' => $this->created_at,

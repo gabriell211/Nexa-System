@@ -34,6 +34,7 @@ final class PrinterLatestReadingTest extends TestCase
         string|null $total,
         string|null $mono=null,
         string|null $color=null,
+        string|null $scan=null,
     ): void {
         DB::table('printer_readings')->insert([
             'tenant_id'=>$tenant->id,
@@ -42,6 +43,7 @@ final class PrinterLatestReadingTest extends TestCase
             'meter_total'=>$total,
             'meter_mono'=>$mono,
             'meter_color'=>$color,
+            'meter_scan'=>$scan,
             'collected_at'=>$collectedAt,
             'received_at'=>$receivedAt,
         ]);
@@ -80,7 +82,26 @@ final class PrinterLatestReadingTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.latest_reading.meter_total','9007199254740995')
             ->assertJsonPath('data.latest_reading.meter_color',null)
+            ->assertJsonPath('data.readings.0.meter_total','9007199254740995')
             ->assertJsonCount(3,'data.readings');
+    }
+
+    public function test_scan_only_counter_is_exposed_without_a_print_total(): void
+    {
+        $tenant=Tenant::query()->create(['name'=>'Scanner','slug'=>'scanner']);
+        $customer=$tenant->customers()->create(['name'=>'Office']);
+        $scanner=$tenant->printers()->create([
+            'customer_id'=>$customer->id,'manufacturer'=>'Canon','model'=>'DR-C225 II',
+        ]);
+        [, $token]=$this->token($tenant);
+        $this->sample($tenant,$scanner->id,'2026-10-16 10:00:00',
+            '2026-10-16 10:01:00',null,null,null,'169361');
+
+        $this->withToken($token)->getJson('/api/v1/printers/'.$scanner->id)
+            ->assertOk()
+            ->assertJsonPath('data.latest_reading.meter_total',null)
+            ->assertJsonPath('data.latest_reading.meter_scan','169361')
+            ->assertJsonPath('data.readings.0.meter_scan','169361');
     }
 
     public function test_printer_list_eager_loads_latest_counters_for_paginated_fleet(): void

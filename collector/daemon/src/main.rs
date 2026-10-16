@@ -24,6 +24,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("{}", serde_json::to_string_pretty(&candidates)?);
         return Ok(());
     }
+    if args.len() == 2 && args[1] == "--read-canon-drc225-usb" {
+        let meter = nexa_collector_core::canon_drc225::read()?;
+        println!("{}", serde_json::to_string_pretty(&meter)?);
+        return Ok(());
+    }
     if args.len() == 2 && args[1] == "--discover-local" {
         let candidates = nexa_collector_core::discovery::discover_local()?;
         println!("{}", serde_json::to_string_pretty(&candidates)?);
@@ -64,6 +69,13 @@ fn run_application(
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
+    if windows_service_mode && !cfg.usb_scanners.is_empty() {
+        // The installer enables SCM restart-on-failure. This configuration is
+        // unsupported in session 0, so stop cleanly instead of restarting in
+        // a loop and repeatedly attempting to open the vendor GUI.
+        eprintln!("Canon USB meter requires an interactive user session; Windows Service stopped without collecting readings");
+        return Ok(());
+    }
     // systemd LoadCredential exposes files under CREDENTIALS_DIRECTORY.
     // Never fall back to inherited env variables if that directory is set.
     let has_systemd_credentials = env::var_os("CREDENTIALS_DIRECTORY").is_some();
@@ -308,6 +320,40 @@ fn run_application(
                 }
             } else {
                 eprintln!("SNMP credential not configured; polling skipped");
+            }
+            if !disk_limited && !cfg.usb_scanners.is_empty() {
+                for scanner in &cfg.usb_scanners {
+                    if shutdown.load(Ordering::Relaxed) || outbox.at_capacity()? { break; }
+                    let present = nexa_collector_core::usb_devices::discover_usb_devices()
+                        .map(|devices| devices.into_iter().any(|device| {
+                            device.instance_id.eq_ignore_ascii_case(&scanner.instance_id)
+                                && device.friendly_name.eq_ignore_ascii_case("CANON DR-C225 USB")
+                                && device.status.eq_ignore_ascii_case("OK")
+                                && device.vid_pid.as_deref() == Some("1083:1658")
+                        }))
+                        .unwrap_or(false);
+                    if !present {
+                        eprintln!("Configured Canon USB scanner {} is absent; no reading enqueued", scanner.printer_id);
+                    } else {
+                        match nexa_collector_core::canon_drc225::read() {
+                            Ok(meter) => {
+                                let reading = meter.into_reading(scanner.printer_id);
+                                match outbox.enqueue(&reading) {
+                                    Ok(_) => {},
+                                    Err(CollectorError::OutboxFull { .. }
+                                        | CollectorError::OutboxBytesFull { .. }
+                                        | CollectorError::SqliteSoftLimit { .. }) => {
+                                        eprintln!("Outbox capacity reached; Canon USB reading not persisted");
+                                        break;
+                                    }
+                                    Err(error) => return Err(Box::new(error)),
+                                }
+                            }
+                            Err(_) => eprintln!("Canon USB meter unavailable for equipment {}; no reading enqueued", scanner.printer_id),
+                        }
+                    }
+                    if let Some(ref watcher) = progress { watcher.progressed(); }
+                }
             }
             // Avoid even nonessential state writes while physical storage is
             // above the safety threshold. Upload ACKs can still be processed.

@@ -40,6 +40,38 @@ final class CollectorIngestTest extends TestCase
         $this->assertDatabaseCount('printer_readings', 1);
     }
 
+    public function test_scan_only_meter_is_idempotent_and_conflicting_retry_is_rejected(): void
+    {
+        $tenant = Tenant::create(['name'=>'Scan Test','slug'=>'scan-test']);
+        $customer = $tenant->customers()->create(['name'=>'Unit']);
+        $scanner = $tenant->printers()->create([
+            'customer_id'=>$customer->id,'manufacturer'=>'Canon','model'=>'DR-C225 II',
+        ]);
+        $token = bin2hex(random_bytes(32));
+        $collectorId = (string) Str::uuid();
+        CollectorAgent::create([
+            'tenant_id'=>$tenant->id,'customer_id'=>$customer->id,
+            'collector_id'=>$collectorId,'token_hash'=>hash('sha256',$token),
+        ]);
+        $body = ['collector_id'=>$collectorId,'samples'=>[[
+            'sample_id'=>(string) Str::uuid(),
+            'printer_id'=>$scanner->id,
+            'collected_at'=>now()->toIso8601String(),
+            'meter_total'=>null,'meter_mono'=>null,'meter_color'=>null,
+            'meter_scan'=>169360,
+        ]]];
+        $this->withToken($token)->postJson('/api/v1/collector/ingest',$body)->assertOk();
+        $this->withToken($token)->postJson('/api/v1/collector/ingest',$body)->assertOk();
+        $this->assertDatabaseHas('printer_readings',[
+            'sample_id'=>$body['samples'][0]['sample_id'],
+            'meter_scan'=>169360,
+            'meter_total'=>null,
+        ]);
+        $body['samples'][0]['meter_scan'] = 169361;
+        $this->withToken($token)->postJson('/api/v1/collector/ingest',$body)->assertUnprocessable();
+        $this->assertDatabaseCount('printer_readings',1);
+    }
+
     public function test_collector_rejects_foreign_customer_printer(): void
     {
         $tenant = Tenant::create(['name'=>'Test','slug'=>'test']);

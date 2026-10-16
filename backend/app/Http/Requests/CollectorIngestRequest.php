@@ -20,6 +20,7 @@ final class CollectorIngestRequest extends FormRequest
             'samples.*.meter_total' => ['present', 'nullable', 'integer', 'min:0'],
             'samples.*.meter_mono' => ['present', 'nullable', 'integer', 'min:0'],
             'samples.*.meter_color' => ['present', 'nullable', 'integer', 'min:0'],
+            'samples.*.meter_scan' => ['sometimes', 'nullable', 'integer', 'min:0'],
         ];
     }
 }

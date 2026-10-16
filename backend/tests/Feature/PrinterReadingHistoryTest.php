@@ -26,14 +26,31 @@ final class PrinterReadingHistoryTest extends TestCase
 
     private function reading(
         Tenant $tenant,int $printerId,string $collection,string $received,
-        ?string $total,?string $mono=null,?string $color=null,
+        ?string $total,?string $mono=null,?string $color=null,?string $scan=null,
     ): int {
         return (int) DB::table('printer_readings')->insertGetId([
             'tenant_id'=>$tenant->id,'printer_id'=>$printerId,
             'sample_id'=>(string) Str::uuid(),
-            'meter_total'=>$total,'meter_mono'=>$mono,'meter_color'=>$color,
+            'meter_total'=>$total,'meter_mono'=>$mono,'meter_color'=>$color,'meter_scan'=>$scan,
             'collected_at'=>$collection,'received_at'=>$received,
         ]);
+    }
+
+    public function test_scan_only_sample_keeps_total_null_and_exposes_scan_count_as_string(): void
+    {
+        $tenant=Tenant::query()->create(['name'=>'Scanner history','slug'=>'scanner-history']);
+        $customer=$tenant->customers()->create(['name'=>'Office']);
+        $scanner=$tenant->printers()->create([
+            'customer_id'=>$customer->id,'manufacturer'=>'Canon','model'=>'DR-C225 II',
+        ]);
+        [, $token]=$this->token($tenant);
+        $this->reading($tenant,$scanner->id,'2026-10-16 10:00:00',
+            '2026-10-16 10:01:00',null,null,null,'169361');
+
+        $this->withToken($token)->getJson('/api/v1/printers/'.$scanner->id.'/readings')
+            ->assertOk()->assertJsonPath('total',1)
+            ->assertJsonPath('data.0.meter_total',null)
+            ->assertJsonPath('data.0.meter_scan','169361');
     }
 
     public function test_history_is_ordered_by_collection_then_id_and_retains_null_and_64_bit_values(): void

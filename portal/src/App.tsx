@@ -485,6 +485,7 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
               ? <span className="meter-summary">
                   <strong>Total: {printer.latest_reading.meter_total === null ? '—' : BigInt(printer.latest_reading.meter_total).toLocaleString('pt-BR')}</strong>
                   <small>P&B: {printer.latest_reading.meter_mono === null ? '—' : BigInt(printer.latest_reading.meter_mono).toLocaleString('pt-BR')} · Cor: {printer.latest_reading.meter_color === null ? '—' : BigInt(printer.latest_reading.meter_color).toLocaleString('pt-BR')}</small>
+                  <small>Digitalizações: {printer.latest_reading.meter_scan === null ? '—' : BigInt(printer.latest_reading.meter_scan).toLocaleString('pt-BR')}</small>
                   <small>Coletado em: {formatDate(printer.latest_reading.collected_at)}</small>
                 </span>
               : <span>Sem leituras registradas</span>}</td>

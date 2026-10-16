@@ -6,13 +6,19 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 type PrinterInfo = { printer_id: number; ip: string; oid: string };
-type DiscoveryCandidate = { ip: string; print_ports: number[]; http_server: string | null };
+type UsbScannerInfo = { printer_id: number; profile: string };
+type DiscoveryCandidate = { ip: string; print_ports: number[]; http_server: string | null; escl_scanner: boolean };
 type UsbDeviceCandidate = {
   friendly_name: string;
   instance_id: string;
   status: string;
   device_type: "printer" | "scanner" | "imaging";
   vid_pid: string | null;
+};
+type CanonDrc225Meter = {
+  meter_scan_total: string;
+  roller_count_resettable: string;
+  collected_at: string;
 };
 type DeliveryDiagnostics = {
   last_success_at: string | null;
@@ -51,6 +57,7 @@ type CollectorSnapshot = {
   endpoint: string | null;
   interval_seconds: number | null;
   printers: PrinterInfo[];
+  usb_scanners: UsbScannerInfo[];
   queue_pending: number | null;
   quarantine_count: number | null;
   quarantine_preview: QuarantinedReading[];
@@ -85,6 +92,9 @@ export default function App() {
   const [usbDevices, setUsbDevices] = useState<UsbDeviceCandidate[] | null>(null);
   const [usbDiscovering, setUsbDiscovering] = useState(false);
   const [usbError, setUsbError] = useState<string | null>(null);
+  const [canonMeter, setCanonMeter] = useState<CanonDrc225Meter | null>(null);
+  const [canonReading, setCanonReading] = useState(false);
+  const [canonError, setCanonError] = useState<string | null>(null);
 
   const discover = useCallback(async () => {
     setDiscovering(true);
@@ -108,6 +118,19 @@ export default function App() {
       setUsbError(String(error));
     } finally {
       setUsbDiscovering(false);
+    }
+  }, []);
+
+  const readCanon = useCallback(async () => {
+    setCanonReading(true);
+    setCanonError(null);
+    try {
+      setCanonMeter(await invoke<CanonDrc225Meter>("read_canon_drc225_meter"));
+    } catch (error) {
+      setCanonMeter(null);
+      setCanonError(String(error));
+    } finally {
+      setCanonReading(false);
     }
   }, []);
 
@@ -209,7 +232,7 @@ export default function App() {
               <section className="metrics" aria-label="Indicadores do coletor">
                 <Metric icon={Network} title="Configuração" value={snapshot?.configured ? "Encontrada" : "Pendente"}
                   description="Arquivo local validado" />
-                <Metric icon={Printer} title="Impressoras" value={snapshot ? String(snapshot.printers.length) : "—"}
+                <Metric icon={Printer} title="Equipamentos" value={snapshot ? String(snapshot.printers.length + snapshot.usb_scanners.length) : "—"}
                   description="Equipamentos configurados" />
                 <Metric icon={Database} title="Fila de envio" value={snapshot?.queue_pending === null || snapshot === null ? "—" : String(snapshot.queue_pending)}
                   description={queueObserved
@@ -321,37 +344,44 @@ export default function App() {
           {tab === "printers" && (
             <>
             <section className="panel">
-              <div className="panel-title"><h2>Dispositivos configurados</h2><span>{snapshot?.printers.length ?? 0} registros</span></div>
+              <div className="panel-title"><h2>Dispositivos configurados</h2><span>{snapshot ? snapshot.printers.length + snapshot.usb_scanners.length : 0} registros</span></div>
               <div className="table-scroll"><table>
-                <thead><tr><th>ID da impressora</th><th>Endereço IP</th><th>OID de contador</th><th>Estado</th></tr></thead>
+                <thead><tr><th>ID do equipamento</th><th>Conexão</th><th>Perfil de leitura</th><th>Estado</th></tr></thead>
                 <tbody>
                   {snapshot?.printers.map((printer) => (
-                    <tr key={printer.printer_id}>
+                    <tr key={`ip-${printer.printer_id}`}>
                       <td>#{printer.printer_id}</td><td>{printer.ip}</td>
-                      <td className="mono">{printer.oid}</td><td>Leitura não verificada</td>
+                      <td className="mono">SNMP: {printer.oid}</td><td>Contador depende de homologação do OID</td>
+                    </tr>
+                  ))}
+                  {snapshot?.usb_scanners.map((scanner) => (
+                    <tr key={`usb-${scanner.printer_id}`}>
+                      <td>#{scanner.printer_id}</td><td>USB local</td>
+                      <td className="mono">{scanner.profile}</td><td>Leitura experimental em sessão interativa</td>
                     </tr>
                   ))}
                 </tbody>
               </table></div>
-              {!snapshot?.printers.length && <div className="empty">Nenhuma impressora configurada neste ponto de coleta.</div>}
+              {snapshot && snapshot.printers.length + snapshot.usb_scanners.length === 0 && <div className="empty">Nenhum equipamento configurado neste ponto de coleta.</div>}
             </section>
             <section className="panel">
               <div className="panel-title"><h2>Descoberta na rede local</h2><span>Busca limitada às interfaces privadas deste computador</span></div>
-              <p>Portas de impressão acessíveis são indícios de equipamento. Confirme modelo, cliente e OID de contador antes do cadastro.</p>
+              <p>Portas de impressão e capacidades eSCL são indícios de equipamento. Confirme modelo, cliente e medidores antes do cadastro.</p>
               <button type="button" className="primary-button" onClick={() => void discover()} disabled={discovering}>
-                <Network size={16} aria-hidden="true" />{discovering ? "Buscando..." : "Buscar impressoras"}
+                <Network size={16} aria-hidden="true" />{discovering ? "Buscando..." : "Buscar impressoras e scanners"}
               </button>
               {discoveryError && <div className="notice error" role="alert">{discoveryError}</div>}
               {discovered && <div className="table-scroll"><table>
-                <thead><tr><th>Endereço IP</th><th>Portas de impressão</th><th>Servidor HTTP</th><th>Estado</th></tr></thead>
+                <thead><tr><th>Endereço IP</th><th>Portas de impressão</th><th>Scanner eSCL</th><th>Servidor HTTP</th><th>Estado</th></tr></thead>
                 <tbody>{discovered.map((candidate) => <tr key={candidate.ip}>
                   <td className="mono">{candidate.ip}</td>
-                  <td>{candidate.print_ports.join(", ")}</td>
+                  <td>{candidate.print_ports.length ? candidate.print_ports.join(", ") : "Nenhuma"}</td>
+                  <td>{candidate.escl_scanner ? "Capacidades acessíveis" : "Não identificado"}</td>
                   <td>{candidate.http_server ?? "Não identificado"}</td>
                   <td>Aguardando validação</td>
                 </tr>)}</tbody>
               </table></div>}
-              {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão respondeu nesta busca.</div>}
+              {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão ou scanner eSCL respondeu nesta busca.</div>}
             </section>
             <section className="panel">
               <div className="panel-title"><h2>Impressoras e dispositivos USB</h2><span>Descoberta local · Windows</span></div>
@@ -367,10 +397,19 @@ export default function App() {
                   <td>{candidate.device_type === "printer" ? "Impressora" : candidate.device_type === "scanner" ? "Scanner" : "Dispositivo de imagem"}</td>
                   <td className="mono">{candidate.vid_pid ?? "Não informado"}</td>
                   <td>{candidate.status}</td>
-                  <td>Leitura não homologada</td>
+                  <td>{candidate.device_type === "scanner" && candidate.vid_pid === "1083:1658" && candidate.friendly_name.toUpperCase() === "CANON DR-C225 USB" ? "Total Canon: leitura local experimental" : "Leitura não homologada"}</td>
                 </tr>)}</tbody>
               </table></div>}
               {usbDevices?.length === 0 && <div className="empty">Nenhuma impressora ou dispositivo de imagem USB presente foi identificado. Verifique cabo, driver e conexão.</div>}
+              {usbDevices?.some(candidate => candidate.device_type === "scanner" && candidate.vid_pid === "1083:1658" && candidate.friendly_name.toUpperCase() === "CANON DR-C225 USB") && <>
+                <button type="button" className="primary-button" onClick={() => void readCanon()} disabled={canonReading}>
+                  <RefreshCcw size={16} aria-hidden="true" />{canonReading ? "Lendo contador Canon..." : "Ler total do scanner Canon"}
+                </button>
+                {canonError && <div className="notice error" role="alert">{canonError}</div>}
+                {canonMeter && <div className="notice" role="status">
+                  Total do scanner: {BigInt(canonMeter.meter_scan_total).toLocaleString("pt-BR")} · Rolos atuais (reiniciável): {BigInt(canonMeter.roller_count_resettable).toLocaleString("pt-BR")} · {formatDate(canonMeter.collected_at)}
+                </div>}
+              </>}
               <div className="notice">Detecção local somente leitura. Equipamentos não são cadastrados automaticamente e nenhuma medição é transmitida nesta etapa.</div>
             </section>
             </>

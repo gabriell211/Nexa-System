@@ -1,4 +1,4 @@
-# Nexa Collector — implementação inicial
+# Nexa Collector — cliente e limites de homologação
 
 A **interface desktop usa Tauri 2.12 + React 19 + TypeScript**. A coleta roda no **daemon Rust separado**. Fechar o console não deve encerrar o daemon, desde que o serviço tenha sido iniciado pelo sistema operacional.
 
@@ -6,11 +6,17 @@ A **interface desktop usa Tauri 2.12 + React 19 + TypeScript**. A coleta roda no
 
 O daemon oferece `--discover-usb` no Windows e o Console tem o botão **Detectar impressoras USB** na aba Impressoras. A busca, sob demanda e somente leitura, identifica impressoras USB (inclusive multifuncionais) e dispositivos de imagem, de diferentes fabricantes. Usa as interfaces PnP USB presentes (`USB\\VID_*` e `USBPRINT\\*`), evitando reportar impressoras virtuais ou de rede como equipamentos fisicamente conectados. Exibe nome, tipo, status e VID:PID quando disponível. Dispositivos de imagem cujo tipo não é comprovado permanecem classificados como tal.
 
-A descoberta **não lê, cadastra nem transmite contadores** sem um driver de medição homologado por modelo. A Canon DR-C225 USB observada no Windows como classe Image (`VID_1083&PID_1658`) é detectada pelo caminho genérico. Procedimento e critérios pendentes: [Homologação Canon DR-C225 II USB](../docs/CANON-DR-C225II-USB.md).
+Quando a busca identifica o DR-C225 USB, o Console também mostra **Ler total do scanner Canon**. A leitura abre brevemente o utilitário oficial e exibe total e rolos separadamente; este botão não enfileira nem envia uma amostra. A lista de equipamentos configurados mostra o vínculo USB pelo ID de cadastro e pelo perfil, sem exibir o identificador PnP completo.
+
+A descoberta genérica **não cadastra nem transmite contadores**. A Canon DR-C225 II confirmada pela etiqueta física aparece no Windows como `CANON DR-C225 USB`, classe Image (`VID_1083&PID_1658`). O leitor experimental `--read-canon-drc225-usb` consulta o total de manutenção no utilitário Canon assinado em sessão Windows interativa; ele não usa uma API pública estável. O comando aceita Windows PowerShell ou PowerShell 7 (`pwsh`) quando o executável legado não está disponível. Resultado e limites: [Homologação Canon DR-C225 II USB](../docs/CANON-DR-C225II-USB.md).
+
+Para repetir a leitura local sem cadastrar nem transmitir: `cargo run -p nexa-collector-daemon -- --read-canon-drc225-usb`. O comando retorna `meter_scan_total` e `roller_count_resettable` como métricas **separadas**. O total passou de 169360 para 169361 após uma tentativa WIA que terminou com aviso de obstrução; portanto o valor não comprova digitalização concluída. Confira o alimentador antes de repetir qualquer digitalização.
+
+Para coleta periódica experimental, cadastre o scanner como equipamento do cliente na API e adicione a `config.local.json` um `usb_scanners` com `printer_id`, `profile: "canon-dr-c225-usb-utility-v1"` e `instance_id` PnP completo obtido localmente em `--discover-usb`. Em um cliente apenas USB, `authorized_subnets` pode ser `[]` e `printers` pode ser `[]`. O identificador deve ficar apenas na configuração protegida do host. O daemon em sessão interativa exige correspondência exata e no máximo um scanner desse perfil no host, enfileira somente `meter_scan` e usa o transporte/ACK existente. Uma unidade nova do mesmo modelo reutiliza o leitor após cadastro e vínculo próprios. O PnP pode depender da porta USB e não prova o serial físico: trocas exigem conferência humana. O modo Windows Service rejeita `usb_scanners` e para com êxito, sem coletar, para não acionar a política de reinicialização do SCM: a interface Canon exige desktop interativo.
 
 ## O que existe no código
 
-- Consulta SNMPv2c de um OID de páginas **explicitamente configurado e homologado** por impressora; apenas contador real é aceito (indisponível não é zero).
+- Consulta SNMPv2c de um OID de contador **explicitamente configurado e homologado** por impressora; apenas contador real é aceito (indisponível não é zero). O OID de exemplo é `prtMarkerLifeCount` da Printer MIB: sua unidade é definida por `prtMarkerCounterUnit` e deve ser conferida no equipamento antes de tratar o valor como páginas. A API e o portal aceitam também `meter_scan` quando um scanner autorizado produz uma leitura real. Veja a [pesquisa de protocolos e homologação](../docs/PRINTWAYY-MONITORING-RESEARCH-2026-10-16.md).
 - Configuração de coleta por IP, ID numérico atribuído pelo backend e rede/CIDR autorizada. A descoberta local sob demanda lista candidatos sem cadastrar, atribuir cliente ou ativar coleta.
 - Outbox persistente em SQLite com modo WAL, chave única por UUID, limite configurável de amostras pendentes (`max_pending_samples`, padrão 50000), envio HTTPS e remoção apenas de amostras reconhecidas pelo backend. Com fila cheia, a coleta pausa, tenta transmitir pendências e não descarta leituras anteriores. IDs repetidos com payload divergente são recusados.
 - API Laravel autentica coletor por token individual, aceita até 100 leituras, valida propriedade do equipamento e retorna ACK idempotente.
@@ -22,8 +28,8 @@ A descoberta **não lê, cadastra nem transmite contadores** sem um driver de me
 
 - A busca local sob demanda não substitui descoberta periódica, aprovação no backend, SNMPv3 ou homologação de OID por modelo. As demais limitações históricas deste documento devem ser conferidas com as seções de implementação posteriores.
 - A UI tem acesso **somente de leitura** à configuração e ao SQLite; a tela de agentes no portal apresenta o heartbeat observado pelo servidor, mas isso não prova execução contínua do serviço local. O controle por IPC autenticado ainda está pendente.
-- O token e a comunidade SNMP são fornecidos por variáveis de ambiente **somente para laboratório**. Para produção, implementar serviço protegido e cofre de segredos do SO.
-- Não há teste real de SNMP, execução Cargo, Tauri build ou homologação de impressoras comprovado neste commit.
+- No serviço Windows, credenciais são lidas de arquivos protegidos em `%ProgramData%\NexaCollector\credentials`; a execução manual continua aceitando variáveis de ambiente para laboratório. O leitor Canon exige a sessão interativa e não roda nesse serviço.
+- A descoberta e a leitura do total Canon foram executadas neste Windows. O instalador Tauri/NSIS compila sem assinatura; ainda faltam ensaio de instalação real, leitura SNMP em impressoras homologadas, teste em outra unidade Canon e operação USB sem sessão interativa.
 
 ## Rodar em ambiente de desenvolvimento
 
@@ -40,14 +46,14 @@ Requisitos: Rust 1.90+ (Tauri 2.12), Node.js 22.12+, PHP/Composer e PostgreSQL p
 
 ## Descoberta local sob demanda
 
-Execute `cargo run -p nexa-collector-daemon -- --discover-local` na pasta `collector`, ou use **Impressoras → Buscar impressoras** no Console. O comando não precisa de configuração, token ou comunidade SNMP. Ele examina apenas IPv4 privadas das interfaces locais, limita cada interface a sua própria faixa de no máximo /24, testa as portas de impressão 9100, 515 e 631 e mostra o cabeçalho HTTP `Server` quando disponível. O resultado é uma lista de candidatos, não um cadastro nem prova de contador funcional. Não há alteração do SQLite nem transmissão à API.
+Execute `cargo run -p nexa-collector-daemon -- --discover-local` na pasta `collector`, ou use **Impressoras → Buscar impressoras** no Console. O comando não precisa de configuração, token ou comunidade SNMP. Ele examina apenas IPv4 privadas das interfaces locais, limita cada interface a sua própria faixa de no máximo /24, testa as portas de impressão 9100, 515 e 631 e consulta somente as capacidades eSCL em HTTP/80. Um scanner eSCL dedicado pode aparecer mesmo sem porta de impressão. O cabeçalho HTTP `Server` é mostrado quando disponível. O resultado é uma lista de candidatos, não um cadastro, prova de digitalização nem de contador funcional. eSCL em HTTPS exclusivo, WSD e scanners que exigem autenticação ainda não são identificados por esse probe. Não há alteração do SQLite nem transmissão à API.
 
-Em um host Windows de homologação, a busca encontrou uma impressora instalada com portas 9100/515 e cabeçalho HTTP de equipamento multifuncional. Falta verificar credencial, OID e leituras SNMP reais antes de habilitar coleta. A varredura periódica, o envio de candidatos e o fluxo de aprovação no servidor continuam pendentes.
+Em um host Windows de homologação, a busca encontrou dois candidatos de impressão; um deles também respondeu com capacidades eSCL e estado de scanner `Idle` em consulta separada. Veja a [evidência de rede e USB](../docs/HOMOLOGACAO-REDE-USB-2026-10-16.md). Falta verificar credencial, OID e leituras SNMP reais antes de habilitar coleta. A varredura periódica, o envio de candidatos e o fluxo de aprovação no servidor continuam pendentes.
 
 ## Próximos passos
 
 - Habilitar TLS pinning ou política equivalente, cofre OS e comunicações autenticadas entre daemon e console.
-- Implementar instaladores e supervisão nativos e adicionar recursos de configuração/autorização na interface.
+- Assinar e ensaiar o instalador Windows, completar o provisionamento guiado e validar a supervisão com hardware real.
 - Homologar SNMPv3 por fabricante/modelo, métricas de suprimentos e USB somente onde suportado.
 - Validar a outbox com queda de energia, 48h sem rede, ACK parcial, versão de esquema e proteção contra disco cheio.
 - Cobrir todos os cenários QA pertinentes antes de afirmar que um requisito do README está concluído.

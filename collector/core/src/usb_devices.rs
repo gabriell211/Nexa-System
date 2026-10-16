@@ -45,8 +45,12 @@ fn vid_pid_from_instance(instance_id: &str) -> Option<String> {
 }
 
 fn parse_candidates(json: &str) -> io::Result<Vec<UsbDeviceCandidate>> {
-    let mut devices: Vec<UsbDeviceCandidate> = serde_json::from_str(json)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid Windows USB discovery response"))?;
+    let mut devices: Vec<UsbDeviceCandidate> = serde_json::from_str(json).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid Windows USB discovery response",
+        )
+    })?;
 
     for device in &devices {
         let name = device.friendly_name.trim();
@@ -118,9 +122,19 @@ $devices = @(Get-PnpDevice -PresentOnly -ErrorAction Stop | Where-Object {
 })
 ConvertTo-Json -InputObject $devices -Compress -Depth 3
 "#;
-    let output = Command::new("powershell.exe")
+    // Some Windows installations expose PowerShell 7 (pwsh) without the
+    // legacy powershell.exe on PATH. Only fall back when the executable is
+    // absent; a script failure must remain visible to the operator.
+    let output = match Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
-        .output()?;
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Command::new("pwsh.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", SCRIPT])
+            .output()?,
+        Err(error) => return Err(error),
+    };
     if !output.status.success() {
         return Err(io::Error::new(
             io::ErrorKind::Other,
@@ -133,8 +147,12 @@ ConvertTo-Json -InputObject $devices -Compress -Depth 3
             "Windows USB device enumeration exceeded its size limit",
         ));
     }
-    let raw = String::from_utf8(output.stdout)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid Windows USB discovery encoding"))?;
+    let raw = String::from_utf8(output.stdout).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid Windows USB discovery encoding",
+        )
+    })?;
     parse_candidates(raw.trim())
 }
 
@@ -166,7 +184,9 @@ mod tests {
             r#"[{"friendly_name":"HP LaserJet","instance_id":"USBPRINT\\HP_LaserJet\\UNIT1","status":"OK","device_type":"printer","vid_pid":null},{"friendly_name":"Brother Printer","instance_id":"USB\\VID_04F9&PID_1234\\UNIT2","status":"OK","device_type":"printer","vid_pid":"04F9:1234"}]"#,
         ).unwrap();
         assert_eq!(devices.len(), 2);
-        assert!(devices.iter().all(|x| x.device_type == UsbDeviceType::Printer));
+        assert!(devices
+            .iter()
+            .all(|x| x.device_type == UsbDeviceType::Printer));
     }
 
     #[test]
@@ -179,7 +199,11 @@ mod tests {
 
     #[test]
     fn rejects_network_and_virtual_queues_even_when_named_usb() {
-        for id in ["SWD\\PRINTENUM\\{printer}", "WSDPRINT\\EXAMPLE", "USB\\VID_ZZZZ&PID_1234"] {
+        for id in [
+            "SWD\\PRINTENUM\\{printer}",
+            "WSDPRINT\\EXAMPLE",
+            "USB\\VID_ZZZZ&PID_1234",
+        ] {
             assert!(!is_usb_instance_id(id));
         }
         assert!(parse_candidates(
@@ -208,7 +232,12 @@ mod tests {
 
     #[test]
     fn validates_all_vendor_product_usb_paths_before_slicing() {
-        for id in ["USB\\VID_1", "USB\\VID_1234&PID_FOOO", "USB\\VID_1234&PID_5678xyz", "USBPRINT\\"] {
+        for id in [
+            "USB\\VID_1",
+            "USB\\VID_1234&PID_FOOO",
+            "USB\\VID_1234&PID_5678xyz",
+            "USBPRINT\\",
+        ] {
             assert!(!is_usb_instance_id(id));
         }
         assert_eq!(

@@ -1,6 +1,7 @@
 pub mod recovery_guard;
 pub mod discovery;
 pub mod usb_devices;
+pub mod canon_drc225;
 use aes_gcm::{
     aead::{Aead, AeadCore, OsRng, Payload},
     Aes256Gcm, KeyInit, Nonce,
@@ -191,6 +192,16 @@ pub struct PrinterConfig {
     pub marker_counter_oid: Vec<u64>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UsbScannerConfig {
+    /// Existing backend equipment ID; never inferred from the USB model.
+    pub printer_id: u64,
+    /// Full Windows PnP instance ID binds the configured asset to this device.
+    pub instance_id: String,
+    pub profile: String,
+}
+
 fn default_heartbeat_interval() -> u64 { 60 }
 
 const DEFAULT_MAX_PENDING_SAMPLES: u64 = 50_000;
@@ -214,8 +225,11 @@ pub struct CollectorConfig {
     pub max_pending_payload_bytes: u64,
     #[serde(default = "default_max_sqlite_files_bytes")]
     pub max_sqlite_files_bytes: u64,
+    #[serde(default)]
     pub authorized_subnets: Vec<String>,
     pub printers: Vec<PrinterConfig>,
+    #[serde(default)]
+    pub usb_scanners: Vec<UsbScannerConfig>,
 }
 
 impl CollectorConfig {
@@ -242,7 +256,7 @@ impl CollectorConfig {
         if !self.api_url.starts_with("https://") {
             return Err(CollectorError::Configuration("api_url must use HTTPS".into()));
         }
-        if self.authorized_subnets.is_empty() {
+        if self.authorized_subnets.is_empty() && (self.usb_scanners.is_empty() || !self.printers.is_empty()) {
             return Err(CollectorError::Configuration("at least one authorized CIDR is required".into()));
         }
         let subnets: Vec<IpNet> = self.authorized_subnets.iter()
@@ -250,6 +264,12 @@ impl CollectorConfig {
             .collect::<Result<_,_>>()?;
 
         let mut ids = std::collections::HashSet::new();
+        if self.usb_scanners.len() > 1 {
+            return Err(CollectorError::Configuration("Canon GUI reader supports one USB scanner per host".into()));
+        }
+        if !self.usb_scanners.is_empty() && !cfg!(windows) {
+            return Err(CollectorError::Configuration("Canon GUI reader requires Windows".into()));
+        }
         for printer in &self.printers {
             if printer.printer_id == 0 || !ids.insert(printer.printer_id) {
                 return Err(CollectorError::Configuration("duplicate/invalid printer ID".into()));
@@ -259,6 +279,17 @@ impl CollectorConfig {
             }
             if printer.marker_counter_oid.len() < 2 || printer.marker_counter_oid.len() > 128 {
                 return Err(CollectorError::Configuration(format!("printer {} requires an explicitly verified meter OID", printer.printer_id)));
+            }
+        }
+        for scanner in &self.usb_scanners {
+            if scanner.printer_id == 0 || !ids.insert(scanner.printer_id) {
+                return Err(CollectorError::Configuration("duplicate/invalid equipment ID".into()));
+            }
+            if scanner.profile != canon_drc225::PROFILE_ID
+                || !scanner.instance_id.to_ascii_uppercase().starts_with("USB\\VID_1083&PID_1658\\")
+                || scanner.instance_id.len() > 1024
+            {
+                return Err(CollectorError::Configuration("unsupported USB scanner profile or identity".into()));
             }
         }
         Ok(())
@@ -279,6 +310,8 @@ pub struct Reading {
     pub meter_total: Option<u64>,
     pub meter_mono: Option<u64>,
     pub meter_color: Option<u64>,
+    #[serde(default)]
+    pub meter_scan: Option<u64>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -1128,6 +1161,7 @@ pub fn collect_snmp_v2c(
         meter_total: counter,
         meter_mono: None,
         meter_color: None,
+        meter_scan: None,
     })
 }
 
@@ -1793,7 +1827,7 @@ mod tests {
         let file = tmp.path().join("queue.sqlite");
         let sample = Reading {
             sample_id: Uuid::new_v4(), printer_id: 17, collected_at: Utc::now(),
-            meter_total: Some(15), meter_mono: None, meter_color: None,
+            meter_total: Some(15), meter_mono: None, meter_color: None, meter_scan: None,
         };
         {
             let outbox = Outbox::open(&file).unwrap();
@@ -1815,6 +1849,7 @@ mod tests {
             meter_total: Some(meter),
             meter_mono: None,
             meter_color: None,
+            meter_scan: None,
         }
     }
 
@@ -2015,6 +2050,7 @@ mod tests {
             max_sqlite_files_bytes: 512 * 1024 * 1024,
             authorized_subnets: vec!["192.0.2.0/24".into()],
             printers: vec![],
+            usb_scanners: vec![],
         };
         assert!(cfg.validate().is_err());
         cfg.max_pending_samples = 1_000_001;
@@ -2032,6 +2068,7 @@ mod tests {
                 printer_id: 1, ip: "10.1.1.10".parse().unwrap(),
                 marker_counter_oid: vec![1,3,6,1,2,1,43,10,2,1,4,1,1],
             }],
+            usb_scanners: vec![],
         };
         assert!(cfg.validate().is_err());
     }
@@ -2044,6 +2081,7 @@ mod tests {
             max_pending_payload_bytes: 64 * 1024 * 1024,
             max_sqlite_files_bytes: 512 * 1024 * 1024,
             authorized_subnets: vec!["192.168.1.0/24".into()], printers: vec![],
+            usb_scanners: vec![],
         };
         assert!(cfg.validate().is_ok());
         cfg.heartbeat_interval_seconds = 0;
@@ -2052,6 +2090,36 @@ mod tests {
         assert!(cfg.validate().is_err());
         cfg.heartbeat_interval_seconds = 30;
         assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn usb_profile_requires_exact_binding_and_unique_backend_id() {
+        let mut cfg = CollectorConfig {
+            collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
+            interval_seconds: 300, heartbeat_interval_seconds: 60,
+            max_pending_samples: 50_000, max_pending_payload_bytes: 64 * 1024 * 1024,
+            max_sqlite_files_bytes: 512 * 1024 * 1024,
+            authorized_subnets: vec!["192.0.2.0/24".into()], printers: vec![],
+            usb_scanners: vec![UsbScannerConfig {
+                printer_id: 7,
+                instance_id: "USB\\VID_1083&PID_1658\\UNIT1".into(),
+                profile: canon_drc225::PROFILE_ID.into(),
+            }],
+        };
+        assert_eq!(cfg.validate().is_ok(), cfg!(windows));
+        cfg.authorized_subnets.clear();
+        assert_eq!(cfg.validate().is_ok(), cfg!(windows));
+        cfg.usb_scanners[0].profile = "unknown".into();
+        assert!(cfg.validate().is_err());
+        cfg.usb_scanners[0].profile = canon_drc225::PROFILE_ID.into();
+        cfg.usb_scanners[0].instance_id = "USB\\VID_1083&PID_1659\\UNIT1".into();
+        assert!(cfg.validate().is_err());
+        cfg.usb_scanners[0].instance_id = "USB\\VID_1083&PID_1658\\UNIT1".into();
+        cfg.printers.push(PrinterConfig {
+            printer_id: 7, ip: "192.0.2.10".parse().unwrap(),
+            marker_counter_oid: vec![1, 3, 6, 1, 2, 1],
+        });
+        assert!(cfg.validate().is_err());
     }
 
     #[test]
@@ -2318,6 +2386,7 @@ mod tests {
             max_sqlite_files_bytes: 512 * 1024 * 1024,
             authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![],
+            usb_scanners: vec![],
         };
         assert!(cfg.validate().is_err());
     }
