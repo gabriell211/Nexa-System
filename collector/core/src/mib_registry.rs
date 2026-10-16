@@ -196,7 +196,7 @@ mod tests {
         assert_eq!(entries.len(), 9);
         let distinct: std::collections::HashSet<_> =
             entries.iter().map(|entry| entry.enterprise).collect();
-        assert_eq!(distinct.len(), 8);
+        assert_eq!(distinct.len(), 9);
         for entry in entries {
             assert_eq!(vendor_from_sys_object_id(&format!("{}.5.10.1", entry.enterprise_oid)), Some(entry.manufacturer));
             assert_eq!(entry.coverage, "generic_standard_discovery_only_not_model_certified");
