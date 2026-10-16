@@ -277,7 +277,13 @@ fn run_application(
     // The scheduler never registers printers or generates readings. Its
     // non-sensitive candidate report is stored in the existing outbox state.
     // A worker thread keeps slow probes independent from uploads/heartbeats.
-    let previous_discovery = outbox.discovery_report()?;
+    // A corrupted optional discovery report must not block legacy installations
+    // whose scheduling feature is disabled.
+    let previous_discovery = if cfg.discovery_schedule.enabled {
+        outbox.discovery_report()?
+    } else {
+        DiscoveryReport::default()
+    };
     let interval = ChronoDuration::hours(cfg.discovery_schedule.interval_hours as i64);
     let now = Utc::now();
     let mut next_discovery = previous_discovery.last_completed_at
