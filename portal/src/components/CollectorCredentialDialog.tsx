@@ -84,7 +84,7 @@ export function CollectorCredentialDialog({ customer, token, onClose, onIssued }
             </p>
             <div className="editor-form">
               <label htmlFor="issued-collector-id">ID do Collector</label>
-              <div className="inline">
+              <div className="collector-credential-row">
                 <input id="issued-collector-id" type="text" readOnly autoComplete="off" spellCheck={false} value={issued.collector_id} />
                 <button type="button" className="button ghost" onClick={() => void copy(issued.collector_id, 'id')}
                   aria-label="Copiar ID do Collector">
@@ -93,7 +93,7 @@ export function CollectorCredentialDialog({ customer, token, onClose, onIssued }
                 </button>
               </div>
               <label htmlFor="issued-collector-token">Chave do Collector (exibição única)</label>
-              <div className="inline">
+              <div className="collector-credential-row">
                 <input id="issued-collector-token" type="text" readOnly autoComplete="off" spellCheck={false} value={issued.collector_token} />
                 <button type="button" className="button ghost" onClick={() => void copy(issued.collector_token, 'token')}
                   aria-label="Copiar chave do Collector">
