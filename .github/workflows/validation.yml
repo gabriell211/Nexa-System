@@ -424,7 +424,9 @@ jobs:
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           pkgutil --expand "$pkg" "$tmp/expanded"
-          test -f "$tmp/expanded/Scripts"
+          echo '--- Expanded macOS PKG ---'
+          find "$tmp/expanded" -maxdepth 2 -print
+          test -e "$tmp/expanded/Scripts"
           test -f "$tmp/expanded/PackageInfo"
       - name: Upload unsigned macOS full installer
         uses: actions/upload-artifact@v4
