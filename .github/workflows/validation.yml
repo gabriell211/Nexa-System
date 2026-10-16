@@ -371,6 +371,10 @@ jobs:
           deb="$(find collector/target/release/bundle/deb -name '*.deb' -type f -print -quit)"
           pkgname="$(dpkg-deb -f "$deb" Package)"
           sudo dpkg -i "$deb"
+          echo '--- Linux installed files ---'
+          sudo find /etc/nexa-collector /var/lib/nexa-collector -maxdepth 2 -printf '%m %u:%g %p\n' || true
+          sudo stat -c '%a %U:%G %n' /etc/nexa-collector/config.json /etc/nexa-collector/credentials || true
+          systemctl is-enabled nexa-collector.service || true
           getent passwd nexa-collector
           test -f /etc/nexa-collector/config.json
           test "$(stat -c '%a' /etc/nexa-collector/config.json)" = 640
@@ -452,6 +456,10 @@ jobs:
           set -euo pipefail
           pkg="$(find collector/target/release/bundle/pkg -type f -name '*.pkg' -print -quit)"
           sudo installer -pkg "$pkg" -target /
+          echo '--- macOS installed files ---'
+          ls -ld "/Applications/Nexa Collector.app" "/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon" "/Library/Application Support/NexaCollector/config.json" "/Library/Application Support/NexaCollector/package/activate.sh" || true
+          sudo find "/Library/Application Support/NexaCollector" -maxdepth 3 -print || true
+          dscl . -read /Users/_nexacollector || true
           test -d "/Applications/Nexa Collector.app"
           test -x "/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon"
           test -f "/Library/Application Support/NexaCollector/config.json"
