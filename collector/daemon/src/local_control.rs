@@ -18,6 +18,32 @@ impl Drop for Cleanup {
     fn drop(&mut self) { let _ = fs::remove_file(&self.0); }
 }
 
+// On macOS the filesystem mode of an AF_UNIX socket is not a sufficient
+// authentication primitive on its own. Verify native peer credentials too.
+// Only the isolated service UID or root may send state-changing requests.
+#[cfg(target_os = "macos")]
+fn authorized_peer(stream: &UnixStream) -> bool {
+    use std::os::fd::AsRawFd;
+    unsafe extern "C" {
+        fn getpeereid(s: i32, euid: *mut u32, egid: *mut u32) -> i32;
+        fn geteuid() -> u32;
+    }
+    let mut uid = 0_u32;
+    let mut gid = 0_u32;
+    // SAFETY: all pointers are to live stack values, and the fd is owned by
+    // the accepted UnixStream for the duration of this call.
+    unsafe {
+        getpeereid(stream.as_raw_fd(), &mut uid, &mut gid) == 0
+            && (uid == geteuid() || uid == 0)
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn authorized_peer(_stream: &UnixStream) -> bool {
+    // Linux enforces both the private directory and socket inode modes.
+    true
+}
+
 fn private_parent(path: &Path) -> io::Result<()> {
     let parent = path.parent().ok_or_else(|| io::Error::other("socket parent missing"))?;
     let metadata = fs::symlink_metadata(parent)?;
@@ -63,7 +89,14 @@ pub fn start(
                 Ok((mut stream, _)) => {
                     // Serializing requests bounds CPU, memory, and database
                     // write concurrency. One local request per connection.
-                    let response = handle(&mut stream, &queue, &cfg, &key);
+                    let response = if authorized_peer(&stream) {
+                        handle(&mut stream, &queue, &cfg, &key)
+                    } else {
+                        ControlResponse {
+                            accepted: false,
+                            reason: Some("Acesso ao canal local negado pelo sistema operacional.".into()),
+                        }
+                    };
                     let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
                     let _ = stream.write_all(&serde_json::to_vec(&response).unwrap_or_default());
                     let _ = stream.shutdown(Shutdown::Write);
