@@ -19,6 +19,11 @@ mod macos_launchd_runtime;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
+    if args.len() == 2 && args[1] == "--discover-local" {
+        let candidates = nexa_collector_core::discovery::discover_local()?;
+        println!("{}", serde_json::to_string_pretty(&candidates)?);
+        return Ok(());
+    }
     #[cfg(windows)]
     if args.len() == 2 && args[1] == "--service" {
         return windows_service_runtime::dispatch();
