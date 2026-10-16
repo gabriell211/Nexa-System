@@ -216,6 +216,17 @@ impl Default for DiscoverySchedule {
     }
 }
 
+/// Read-only candidate snapshot. Persisted in the existing SQLite state table
+/// so a restart does not erase the observed scan time or candidate evidence.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DiscoveryReport {
+    pub last_completed_at: Option<DateTime<Utc>>,
+    pub last_error_kind: Option<String>,
+    pub observed_candidates: usize,
+    pub candidates: Vec<discovery::DiscoveryCandidate>,
+}
+
 fn default_heartbeat_interval() -> u64 { 60 }
 
 const DEFAULT_MAX_PENDING_SAMPLES: u64 = 50_000;
@@ -1142,6 +1153,29 @@ impl Outbox {
         let serialized = serde_json::to_string(diagnostics)?;
         self.connection.execute(
             "INSERT INTO state(key, value) VALUES ('delivery_diagnostics', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [&serialized],
+        )?;
+        Ok(())
+    }
+
+    pub fn discovery_report(&self) -> Result<DiscoveryReport, CollectorError> {
+        let raw: Option<String> = self.connection.query_row(
+            "SELECT value FROM state WHERE key = 'discovery_report'",
+            [], |row| row.get(0),
+        ).optional()?;
+        raw.map(|value| serde_json::from_str(&value).map_err(CollectorError::from))
+            .transpose()
+            .map(|value| value.unwrap_or_default())
+    }
+
+    pub fn save_discovery_report(&self, report: &DiscoveryReport) -> Result<(), CollectorError> {
+        if report.candidates.len() > 200 || report.observed_candidates > 1024 {
+            return Err(CollectorError::Configuration("discovery report exceeds safe size".into()));
+        }
+        let serialized = serde_json::to_string(report)?;
+        self.connection.execute(
+            "INSERT INTO state(key, value) VALUES ('discovery_report', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [&serialized],
         )?;
@@ -2153,6 +2187,33 @@ mod tests {
             marker_counter_oid: vec![1, 3, 6, 1, 2, 1],
         });
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn discovery_report_persists_across_restart_without_creating_readings() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("queue.sqlite");
+        let report = DiscoveryReport {
+            last_completed_at: Some(Utc::now()),
+            last_error_kind: None,
+            observed_candidates: 1,
+            candidates: vec![discovery::DiscoveryCandidate {
+                ip: "10.2.0.7".parse().unwrap(),
+                print_ports: vec![9100],
+                http_server: Some("Printer HTTP".into()),
+                escl_scanner: false,
+            }],
+        };
+        {
+            let store = Outbox::open_bounded(&path, 10).unwrap();
+            store.save_discovery_report(&report).unwrap();
+            assert_eq!(store.pending().unwrap(), 0);
+        }
+        let reopened = Outbox::open_bounded(&path, 10).unwrap();
+        let restored = reopened.discovery_report().unwrap();
+        assert_eq!(restored.observed_candidates, 1);
+        assert_eq!(restored.candidates[0].ip.to_string(), "10.2.0.7");
+        assert_eq!(reopened.pending().unwrap(), 0);
     }
 
     #[test]
