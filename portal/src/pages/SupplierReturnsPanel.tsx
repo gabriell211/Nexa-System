@@ -20,6 +20,7 @@ interface MatchedReceipt {
   quantity: number;
   returned_quantity: number;
   pending_return_quantity: number;
+  received_at: string | null;
 }
 interface PurchaseLine {
   id: number;
@@ -199,6 +200,8 @@ export function SupplierReturnsPanel({ orderId, lines, token, role, userId, onCh
     {(returns.data?.meta?.total ?? returns.data?.total ?? 0) > 100 &&
       <p className="stock-hint">Exibindo as 100 devoluções mais recentes deste pedido.</p>}
     <SupplierReplacementFollowupsPanel orderId={orderId}
-      returns={returns.data?.data ?? []} token={token} role={role} userId={userId} />
+      returns={returns.data?.data ?? []} receipts={lines.flatMap(line =>
+        line.receipts.map(receipt => ({ ...receipt, line_id: line.id, sku: line.item?.sku ?? 'Linha #' + line.id })))}
+      token={token} role={role} userId={userId} onChanged={onChanged} />
   </section>;
 }

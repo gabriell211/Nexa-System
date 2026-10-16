@@ -45,7 +45,8 @@ interface PurchaseOrder {
     outstanding_quantity: number; cost_divergence: boolean;
     receipts: Array<{ purchase_receipt_match_id: number; returned_quantity: number; pending_return_quantity: number;
       receipt_detail_id: number; invoice_reference: string; lot_number: string;
-      quantity: number; unit_cost_cents: number; variance_reason: string | null }>;
+      quantity: number; unit_cost_cents: number; variance_reason: string | null;
+      received_at: string | null }>;
     item: { id: number; sku: string; name: string; unit: string } | null;
     destination: { id: number; name: string } | null;
   }>;

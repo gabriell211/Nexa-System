@@ -117,6 +117,7 @@ $registerBackoffice = static function (): void {
         Route::post('/stock/supplier-returns', [StockSupplierReturnController::class, 'store']);
         Route::post('/stock/supplier-replacements', [StockSupplierReplacementController::class, 'store']);
         Route::post('/stock/supplier-replacements/{case}/events', [StockSupplierReplacementController::class, 'event']);
+        Route::post('/stock/supplier-replacements/{case}/receipts', [StockSupplierReplacementController::class, 'receipt']);
         Route::post('/stock/supplier-returns/{return}/cancel', [StockSupplierReturnController::class, 'cancel']);
         Route::post('/stock/purchase-orders/{order}/reconcile-receipt', [StockPurchaseReceiptMatchController::class, 'store']);
         Route::post('/stock/purchase-orders/{order}/cancel', [StockPurchaseOrderController::class, 'cancel']);

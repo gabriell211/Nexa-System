@@ -782,4 +782,110 @@ final class StockPurchaseOrderTest extends TestCase
         $this->assertDatabaseCount('stock_supplier_replacement_events', 2);
     }
 
+    public function test_documented_replacement_receipt_links_existing_inventory_once_with_exact_quota(): void
+    {
+        $fixture = $this->fixture();
+        [$order, $line, , $originalMatch] = $this->reconciledForReturn($fixture, 2, 'NF-ORIGINAL-REPLACEMENT');
+        $returned = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-returns', [
+            'request_id' => (string) Str::uuid(), 'purchase_receipt_match_id' => $originalMatch,
+            'quantity' => 2, 'reason' => 'Lote inteiro danificado e devolvido',
+        ])->assertCreated()->json('data.id');
+        $this->as($fixture['managerToken'])->postJson("/api/v1/stock/supplier-returns/{$returned}/approve", [
+            'expected_version' => 1, 'review_note' => 'Devolução física conferida',
+        ])->assertOk();
+        $case = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-replacements', [
+            'request_id' => (string) Str::uuid(), 'supplier_return_id' => $returned,
+            'assigned_user_id' => $fixture['creator']->id,
+            'due_on' => now()->addDays(4)->toDateString(),
+            'note' => 'Acompanhar entrega dos dois itens substitutos',
+        ])->assertCreated()->json('data.id');
+        $uri = "/api/v1/stock/supplier-replacements/{$case}/receipts";
+        $base = ['request_id' => (string) Str::uuid(), 'expected_version' => 1,
+            'purchase_receipt_match_id' => $originalMatch, 'quantity' => 1,
+            'note' => 'Entrada física da substituição conferida'];
+        $this->as($fixture['creatorToken'])->postJson($uri, $base)->assertUnprocessable();
+
+        $firstReceipt = $this->documentedPurchaseReceipt($fixture, 1, 6875, 'NF-SUBSTITUTA-1');
+        $this->as($fixture['creatorToken'])->postJson("/api/v1/stock/purchase-orders/{$order}/reconcile-receipt", [
+            'purchase_order_line_id' => $line, 'receipt_detail_id' => $firstReceipt,
+        ])->assertCreated();
+        $firstMatch = (int) DB::table('stock_purchase_receipt_matches')
+            ->where('receipt_detail_id', $firstReceipt)->value('id');
+        $movements = DB::table('stock_movements')->count();
+        $first = [...$base, 'purchase_receipt_match_id' => $firstMatch];
+        $this->as($fixture['creatorToken'])->postJson($uri, $first)
+            ->assertCreated()->assertJsonPath('data.documented_quantity', 1)
+            ->assertJsonPath('data.remaining_quantity', 1)
+            ->assertJsonPath('data.version', 2)
+            ->assertJsonPath('data.status', 'awaiting_supplier')
+            ->assertJsonPath('data.replacement_receipts.0.invoice_reference', 'NF-SUBSTITUTA-1');
+        $this->as($fixture['creatorToken'])->postJson($uri, $first)
+            ->assertOk()->assertJsonPath('data.documented_quantity', 1);
+        $this->as($fixture['creatorToken'])->postJson($uri, [...$first, 'quantity' => 2])
+            ->assertUnprocessable();
+        $this->as($fixture['creatorToken'])->postJson($uri, [
+            ...$first, 'request_id' => (string) Str::uuid(), 'expected_version' => 2,
+        ])->assertUnprocessable();
+        $this->assertSame($movements, DB::table('stock_movements')->count());
+
+        $secondReceipt = $this->documentedPurchaseReceipt($fixture, 1, 6875, 'NF-SUBSTITUTA-2');
+        $this->as($fixture['creatorToken'])->postJson("/api/v1/stock/purchase-orders/{$order}/reconcile-receipt", [
+            'purchase_order_line_id' => $line, 'receipt_detail_id' => $secondReceipt,
+        ])->assertCreated();
+        $secondMatch = (int) DB::table('stock_purchase_receipt_matches')
+            ->where('receipt_detail_id', $secondReceipt)->value('id');
+        $this->as($fixture['managerToken'])->postJson($uri, [
+            'request_id' => (string) Str::uuid(), 'expected_version' => 2,
+            'purchase_receipt_match_id' => $secondMatch, 'quantity' => 1,
+            'note' => 'Segunda unidade substituta recebida e conferida',
+        ])->assertCreated()->assertJsonPath('data.status', 'receipt_documented')
+            ->assertJsonPath('data.documented_quantity', 2)
+            ->assertJsonPath('data.remaining_quantity', 0)
+            ->assertJsonCount(2, 'data.replacement_receipts');
+        $this->as($fixture['creatorToken'])->getJson('/api/v1/stock/supplier-replacements?status=receipt_documented')
+            ->assertOk()->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.documented_quantity', 2);
+        $this->assertDatabaseCount('stock_supplier_replacement_receipts', 2);
+        $this->assertDatabaseHas('audit_entries', [
+            'tenant_id' => $fixture['tenant']->id, 'entity_type' => 'StockSupplierReplacementCase',
+            'entity_id' => $case, 'action' => 'stock.supplier_replacement.receipt_linked',
+        ]);
+    }
+
+    public function test_replacement_receipt_rejects_foreign_tenant_and_receipt_preceding_return(): void
+    {
+        $fixture = $this->fixture();
+        [$order, $line, , $originalMatch] = $this->reconciledForReturn($fixture, 2, 'NF-ORIGINAL-OLD');
+        $oldReceipt = $this->documentedPurchaseReceipt($fixture, 1, 6875, 'NF-ANTES-DEVOLUCAO');
+        $returned = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-returns', [
+            'request_id' => (string) Str::uuid(), 'purchase_receipt_match_id' => $originalMatch,
+            'quantity' => 1, 'reason' => 'Unidade avariada para devolução',
+        ])->assertCreated()->json('data.id');
+        $this->as($fixture['managerToken'])->postJson("/api/v1/stock/supplier-returns/{$returned}/approve", [
+            'expected_version' => 1,
+        ])->assertOk();
+        $this->as($fixture['creatorToken'])->postJson("/api/v1/stock/purchase-orders/{$order}/reconcile-receipt", [
+            'purchase_order_line_id' => $line, 'receipt_detail_id' => $oldReceipt,
+        ])->assertCreated();
+        DB::table('stock_receipt_details')->where('id', $oldReceipt)
+            ->update(['created_at' => now()->subDay()]);
+        $match = (int) DB::table('stock_purchase_receipt_matches')
+            ->where('receipt_detail_id', $oldReceipt)->value('id');
+        $case = $this->as($fixture['creatorToken'])->postJson('/api/v1/stock/supplier-replacements', [
+            'request_id' => (string) Str::uuid(), 'supplier_return_id' => $returned,
+            'assigned_user_id' => $fixture['creator']->id,
+            'due_on' => now()->addDays(4)->toDateString(),
+            'note' => 'Verificar efetiva substituição posterior à devolução',
+        ])->assertCreated()->json('data.id');
+        $uri = "/api/v1/stock/supplier-replacements/{$case}/receipts";
+        $payload = ['request_id' => (string) Str::uuid(), 'expected_version' => 1,
+            'purchase_receipt_match_id' => $match, 'quantity' => 1,
+            'note' => 'Tentativa de reutilizar entrada anterior'];
+        $this->as($fixture['creatorToken'])->postJson($uri, $payload)->assertUnprocessable();
+        $other = Tenant::query()->create(['name' => 'Outro tenant', 'slug' => 'replacement-receipt-foreign']);
+        [, $otherToken] = $this->token($other);
+        $this->as($otherToken)->postJson($uri, $payload)->assertNotFound();
+        $this->assertDatabaseCount('stock_supplier_replacement_receipts', 0);
+    }
+
 }

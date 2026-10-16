@@ -459,7 +459,9 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
         apiRoot + '/stock/purchase-orders/' + orderId,
       );
       expect(finalResponse.status()).toBe(200);
-      const finalOrder: { data: { fulfillment: {
+      const finalOrder: { data: { items: Array<{ receipts: Array<{
+        purchase_receipt_match_id: number; invoice_reference: string;
+      }> }>; fulfillment: {
         gross_received_quantity: number; returned_quantity: number;
         retained_quantity: number; replacement_needed_quantity: number;
         outstanding_quantity: number; status: string;
@@ -469,6 +471,10 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
         replacement_needed_quantity: 0, outstanding_quantity: 0,
         status: 'net_received',
       });
+      const replacementMatch = finalOrder.data.items[0].receipts.find(
+        receipt => receipt.invoice_reference === replacementInvoice,
+      );
+      expect(replacementMatch).toBeDefined();
 
       const returnsResponse = await warehouseRequest.get(apiRoot + '/stock/supplier-returns' +
         '?purchase_order_id=' + orderId);
@@ -524,6 +530,32 @@ test('necessidade com saldo zero vira proposta editada e aprovada por outra pess
       });
       expect(confirmationBody.data.events.map(event => event.action))
         .toEqual(['opened','supplier_confirmed']);
+      expect(await paginatedTotal(owner.context().request, '/stock/movements'))
+        .toBe(countBeforeMatching);
+
+      await ownerFollowups.getByLabel('Entrada conciliada *')
+        .selectOption(String(replacementMatch!.purchase_receipt_match_id));
+      await ownerFollowups.getByLabel('Quantidade vinculada *').fill('1');
+      await ownerFollowups.getByLabel('Conferência da substituição *')
+        .fill('Uma unidade substituta conferida na nota e no lote recebido');
+      await ownerFollowups.getByRole('button', { name: 'Vincular recebimento' }).click();
+      await expect(ownerFollowups.getByRole('status').filter({
+        hasText: 'Nenhum novo movimento foi criado',
+      })).toBeVisible();
+      await expect(ownerFollowups.getByText('1 de 1 unidade(s).')).toBeVisible();
+      const linked = await owner.context().request.get(
+        apiRoot + '/stock/supplier-replacements/' + caseId,
+      );
+      expect(linked.status()).toBe(200);
+      const linkedBody: { data: { status: string; documented_quantity: number;
+        replacement_receipts: Array<{ purchase_receipt_match_id: number; quantity: number }> } } =
+        await linked.json();
+      expect(linkedBody.data).toMatchObject({
+        status: 'receipt_documented', documented_quantity: 1,
+      });
+      expect(linkedBody.data.replacement_receipts).toMatchObject([{
+        purchase_receipt_match_id: replacementMatch!.purchase_receipt_match_id, quantity: 1,
+      }]);
       expect(await paginatedTotal(owner.context().request, '/stock/movements'))
         .toBe(countBeforeMatching);
     });

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\StockSupplierReplacementCaseRequest;
 use App\Http\Requests\StockSupplierReplacementEventRequest;
+use App\Http\Requests\StockSupplierReplacementReceiptRequest;
 use App\Http\Resources\StockSupplierReplacementCaseResource;
 use App\Models\StockSupplierReplacementCase;
 use App\Services\CustomerPortfolio;
@@ -27,7 +28,7 @@ final class StockSupplierReplacementController extends Controller
         $this->portfolio->assertFull($request);
         $filter = $request->validate([
             'purchase_order_id'=>['sometimes','integer','min:1'],
-            'status'=>['sometimes',Rule::in(['awaiting_supplier','supplier_confirmed','closed_unresolved'])],
+            'status'=>['sometimes',Rule::in(['awaiting_supplier','supplier_confirmed','closed_unresolved','receipt_documented'])],
             'overdue_only'=>['sometimes','in:0,1'],
             'page'=>['sometimes','integer','min:1'],
             'per_page'=>['sometimes','integer','between:1,100'],
@@ -41,7 +42,8 @@ final class StockSupplierReplacementController extends Controller
                 ->when(isset($filter['status']), static fn ($q) => $q->where('status',$filter['status']))
                 ->when(($filter['overdue_only'] ?? null)==='1', static fn ($q) => $q
                     ->where('status','awaiting_supplier')->whereDate('due_on','<',today()))
-                ->with(['assignee:id,name','creator:id,name','supplierReturn'])
+                ->with(['assignee:id,name','creator:id,name','supplierReturn.purchaseMatch'])
+                ->withSum('replacementReceipts as documented_quantity', 'quantity')
                 ->orderBy('due_on')->orderBy('id')
                 ->paginate($filter['per_page'] ?? 25)
         );
@@ -71,6 +73,17 @@ final class StockSupplierReplacementController extends Controller
         [$updated,$created] = $this->service->record(
             $request->attributes->get('nexa_tenant'),$request->user(),$case,
             (string)$request->attributes->get('nexa_role'),$request->validated()
+        );
+        return (new StockSupplierReplacementCaseResource($updated))->response()
+            ->setStatusCode($created ? 201 : 200);
+    }
+
+    public function receipt(StockSupplierReplacementReceiptRequest $request, int $case): JsonResponse
+    {
+        $this->portfolio->assertFull($request);
+        [$updated, $created] = $this->service->linkReceipt(
+            $request->attributes->get('nexa_tenant'), $request->user(), $case,
+            $request->validated()
         );
         return (new StockSupplierReplacementCaseResource($updated))->response()
             ->setStatusCode($created ? 201 : 200);
