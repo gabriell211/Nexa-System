@@ -14,56 +14,63 @@ O objetivo é disponibilizar no portal uma experiência de monitoramento remoto 
 
 Estas referências são de funcionalidade, **não** autorização para copiar telas, marcas, ativos, software ou protocolos privados.
 
-## Fluxo A: descoberta programada da rede do cliente
+## Decisão do Nexa: quem configura e aprova é o agente
 
-1. No **portal Nexa → Pontos de instalação**, o administrador autorizado escolhe cliente e collector ativo, liga a busca periódica e informa **intervalo de 6–168 horas**, faixas CIDR/IP autorizadas e limite de hosts/conexões; o portal mostra próximo agendamento e último resultado.
-2. O backend persiste uma revisão assinada da política vinculada a `tenant_id`, `customer_id` e `collector_id`. O agente busca a política por HTTPS autenticado, com *ETag/revision*; não recebe shell ou scripts executáveis.
-3. O daemon agenda a descoberta de forma independente do ciclo de medições e do heartbeat. Limitar duração, concurrency, rate e lista de IPs; scans apenas nas redes autorizadas do cliente. Configuração vazia pode habilitar **somente sub-redes locais privadas permitidas** (não varrer internet ou VPNs sem aprovação explícita).
-4. O dispositivo é identificado como **candidato**, com IP, evidência de portas, protocolo, timestamp e identificadores verificáveis disponíveis; nome/modelo/nº série permanecem `null` se desconhecidos. Descoberta não implica impressora pertencente ao cliente, não realiza comandos de escrita e não configura SNMP/OID automaticamente.
-5. O agente envia **candidatos** por lote, com chave idempotente, token individual e outbox dedicada / controle de backpressure; a API valida limites, escopo e unicidade por *tenant/customer/collector*.
-6. O portal mostra **Novas impressoras** com status `pendente`, `aprovada`, `ignorada`, `indisponível` ou `conflito`. O operador pode identificar proprietário, unidade/localização, departamento, centro de custo e contrato apropriados ao cadastro existente.
-7. **Aprovar/adotar** requer permissões de gestor, validade de cliente/unidade, comparação contra parque existente (serie física confirmada preferencialmente) e perfil homologado de medição. Só então o backend emite vínculo de monitoramento e instrução específica ao coletor.
-8. **Ignorar** mantém evidência/auditoria e bloqueia reapresentação por fingerprint estável; permitir reversão auditada. Reinicialização do agente não pode ressuscitar dispositivos ignorados.
+**Escolha funcional confirmada pelo proprietário do Nexa em 16/10/2026:** o cadastro de faixas IPv4/CIDR, a ativação e a frequência da descoberta programada **ficam em Nexa Collector → Configurações** no computador do cliente; o técnico escolhe quais candidatos serão monitorados em **Nexa Collector → Impressoras**, não no portal. O portal somente recebe estados/leituras de dispositivos autorizados e permite reserva de IP por ponto de instalação; não envia ordens genéricas de varredura nem altera a lista de faixas.
 
-**Cuidados:** a documentação PrintWayy menciona broadcast, mas o Nexa deve implementar primeiro varredura limitada por CIDR privado aprovado, para não criar alcance amplo não autorizado. A política deve ter cota de hosts e ser tolerante a intervalos longos; sem revarrer redes externas automaticamente.
+**Diferença consciente em relação à PrintWayy:** a documentação de terceiros também descreve uma fila de *Novas impressoras* no portal para dispositivos detectados automaticamente. **No Nexa, essa fila de seleção/aprovação fica no agente**, de acordo com o fluxo solicitado. Não confundir pesquisa de referência com requisito definitivo.
 
-## Fluxo B: reservar IP/ponto antes de encontrar a impressora
+## Fluxo A: cadastro local de faixas, agenda e seleção no Collector
 
-1. No portal **Parque → Impressoras por cliente → Adicionar impressora**, selecionar equipamento cadastrado, cliente e contrato.
-2. Selecionar `manual` ou `automático via rede`. Apenas modelos com perfil homologado e cliente ativo podem receber automação de medidores.
-3. No modo automático, escolher **um ponto de instalação pertencente ao mesmo cliente**, cadastrar IP privado de destino explicitamente permitido pela política e confirmar uma reserva de vínculo `pending_device` (data, usuário e versão).
-4. O collector consulta periodicamente *somente IPs autorizados reservados* além da busca local aprovada, valida identidade (serial físico quando disponível, fabricante/modelo/OID compatível, capacidades) e relata resultado.
-5. Apenas confirmação correta da identidade ativa o monitoramento. **Uma porta 9100 aberta ou um IP responder não prova que seja o equipamento esperado**; se o IP mudar de titular, serial divergir, prova estiver ausente ou já houver coleta em outro cliente, marcar `needs_review` e parar antes do envio de contadores.
-6. Modo manual usa um endpoint/auditoria próprios; dados manuais nunca são identificados como coletados automaticamente. Guardar autor, origem, horário, motivo e séries anteriores, sem enfileirar medidor como leitura do agente.
-7. Reservas vencidas, cliente inativo, coletor revogado e equipamento transferido devem bloquear ativação. Revogar ou editar reserva mantém histórico.
+1. Em **Nexa Collector → Configurações → Descoberta automática**, operador local autorizado ativa/desativa a agenda, seleciona intervalo **6–168 horas** e cadastra/edita/remove **faixas IPv4/CIDR privadas**. Sem faixas, o comportamento da rede local requer autorização explícita; não varrer redes externas por padrão.
+2. O Console Tauri valida faixas/intervalos antes do salvamento e envia a alteração a um canal local autenticado e autorizado que persiste a configuração protegida consumida pelo daemon. Console de usuário comum não pode escrever diretamente no arquivo do serviço nem manipular seus segredos.
+3. O daemon supervisionado usa horário persistido para calcular próximo ciclo, aplica limites de /24 ou teto de hosts/concurrency e registra última execução/erros. Agenda independente do heartbeat, SNMP, outbox e upload.
+4. A descoberta de rede e USB produz **candidatos** locais (nome/ID/porta/IP/evidência, status e horário). **Ainda não são impressoras homologadas nem monitoradas.** Deduplicar por identidade comprovada, não por IP isolado. Não alegar número de série físico se houver apenas VID:PID ou PnP instance.
+5. Em **Nexa Collector → Impressoras**, o técnico marca os dispositivos desejados e aciona **Salvar impressoras** para a lista local. Uma segunda ação explícita **Monitorar** inicia a solicitação de habilitação. Também haverá **Ignorar**, reversível pelo operador autorizado e persistente após reinício.
+6. Para ativar, verificar que o cliente vinculado ao Collector é dono da impressora, identidade corresponde ao cadastro/reserva e o driver/OID do contador está homologado. Se faltar qualquer evidência, manter **Aguardando homologação** e não transmitir medidores.
+7. O backend recebe somente eventos/auditoria ou cadastros aprovados pelo técnico (com escopo cliente/coletor) e medições reais; não fornece um botão independente de aprovação de candidatos no portal.
+
+**Segurança:** nenhuma seleção/edição habilita impressão/escrita no equipamento; cadastro local de faixas nunca concede permissão para varrer IP público, VPN ou rede de outro cliente sem autorização específica e revisão de escopo.
+
+## Fluxo B: reservar IP e ponto de instalação pelo portal
+
+1. Em **Parque → Impressoras por cliente → Adicionar impressora**, administrador seleciona cliente/equipamento e faz pré-reserva de IP privado e ponto de instalação **do mesmo cliente**.
+2. O portal persiste estado **Reservado / aguardando descoberta** e permite conferir o resultado, mas **não ativa monitoramento automaticamente por estar no IP indicado**.
+3. O Collector recebe de forma autenticada a referência da reserva como sugestão no agente; o IP só é consultado se estiver dentro das **faixas previamente autorizadas no agente**.
+4. Quando encontrar um candidato, o técnico **seleciona no agente** e aciona **Monitorar**. A validação confere fabricante/modelo e serial físico quando verificável, além do perfil homologado de contador. Identidade insuficiente ou divergente produz **Revisar identidade**.
+5. Após confirmação explícita no agente + validação no backend, a reserva pode se converter em monitoramento ativo; nunca usar apenas resposta em TCP 9100, endereço IP ou VID:PID para ativar.
+6. Modo manual exige autorização e auditoria próprios; jamais se passa por leitura automática. Cancelamento, transferência e expiração de reservas devem suspender vínculos incorretos.
+
+O portal poderá acompanhar **aguardando seleção no agente / aguardando homologação / monitorada / falha de comunicação**, sem possuir uma segunda fila de aprovação de dispositivos descobertos.
 
 ## Interfaces propostas no Nexa
 
 | Superfície | Ação/estado |
 | --- | --- |
-| Portal → Pontos de instalação | Configurar intervalo, redes aprovadas, estado do coletor, última/ próxima varredura, último envio |
-| Portal → Novas impressoras | Lista de candidatos, evidências, vínculo com cliente, aprovação, ignorar, revisar conflitos |
-| Portal → Parque por cliente | Pré-cadastro por IP, selecionar coletor, manual/automático, aguardar detecção, ativado, suspenso |
-| Console Tauri → Impressoras | Busca USB e rede sob demanda, candidato vs homologado, situação da comunicação e monitoramento |
-| Auditoria | Quem autorizou escaneamento, aprovou/ignorou candidato, vinculou equipamento e habilitou medição |
+| **Collector → Configurações → Descoberta** | Ativar agenda, frequência 6–168 h, adicionar/remover faixas IP/CIDR, salvar e conferir último/próximo scan |
+| **Collector → Ferramentas → Busca de rede/USB** | Busca sob demanda nas redes autorizadas e USB conectado |
+| **Collector → Impressoras** | Fila de candidatos locais, selecionar, salvar, ignorar, **Monitorar**, diagnóstico de homologação |
+| Portal → Pontos de instalação | Estado, último scan informado, histórico/contagem de impressoras monitoradas (somente leitura sobre faixas, sem edição) |
+| Portal → Parque por cliente | Pré-reserva IP/coletor do mesmo cliente; visualizar estado aguardando seleção no agente |
+| Auditoria | Registro de faixa alterada e do técnico que selecionou/ignorou/habilitou dispositivo |
 
-A interface deve distinguir claramente **descoberto ≠ homologado ≠ cadastrado ≠ monitorado**.
+A interface distingue **descoberto ≠ salvo no agente ≠ homologado ≠ monitorado**.
 
-## Componentes / contratos propostos (ainda sem endpoints publicados)
+## Componentes / contratos propostos (pendentes de implementação)
 
 | Componente | Responsabilidade |
 | --- | --- |
-| Laravel `discovery_policies` | Tenant/customer/collector, revisão, `enabled`, intervalo 6–168 horas, redes permitidas, `updated_by` |
-| Laravel `discovery_candidates` | Evidências de última descoberta, fingerprint com algoritmo versionado, seen_at/first_seen_at, situação, origem |
-| Laravel `monitoring_reservations` | Impressora cadastrada, agente, IP, identidade esperada, expiração, modo, status, ator |
-| Laravel `GET /api/v1/collector/policy` | Somente política do coletor autenticado, com revisão/ETag |
-| Laravel `POST /api/v1/collector/discovery` | Ingestão idempotente de candidatos (NÃO de leituras), autorização por tenant/customer/collector |
-| Laravel `POST /api/v1/collector/reservation-result` | Confirmação de vínculo físico, estados `matched`/`mismatch`/`unverified` |
-| Rust `discovery_scheduler` + `outbox` | Agenda, varre redes permitidas e reporta candidato/estado confiavelmente sem bloquear heartbeat |
-| Rust `monitoring_verifier` | Confirma identidade e OID homologado antes de habilitar coleta |
-| React portal / TanStack Query | Gerencia políticas/candidatos/reservas com autorização no backend e invalidação de cache |
+| `collector/core/discovery_policy` | Política **local** protegida: enabled, intervalo 6–168 h, redes privadas permitidas, limite de hosts e versão |
+| Tauri `discovery_settings` | Formulário local; validação/edição via IPC autorizado; não expor segredos do serviço |
+| Rust `discovery_scheduler` | Agenda persistente; varre rede e USB autorizados; sem bloquear heartbeat/medidores |
+| Rust `discovery_candidates` | Fila local persistente, deduplicação, selecionar/salvar/ignorar, histórico e trilha auditável |
+| Rust `monitoring_verifier` | Verifica identidade física e OID/driver homologado antes de habilitar leitura |
+| Laravel `monitoring_reservations` | Pré-reserva cliente/impressora/collector/IP/expiração/status por API autenticada |
+| Laravel `GET /api/v1/collector/reservations` | Devolve somente reservas do cliente/Collector autenticado; **sem sobrescrever faixas locais** |
+| Laravel `POST /api/v1/collector/monitoring-selection` | Confirma escolha feita **no agente** com token da instância, idempotência e validação cruzada |
+| Portal React/TanStack | Criar/consultar/cancelar reservas e visualizar estados, não editar agenda/faixas nem aprovar candidatos |
 
-**Não implementar** autorização por mera posse de endereço IP, configuração arbitrária de SNMPv2c sem OID homologado, comando remoto generalizado, acesso à rede do cliente a partir do navegador, nem registro automático de todo hardware da rede.
+**Não implementar** shell remoto, aprovação automática por IP/porta aberta, editor de CIDR no portal, envio de comando arbitrário ao coletor ou monitoramento sem OID homologado.
 
 ## Gap do código Nexa verificado
 
@@ -73,16 +80,16 @@ A interface deve distinguir claramente **descoberto ≠ homologado ≠ cadastrad
 | `collector/core/src/usb_devices.rs`: descoberta Windows USB impressora/imagem sob demanda | **Na PR #51**, diagnóstico sem contador |
 | Daemon, SQLite outbox e HTTPS para contadores **já configurados** por ID/OID | **Implementado** com limites; não serve de fila de *candidatos* automaticamente |
 | Laravel heartbeat/ingestão autenticados, isolamento por cliente e impressoras cadastradas | **Implementado** |
-| Laravel política remota de descoberta, ingestão de candidatos e fila de adoção | **Não implementado** |
-| Agenda automática de 6–168 horas, faixas aprovadas geridas no portal | **Não implementado** |
+| Configuração local segura de descoberta, canal IPC autorizado, candidatos locais e comunicação da seleção ao backend | **Não implementado** |
+| Agenda automática de 6–168 horas, faixas configuradas e persistidas no agente | **Não implementado** |
 | Reserva prévia de IP+coletor, verificação física e ativação automática | **Não implementado** |
-| Portal Novas impressoras com aprovação/ignorar e anti-duplicidade | **Não implementado** |
+| Console Tauri com fila local de candidatos, seleção/ignorar, anti-duplicidade e Monitorar | **Não implementado** |
 | Inserção manual auditada de contadores distinguível de telemetria | **Exige validação/implementação específica** |
 
 ## Testes mínimos de aceite
 
 - [ ] Intervalos 6/168h aceitos; 5/169h, intervalos nulos malformados e redes públicas não autorizadas recusados.
-- [ ] Sem faixas aprovadas, nenhum IP remoto não explicitamente autorizado é testado; limites de /24 e 1024 hosts respeitados quando aplicáveis.
+- [ ] Sem faixas aprovadas localmente, nenhum IP remoto não explicitamente autorizado é testado; limites de /24 e 1024 hosts respeitados quando aplicáveis.
 - [ ] Descoberta sob demanda e automática não bloqueiam heartbeat, SNMP nem a entrega da outbox existente.
 - [ ] Candidato duplicado por retries não vira múltiplas impressoras; `ignore` sobrevive a novo scan e restart; reversão somente por autorizado.
 - [ ] API rejeita token revogado, customer/collector de outro tenant e payloads de modelos/seriais/contadores não confiáveis.
@@ -91,7 +98,7 @@ A interface deve distinguir claramente **descoberto ≠ homologado ≠ cadastrad
 - [ ] Cadastro manual exige autorização, origem, autor e auditoria; não aparece como amostra automática.
 - [ ] Offline prolongado: preservação de dados de monitoramento já coletados, sem saturar disco com descobertas repetidas; recuperação sem duplicação.
 - [ ] Processos simultâneos de aprovação e transferência do parque são serializados em transações, sem reassociação cruzada.
-- [ ] E2E no browser: configurar política → ver novas impressoras → aprovar/ignorar → reservar IP → detectar e ativar corretamente.
+- [ ] E2E do console: salvar CIDR/frequência localmente → varrer → selecionar/salvar/ignorar → monitorar após homologação; E2E do portal: reservar IP/coletor → agente encontra e técnico confirma.
 - [ ] Teste Windows do instalador/serviço na rede autorizada, queda de rede e migração/reinstalação preservando estados.
 
-**Gate de liberação:** o fluxo remoto só está pronto quando os endpoints, agenda, backend de candidatos, telas do portal, aprovação, verificação de identidade, outbox, logs e testes de hardware/CI estiverem integrados. Esta especificação não comprova o funcionamento do produto.
+**Gate de liberação:** o fluxo remoto só está pronto quando a edição segura das faixas no console, agenda, fila e seleção local de candidatos, reservas no portal, verificação de identidade, outbox, logs e testes de hardware/CI estiverem integrados. Esta especificação não comprova o funcionamento do produto.
