@@ -1,0 +1,56 @@
+#!/bin/bash
+# A real macOS Installer.app .pkg invokes this with administrator rights.
+# Stage launchd but never bootstrap until customer config/credentials are valid.
+set -euo pipefail
+umask 077
+base='/Library/Application Support/NexaCollector'
+daemon_dir='/Library/PrivilegedHelperTools/NexaCollector'
+log_dir='/Library/Logs/NexaCollector'
+plist="$base/launchd/com.nexa.collector.plist"
+[[ "$(id -u)" -eq 0 ]] || { echo 'Administrator privileges required' >&2; exit 1; }
+command -v dscl >/dev/null && command -v launchctl >/dev/null || { echo 'macOS Directory Services and launchd are required' >&2; exit 1; }
+[[ -x "$daemon_dir/nexa-collector-daemon" ]] || { echo 'Collector daemon is missing' >&2; exit 1; }
+[[ -f "$plist" && -f "$base/package/config.example.json" ]] || { echo 'Package assets are incomplete' >&2; exit 1; }
+/usr/bin/plutil -lint "$plist" >/dev/null
+
+# Dedicated hidden, non-login daemon identity; UID/GID must both be free.
+if ! dscl . -read /Users/_nexacollector >/dev/null 2>&1; then
+  uid_list="$(dscl . -list /Users UniqueID | /usr/bin/awk '{print $2}')"
+  gid_list="$(dscl . -list /Groups PrimaryGroupID | /usr/bin/awk '{print $2}')"
+  selected=''
+  for candidate in {430..499}; do
+    if ! printf '%s\n' "$uid_list" | /usr/bin/grep -qx "$candidate" &&
+       ! printf '%s\n' "$gid_list" | /usr/bin/grep -qx "$candidate"; then
+      selected="$candidate"
+      break
+    fi
+  done
+  [[ -n "$selected" ]] || { echo 'No unused system UID/GID available' >&2; exit 1; }
+  dscl . -create /Groups/_nexacollector
+  dscl . -create /Groups/_nexacollector PrimaryGroupID "$selected"
+  dscl . -create /Groups/_nexacollector RealName 'Nexa Collector Service'
+  dscl . -create /Users/_nexacollector
+  dscl . -create /Users/_nexacollector UniqueID "$selected"
+  dscl . -create /Users/_nexacollector PrimaryGroupID "$selected"
+  dscl . -create /Users/_nexacollector UserShell /usr/bin/false
+  dscl . -create /Users/_nexacollector NFSHomeDirectory /var/empty
+  dscl . -create /Users/_nexacollector RealName 'Nexa Collector Service'
+  dscl . -create /Users/_nexacollector IsHidden 1
+fi
+dscl . -read /Groups/_nexacollector >/dev/null
+/usr/bin/install -d -o root -g _nexacollector -m 0750 "$base"
+/usr/bin/install -d -o _nexacollector -g _nexacollector -m 0700 "$base/data"
+/usr/bin/install -d -o root -g _nexacollector -m 0750 "$base/credentials"
+/usr/bin/install -d -o root -g wheel -m 0700 "$base/launchd"
+/usr/bin/install -d -o root -g wheel -m 0755 "$base/package"
+/usr/bin/install -d -o root -g wheel -m 0755 "$daemon_dir"
+/usr/bin/install -d -o _nexacollector -g _nexacollector -m 0700 "$log_dir"
+/usr/sbin/chown root:wheel "$daemon_dir/nexa-collector-daemon" "$plist"
+/bin/chmod 0755 "$daemon_dir/nexa-collector-daemon"
+/bin/chmod 0644 "$plist"
+if [[ ! -e "$base/config.json" ]]; then
+  /usr/bin/install -o root -g _nexacollector -m 0640 "$base/package/config.example.json" "$base/config.json"
+fi
+# The service is NOT registered or started here. Activation follows provision.
+echo 'Nexa Collector Console installed. Provision the client credentials and activate with the documented launchd procedure.'
+exit 0
