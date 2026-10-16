@@ -22,6 +22,7 @@ A navegação descrita tem **Impressoras**, **Ferramentas**, **Status do Client*
 | Resumo do cadastro em massa | [salvar-impressoras.png](https://help.printwayy.com/wp-content/uploads/2023/01/salvar-impressoras.png) |
 | Detecção USB | [busca-USB.png](https://help.printwayy.com/wp-content/uploads/2023/01/busca-USB.png) |
 | Assistente de instalação | [instalador-1a.png](https://help.printwayy.com/wp-content/uploads/2024/12/instalador-1a.png) · [instalador-2.png](https://help.printwayy.com/wp-content/uploads/2024/12/instalador-2.png) · [instalador-3.png](https://help.printwayy.com/wp-content/uploads/2024/12/instalador-3.png) |
+| Proxy durante instalação | [config_proxy.gif](https://help.printwayy.com/wp-content/uploads/2021/11/config_proxy.gif) |
 | Proxy após instalação | [config_proxy_instalado.png](https://help.printwayy.com/wp-content/uploads/2021/11/config_proxy_instalado.png) |
 
 A documentação descreve duas ações distintas: **Salvar impressoras** (traz à lista local) e **Monitorar** (ativa a coleta/transmissão). Na busca por IP, o software testa a comunicação e exibe os contadores antes de ativar.
@@ -38,6 +39,10 @@ A documentação descreve duas ações distintas: **Salvar impressoras** (traz �
 **Não copiar:** nomes dos executáveis e serviços, formato `.plog`, conteúdo/algoritmo privado, endpoints internos ou identidade visual. Nexa precisa de protocolo **próprio** com contratos e testes de interoperabilidade internos.
 
 A referência pública menciona coleta a **30 minutos** na FAQ e a **60 minutos** no tutorial de monitoramento por IP. Não presumir uma única cadência universal: registrar divergência documental e oferecer **intervalos independentes, configuráveis** em Nexa.
+
+### Referência adicional: fluxo de proxy
+
+O tutorial [Configuração de proxy](https://help.printwayy.com/proxy/#instalacao) confirma que a opção aparece quando se seleciona **Internet (Web Services)** durante o instalador. Um formulário é apresentado e há também uma tela posterior de **Configurações** com **Salvar** e **Testar comunicação**. O Nexa ainda não oferece essa edição na UI atual: consulte [Especificação de instalador e proxy](NEXA-COLLECTOR-INSTALLER-PROXY.md) para requisitos de segurança, integração com Windows Service e testes pendentes.
 
 ### Instalação e identificação
 
