@@ -1,5 +1,19 @@
 # Nexa System — monitoramento remoto, descoberta e adoção de impressoras
 
+## Incremento: busca manual por faixas autorizadas (17/10/2026)
+
+O núcleo Rust agora expõe `plan_authorized_hosts` e `discover_authorized_ranges`:
+- exige 1 a 4 IPv4/CIDRs por execução, cada um com máscara /24 ou mais restrita;
+- exige que cada CIDR esteja **inteiramente** dentro de uma das faixas `authorized_subnets` previamente provisionadas no arquivo do Collector;
+- recusa intervalos públicos, loopback, link-local e escopos não autorizados;
+- limita o conjunto agregado a 1024 hosts e elimina duplicações;
+- detecta apenas candidatos por portas de impressão/eSCL, sem cadastro, autorização ou coleta de contador.
+
+O Console Tauri passa as faixas para o Rust por `discover_authorized_printers`; os limites são validados **no lado Rust**, não somente no formulário React. A ação manual fica em **Configurações → Busca manual por faixa autorizada** e exibe os candidatos em **Impressoras**. O Console não recebe permissões para editar o arquivo do serviço, alterar token ou cadastrar dispositivos na API.
+
+**Não concluídos:** edição persistente de faixas pelo operador autorizado via IPC privilegiado; agendamento automático de 6–168h; histórico/fila local e decisões Salvar/Monitorar/Ignorar; pré-reserva IP/coletor e integração com API. O incremento não ativa nem monitora nenhum equipamento.
+
+
 **Situação em 16/10/2026: especificação e comparação com referência pública; fluxo remoto completo não implementado.**
 O objetivo é disponibilizar no portal uma experiência de monitoramento remoto *sem depender de acesso remoto interativo ao computador do cliente*, por meio do Nexa Collector instalado e vinculado ao cliente.
 
