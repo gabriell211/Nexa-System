@@ -2,7 +2,7 @@
 //! file and is reachable only through a mode-0700 service-owned directory
 //! and a mode-0600 Unix socket. Never bind TCP or expose a browser endpoint.
 use nexa_collector_core::{
-    local_control::{socket_path, ControlRequest, ControlResponse, MAX_MESSAGE_BYTES, PROTOCOL_VERSION},
+    local_control::{socket_path, ControlRequest, ScheduleControlRequest, ControlResponse, MAX_MESSAGE_BYTES, PROTOCOL_VERSION},
     CollectorConfig, Outbox,
 };
 use std::{
@@ -125,10 +125,16 @@ fn handle(
     {
         return denied("Mensagem inválida ou acima do limite.");
     }
-    let Ok(request) = serde_json::from_slice::<ControlRequest>(&input) else {
+    // A message must match exactly one closed, versioned request shape.
+    // Unknown fields, enrollment commands and arbitrary paths are rejected.
+    let review = serde_json::from_slice::<ControlRequest>(&input).ok();
+    let schedule = serde_json::from_slice::<ScheduleControlRequest>(&input).ok();
+    if review.is_some() == schedule.is_some() {
         return denied("Comando local inválido.");
-    };
-    if request.version != PROTOCOL_VERSION {
+    }
+    if review.as_ref().map(|r| r.version)
+        .or_else(|| schedule.as_ref().map(|r| r.version)) != Some(PROTOCOL_VERSION)
+    {
         return denied("Versão do protocolo não suportada.");
     }
     let Ok(mut outbox) = Outbox::open_encrypted_disk_guard(
@@ -137,9 +143,20 @@ fn handle(
     ) else {
         return denied("Armazenamento protegido indisponível.");
     };
-    match outbox.review_candidate(request.ip, request.action) {
-        Ok(_) => ControlResponse { accepted: true, reason: None },
-        Err(_) => denied("A decisão foi recusada: candidato ausente, desatualizado ou sem autorização."),
+    if let Some(request) = review {
+        match outbox.review_candidate(request.ip, request.action) {
+            Ok(_) => ControlResponse { accepted: true, reason: None },
+            Err(_) => denied("A decisão foi recusada: candidato ausente, desatualizado ou sem autorização."),
+        }
+    } else if let Some(request) = schedule {
+        // Never update authorized_subnets in config.json. The only new scope
+        // allowed here is a subset of the administrator's immutable CIDRs.
+        match outbox.save_discovery_schedule_override(&cfg.authorized_subnets, &request.schedule) {
+            Ok(_) => ControlResponse { accepted: true, reason: None },
+            Err(_) => denied("Agenda inválida, faixas fora do escopo autorizado ou limite excedido."),
+        }
+    } else {
+        denied("Comando local inválido.")
     }
 }
 
@@ -201,6 +218,43 @@ mod tests {
         stopping.store(true, Ordering::Relaxed);
         handle.join().unwrap();
         assert!(!socket.exists());
+    }
+
+    #[test]
+    fn socket_updates_schedule_without_mutating_meter_configuration() {
+        use nexa_collector_core::{DiscoverySchedule, local_control::submit_schedule};
+        let dir = tempfile::tempdir().unwrap();
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let queue = dir.path().join("queue.sqlite");
+        let cfg = config();
+        let key = Zeroizing::new("11".repeat(32));
+        let store = Outbox::open_encrypted_disk_guard(
+            &queue, cfg.max_pending_samples, cfg.max_pending_payload_bytes,
+            cfg.max_sqlite_files_bytes, &key,
+        ).unwrap();
+        drop(store);
+        let stop = Arc::new(AtomicBool::new(false));
+        let server = start(&queue, cfg.clone(), key.clone(), Arc::clone(&stop)).unwrap();
+        let desired = DiscoverySchedule {
+            enabled: true, interval_hours: 6, cidrs: vec!["10.20.1.0/24".into()],
+        };
+        submit_schedule(&queue, desired).unwrap();
+        let invalid = DiscoverySchedule {
+            enabled: true, interval_hours: 5, cidrs: vec!["10.20.1.0/24".into()],
+        };
+        assert!(submit_schedule(&queue, invalid).is_err());
+        assert!(submit_schedule(&queue, DiscoverySchedule {
+            enabled: true, interval_hours: 24, cidrs: vec!["10.22.1.0/24".into()],
+        }).is_err());
+        let reopened = Outbox::open_encrypted_disk_guard(
+            &queue, cfg.max_pending_samples, cfg.max_pending_payload_bytes,
+            cfg.max_sqlite_files_bytes, &key,
+        ).unwrap();
+        assert_eq!(reopened.discovery_schedule_override(&cfg.authorized_subnets)
+            .unwrap().unwrap().interval_hours, 6);
+        assert_eq!(reopened.pending().unwrap(), 0);
+        stop.store(true, Ordering::Relaxed);
+        server.join().unwrap();
     }
 
     #[test]
