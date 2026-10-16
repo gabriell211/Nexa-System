@@ -1,7 +1,7 @@
 use chrono::Utc;
 use nexa_collector_core::{
     discovery::{self, DiscoveryCandidate},
-    usb_canon::{self, CanonUsbCandidate},
+    usb_devices::{self, UsbDeviceCandidate},
     recovery_guard::{RecoveryGuard, WatchdogSnapshot},
     read_config, DeliveryDiagnostics, Outbox, QuarantinedReading, SqliteFootprint,
 };
@@ -151,16 +151,16 @@ async fn discover_local_printers() -> Result<Vec<DiscoveryCandidate>, String> {
 }
 
 #[tauri::command]
-async fn discover_canon_usb_scanners() -> Result<Vec<CanonUsbCandidate>, String> {
-    tauri::async_runtime::spawn_blocking(usb_canon::discover_canon_usb)
+async fn discover_usb_printers() -> Result<Vec<UsbDeviceCandidate>, String> {
+    tauri::async_runtime::spawn_blocking(usb_devices::discover_usb_devices)
         .await.map_err(|_| "A consulta USB foi interrompida.".to_owned())?
-        .map_err(|_| "Não foi possível consultar os scanners Canon USB neste Windows.".to_owned())
+        .map_err(|_| "Não foi possível consultar as impressoras e dispositivos de imagem USB neste Windows.".to_owned())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers, discover_canon_usb_scanners])
+        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers, discover_usb_printers])
         .run(tauri::generate_context!())
         .expect("failed to start Nexa Collector Console");
 }
