@@ -35,6 +35,7 @@ struct CollectorSnapshot {
     collector_id: Option<String>,
     endpoint: Option<String>,
     interval_seconds: Option<u64>,
+    authorized_subnets: Vec<String>,
     printers: Vec<PrinterInfo>,
     usb_scanners: Vec<UsbScannerInfo>,
     queue_pending: Option<u64>,
@@ -59,6 +60,7 @@ fn get_snapshot() -> CollectorSnapshot {
         collector_id: None,
         endpoint: None,
         interval_seconds: None,
+        authorized_subnets: Vec::new(),
         printers: Vec::new(),
         usb_scanners: Vec::new(),
         queue_pending: None,
@@ -84,6 +86,7 @@ fn get_snapshot() -> CollectorSnapshot {
                 snapshot.collector_id = Some(config.collector_id.to_string());
                 snapshot.endpoint = Some(config.api_url);
                 snapshot.interval_seconds = Some(config.interval_seconds);
+                snapshot.authorized_subnets = config.authorized_subnets.clone();
                 snapshot.queue_capacity = Some(config.max_pending_samples);
                 snapshot.payload_bytes_limit = Some(config.max_pending_payload_bytes);
                 capacity_limits = Some((config.max_pending_samples, config.max_pending_payload_bytes, config.max_sqlite_files_bytes));
@@ -171,6 +174,22 @@ async fn discover_local_printers() -> Result<Vec<DiscoveryCandidate>, String> {
 }
 
 #[tauri::command]
+async fn discover_authorized_printers(cidrs: Vec<String>) -> Result<Vec<DiscoveryCandidate>, String> {
+    // Never accept a list of networks from the UI as authorization. Load
+    // the exact provisioned service config and re-check the entire scope in
+    // Rust before sending a single discovery packet.
+    tauri::async_runtime::spawn_blocking(move || {
+        let path = env::var("NEXA_COLLECTOR_CONFIG")
+            .map_err(|_| "Configuração do Collector indisponível.".to_owned())?;
+        let config = read_config(path)
+            .map_err(|_| "Configuração do Collector inválida ou inacessível.".to_owned())?;
+        discovery::discover_authorized_ranges(&config.authorized_subnets, &cidrs)
+            .map_err(|e| e.to_string())
+    })
+    .await.map_err(|_| "A varredura autorizada foi interrompida.".to_owned())?
+}
+
+#[tauri::command]
 async fn discover_usb_printers() -> Result<Vec<UsbDeviceCandidate>, String> {
     tauri::async_runtime::spawn_blocking(usb_devices::discover_usb_devices)
         .await.map_err(|_| "A consulta USB foi interrompida.".to_owned())?
@@ -192,7 +211,7 @@ async fn read_canon_drc225_meter() -> Result<CanonMeterView, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers, discover_usb_printers, read_canon_drc225_meter])
+        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter])
         .run(tauri::generate_context!())
         .expect("failed to start Nexa Collector Console");
 }
