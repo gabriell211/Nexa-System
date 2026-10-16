@@ -49,6 +49,72 @@ fn local_scan_net(ip: Ipv4Addr, mask: Ipv4Addr) -> Option<Ipv4Net> {
     Ipv4Net::new(ip, prefix.max(24)).ok().map(|net| net.trunc())
 }
 
+
+fn invalid_scope(reason: &'static str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidInput, reason)
+}
+
+/// Plan a bounded, explicit scan. Requested ranges must be contained in the
+/// administrator-provisioned `authorized_subnets` from the Collector config.
+/// An open TCP port never counts as a registered or approved printer.
+///
+/// This operation never expands to a whole interface or public network.
+pub fn plan_authorized_hosts(
+    authorized_subnets: &[String],
+    requested_cidrs: &[String],
+) -> std::io::Result<Vec<Ipv4Addr>> {
+    if requested_cidrs.is_empty() || requested_cidrs.len() > 4 {
+        return Err(invalid_scope("choose between one and four IPv4 ranges"));
+    }
+    let allowed: Vec<Ipv4Net> = authorized_subnets
+        .iter()
+        .filter_map(|value| value.parse::<Ipv4Net>().ok())
+        .collect();
+    let mut hosts = BTreeSet::new();
+    for value in requested_cidrs {
+        let net = value.parse::<Ipv4Net>()
+            .map_err(|_| invalid_scope("invalid IPv4 CIDR"))?;
+        if net.prefix_len() < 24 {
+            return Err(invalid_scope("discovery ranges cannot be larger than /24"));
+        }
+        // Check both ends: a subnet must not cross from RFC1918 into a
+        // public/reserved region even when the authorized net is too broad.
+        if !net.network().is_private() || !net.broadcast().is_private()
+            || net.network().is_loopback() || net.network().is_link_local()
+            || net.broadcast().is_link_local()
+        {
+            return Err(invalid_scope("only private RFC1918 IPv4 ranges are allowed"));
+        }
+        if !allowed.iter().any(|scope| {
+            scope.contains(&net.network()) && scope.contains(&net.broadcast())
+        }) {
+            return Err(invalid_scope("requested CIDR is outside authorized subnets"));
+        }
+        for ip in net.hosts() {
+            if !ip.is_private() || ip.is_loopback() || ip.is_link_local() {
+                return Err(invalid_scope("range includes an unauthorized host"));
+            }
+            hosts.insert(ip);
+            if hosts.len() > MAX_HOSTS {
+                return Err(invalid_scope("authorized discovery exceeds 1024 hosts"));
+            }
+        }
+    }
+    if hosts.is_empty() {
+        return Err(invalid_scope("selected networks contain no usable hosts"));
+    }
+    Ok(hosts.into_iter().collect())
+}
+
+/// Synchronous core called by the console in a background thread. The daemon
+/// does not enroll, claim ownership, or upload discovered candidates.
+pub fn discover_authorized_ranges(
+    authorized_subnets: &[String],
+    requested_cidrs: &[String],
+) -> std::io::Result<Vec<DiscoveryCandidate>> {
+    Ok(scan_hosts(plan_authorized_hosts(authorized_subnets, requested_cidrs)?))
+}
+
 pub fn discover_local() -> std::io::Result<Vec<DiscoveryCandidate>> {
     let interfaces = get_if_addrs()?;
     let mut hosts = BTreeSet::new();
@@ -211,6 +277,39 @@ fn sanitize_server_header(value: &str) -> Option<String> {
 mod tests {
     use super::*;
     use std::net::TcpListener;
+
+    #[test]
+    fn manual_discovery_requires_authorized_bounded_rfc1918_ranges() {
+        let authorized = vec!["10.12.0.0/16".to_owned(), "192.168.1.0/24".to_owned()];
+        let allowed = plan_authorized_hosts(
+            &authorized,
+            &["10.12.4.0/30".into(), "192.168.1.50/32".into()],
+        ).unwrap();
+        assert!(allowed.contains(&"10.12.4.1".parse().unwrap()));
+        assert!(allowed.contains(&"10.12.4.2".parse().unwrap()));
+        assert!(allowed.contains(&"192.168.1.50".parse().unwrap()));
+        assert_eq!(allowed.len(), 3);
+
+        for denied in ["10.13.0.0/24", "8.8.8.8/32", "127.0.0.1/32",
+            "169.254.2.0/24", "10.12.0.0/16", "bad", "224.0.0.0/24",
+            "192.168.2.0/24"
+        ] {
+            assert!(plan_authorized_hosts(&authorized, &[denied.into()]).is_err(), "{denied}");
+        }
+        assert!(plan_authorized_hosts(&authorized, &[]).is_err());
+        assert!(plan_authorized_hosts(&authorized, &vec!["10.12.4.0/24".into(); 5]).is_err());
+    }
+
+    #[test]
+    fn overlapping_scopes_do_not_duplicate_hosts_or_exceed_limit() {
+        let authorized = vec!["10.20.0.0/16".to_string()];
+        let hosts = plan_authorized_hosts(
+            &authorized, &["10.20.1.0/24".into(), "10.20.1.128/25".into()],
+        ).unwrap();
+        assert_eq!(hosts.len(), 254);
+        assert_eq!(hosts.first().unwrap(), &"10.20.1.1".parse().unwrap());
+        assert_eq!(hosts.last().unwrap(), &"10.20.1.254".parse().unwrap());
+    }
 
     #[test]
     fn private_large_network_is_limited_to_local_24() {
