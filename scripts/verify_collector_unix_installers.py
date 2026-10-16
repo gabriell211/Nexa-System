@@ -51,6 +51,10 @@ assert plist["GroupName"] == "_nexacollector"
 assert plist["RunAtLoad"] is True
 build_script = (root / "collector/macos/build-pkg.sh").read_text()
 assert "pkgbuild --root" in build_script
+assert "pkgbuild --analyze --root" in build_script
+assert "--component-plist" in build_script
+assert 'component.get("RootRelativeBundlePath") == "Applications/Nexa Collector.app"' in build_script
+assert 'matches[0]["BundleIsRelocatable"] = False' in build_script
 assert "Nexa Collector.app" in build_script
 assert "nexa-collector-daemon" in build_script
 assert "com.nexa.collector.plist" in build_script
