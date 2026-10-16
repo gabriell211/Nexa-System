@@ -1,6 +1,7 @@
 use chrono::Utc;
 use nexa_collector_core::{
     canon_drc225::{self, CanonDrc225Meter},
+    candidate_review::CandidateReview,
     discovery::{self, DiscoveryCandidate},
     usb_devices::{self, UsbDeviceCandidate},
     recovery_guard::{RecoveryGuard, WatchdogSnapshot},
@@ -38,6 +39,8 @@ struct CollectorSnapshot {
     authorized_subnets: Vec<String>,
     discovery_schedule: Option<DiscoverySchedule>,
     discovery_report: Option<DiscoveryReport>,
+    candidate_reviews: Vec<CandidateReview>,
+    candidate_reviews_error: Option<String>,
     printers: Vec<PrinterInfo>,
     usb_scanners: Vec<UsbScannerInfo>,
     queue_pending: Option<u64>,
@@ -65,6 +68,8 @@ fn get_snapshot() -> CollectorSnapshot {
         authorized_subnets: Vec::new(),
         discovery_schedule: None,
         discovery_report: None,
+        candidate_reviews: Vec::new(),
+        candidate_reviews_error: None,
         printers: Vec::new(),
         usb_scanners: Vec::new(),
         queue_pending: None,
@@ -155,6 +160,12 @@ fn get_snapshot() -> CollectorSnapshot {
                         Err(_) => snapshot.error = Some("Histórico de transmissão local inválido.".into()),
                     }
                     snapshot.last_run = outbox.last_run().ok().flatten();
+                    match outbox.candidate_reviews() {
+                        Ok(reviews) => snapshot.candidate_reviews = reviews,
+                        Err(_) => snapshot.candidate_reviews_error = Some(
+                            "Decisões locais de candidatos corrompidas/inacessíveis. Não são consideradas válidas.".into()
+                        ),
+                    }
                     match outbox.discovery_report() {
                         Ok(report) => snapshot.discovery_report = Some(report),
                         Err(_) => snapshot.error = Some(
