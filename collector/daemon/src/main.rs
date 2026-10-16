@@ -61,11 +61,12 @@ fn run_application(
     let watchdog_status = args.len() == 4 && args[3] == "--watchdog-status";
     let watchdog_reset = args.len() == 4 && args[3] == "--reset-watchdog-circuit";
     let once = args.len() == 4 && args[3] == "--once";
-    if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || storage_status || watchdog_status || watchdog_reset || restore || migrate || rotate)
+    let review_candidate = args.len() == 6 && args[3] == "--review-candidate";
+    if args.len() < 3 || !(args.len() == 3 || once || list_quarantine || storage_status || watchdog_status || watchdog_reset || review_candidate || restore || migrate || rotate)
         || (windows_service_mode && args.len() != 3)
         || (macos_launchd_mode && args.len() != 3)
     {
-        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --storage-status | --watchdog-status | --reset-watchdog-circuit | --restore-quarantined <sample-uuid> | --migrate-encrypted-to <new-queue.sqlite> | --rotate-encryption-to <new-queue.sqlite>]");
+        eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --storage-status | --watchdog-status | --reset-watchdog-circuit | --restore-quarantined <sample-uuid> | --migrate-encrypted-to <new-queue.sqlite> | --rotate-encryption-to <new-queue.sqlite> | --review-candidate <ipv4> <save|ignore|reset>]");
         std::process::exit(2);
     }
     let cfg = read_config(&args[1])?;
@@ -173,6 +174,21 @@ fn run_application(
             "pending={} quarantined={} retained_payload_bytes={}",
             outbox.pending()?, outbox.quarantined_count()?, outbox.retained_payload_bytes()?
         );
+        return Ok(());
+    }
+    // Administrative maintenance only: protected database file permissions
+    // are the authorization boundary. No SNMP, HTTP or service lifecycle
+    // action happens here. The candidate is never registered for monitoring.
+    if review_candidate {
+        let ip = args[4].parse::<std::net::Ipv4Addr>()?;
+        let decision = args[5].parse::<nexa_collector_core::candidate_review::ReviewAction>()?;
+        match outbox.review_candidate(ip, decision)? {
+            Some(review) => println!(
+                "Candidate {} noted as {:?}; printer ownership and meter verification are still required",
+                review.candidate.ip, review.decision
+            ),
+            None => println!("Candidate {} review cleared; no monitored printer changed", ip),
+        }
         return Ok(());
     }
     // Operator-only commands do not start SNMP polling or heartbeat workers.
