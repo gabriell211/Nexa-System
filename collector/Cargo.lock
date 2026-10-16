@@ -2201,6 +2201,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.21",
  "uuid",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 
@@ -2216,6 +2217,7 @@ dependencies = [
  "tempfile",
  "uuid",
  "windows-service",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 

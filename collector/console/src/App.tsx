@@ -86,6 +86,7 @@ type CollectorSnapshot = {
   candidate_reviews: CandidateReview[];
   candidate_reviews_error: string | null;
   local_control_supported: boolean;
+  schedule_control_supported: boolean;
   printers: PrinterInfo[];
   usb_scanners: UsbScannerInfo[];
   queue_pending: number | null;
@@ -697,20 +698,20 @@ export default function App() {
                 <label className="schedule-switch" htmlFor="schedule-enabled">
                   <input id="schedule-enabled" type="checkbox" checked={scheduleEnabled}
                     onChange={event => setScheduleEnabled(event.target.checked)}
-                    disabled={!snapshot?.local_control_supported || scheduleSaving} />
+                    disabled={!snapshot?.schedule_control_supported || scheduleSaving} />
                   Ativar busca periódica
                 </label>
                 <label htmlFor="schedule-hours">Frequência (6 a 168 horas)</label>
                 <input id="schedule-hours" type="number" min={6} max={168} step={1}
                   value={scheduleHours} onChange={event => setScheduleHours(Number(event.target.value))}
-                  disabled={!snapshot?.local_control_supported || scheduleSaving} />
+                  disabled={!snapshot?.schedule_control_supported || scheduleSaving} />
                 <label htmlFor="schedule-cidrs">Faixas IPv4/CIDR programadas (máximo 4)</label>
                 <textarea id="schedule-cidrs" rows={3} spellCheck={false} value={scheduleRanges}
                   placeholder="192.168.1.0/24" maxLength={256}
                   onChange={event => setScheduleRanges(event.target.value)}
-                  disabled={!snapshot?.local_control_supported || scheduleSaving} />
+                  disabled={!snapshot?.schedule_control_supported || scheduleSaving} />
                 <button type="button" className="primary-button" onClick={() => void saveSchedule()}
-                  disabled={!snapshot?.configured || !snapshot?.local_control_supported || scheduleSaving}>
+                  disabled={!snapshot?.configured || !snapshot?.schedule_control_supported || scheduleSaving}>
                   <ShieldCheck size={16} aria-hidden="true" />
                   {scheduleSaving ? "Salvando..." : "Salvar agenda no Collector"}
                 </button>

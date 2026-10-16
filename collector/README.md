@@ -66,6 +66,33 @@ homologação de ACLs. Usuários gráficos sem permissão na pasta/socket do
 serviço Unix também recebem acesso negado. **Monitorar** ainda exige
 homologação real e vínculo com cliente/reserva.
 
+## Canal administrativo Windows (em homologação)
+
+O daemon iniciado pelo Windows Service Control Manager cria uma named pipe local
+`\\\\.\\pipe\\NexaCollector.Control.v1`, com DACL explícita que concede acesso
+somente à conta `LOCAL SYSTEM` e ao grupo `Builtin Administrators`.
+A criação recusa clientes remotos; o protocolo aceita apenas comandos tipados
+`save`, `ignore` e `reset`, com mensagens de no máximo 512 bytes.
+Não são transmitidas credenciais do Collector ou segredos da fila.
+O serviço mantém as decisões transacionais no SQLite protegido.
+
+O Console envia essas ações via chamada Tauri nativa. Um usuário Windows
+não elevado pode receber **acesso negado**; não diminuir a DACL para
+`Everyone`, `Users` ou `Authenticated Users`.
+
+**Segurança de distribuição:** este endpoint **não é habilitado automaticamente**
+no Windows. Para um ensaio isolado, é necessário configurar
+`NEXA_EXPERIMENTAL_WINDOWS_CONTROL=1` separadamente no ambiente seguro
+do serviço SCM **e** do Console. Ausência do flag deixa a pipe desligada
+e os botões de escrita bloqueados. Não habilite em instalações de clientes.
+
+**Pendências de homologação:** validar identidade do processo do servidor
+no cliente antes de confiar na resposta (proteção contra pipe preexistente),
+timeouts de operações de I/O em cliente mal-comportado, DACL e token efetivos
+com conta padrão/elevada em instalações reais, e execução após reinício do SCM.
+Até esses controles estarem comprovados, não classificar o fluxo Windows
+como integração segura pronta para produção.
+
 ## Canal de controle local protegido (Linux/macOS, incremento)
 
 O serviço supervisionado (systemd em Linux, launchd em macOS) inicia um
