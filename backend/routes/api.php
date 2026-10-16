@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\CollectorHealthIncidentController;
 use App\Http\Controllers\Api\V1\ResendWebhookController;
 use App\Http\Controllers\Api\V1\CostCenterController;
 use App\Http\Controllers\Api\V1\CustomerController;
+use App\Http\Controllers\Api\V1\CustomerCollectorCredentialController;
 use App\Http\Controllers\Api\V1\CustomerContractController;
 use App\Http\Controllers\Api\V1\CustomerDepartmentController;
 use App\Http\Controllers\Api\V1\CustomerLocationController;
@@ -156,6 +157,8 @@ $registerBackoffice = static function (): void {
 
     Route::get('/audit-entries', AuditEntryController::class)->middleware('nexa.roles:owner,admin');
     Route::middleware('nexa.roles:owner,admin')->group(static function (): void {
+        Route::post('/customers/{customer}/collector-credentials', CustomerCollectorCredentialController::class)
+            ->middleware('throttle:5,1');
         Route::get('/staff', [StaffPortfolioController::class, 'index']);
         Route::get('/staff/{user}/portfolio', [StaffPortfolioController::class, 'show']);
         Route::put('/staff/{user}/portfolio', [StaffPortfolioController::class, 'update']);
