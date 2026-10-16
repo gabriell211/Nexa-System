@@ -6,7 +6,7 @@ use nexa_collector_core::{
     CollectorConfig, Outbox,
 };
 use std::{
-    fs, io::{self, Read, Write}, net::Shutdown,
+    fs, io::{self, BufRead, Read, Write}, net::Shutdown,
     os::unix::{fs::{FileTypeExt, PermissionsExt}, net::{UnixListener, UnixStream}},
     path::{Path, PathBuf}, sync::{atomic::{AtomicBool, Ordering}, Arc},
     thread::{self, JoinHandle}, time::Duration,
@@ -120,8 +120,11 @@ fn handle(
         return denied("Erro no canal local.");
     }
     let mut input = Vec::new();
-    if stream.take(MAX_MESSAGE_BYTES + 1).read_to_end(&mut input).is_err()
-        || input.len() as u64 > MAX_MESSAGE_BYTES
+    // Bounded newline-delimited frame; do not wait for EOF/half-close.
+    let received = std::io::BufReader::new(stream)
+        .take(MAX_MESSAGE_BYTES + 2).read_until(b'\n', &mut input);
+    if received.is_err() || input.last() != Some(&b'\n')
+        || input.len() as u64 > MAX_MESSAGE_BYTES + 1
     {
         return denied("Mensagem inválida ou acima do limite.");
     }
