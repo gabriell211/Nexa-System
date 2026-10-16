@@ -29,8 +29,30 @@ mkdir -p "$stage/Library/Application Support/NexaCollector/package"
 /usr/bin/install -m 0644 "$plist" "$stage/Library/Application Support/NexaCollector/launchd/com.nexa.collector.plist"
 /usr/bin/install -m 0644 "$config" "$stage/Library/Application Support/NexaCollector/package/config.example.json"
 /usr/bin/install -m 0750 "$collector/macos/activate.sh" "$stage/Library/Application Support/NexaCollector/package/activate.sh"
+# pkgbuild otherwise treats .app bundles as relocatable and may install the app
+# into the Tauri build directory instead of /Applications (notably on Intel).
+component_plist="$tmp/components.plist"
+/usr/bin/pkgbuild --analyze --root "$stage" "$component_plist"
+/usr/bin/python3 - "$component_plist" <<'PY'
+import plistlib
+import sys
+
+path = sys.argv[1]
+with open(path, "rb") as source:
+    components = plistlib.load(source)
+matches = [
+    component
+    for component in components
+    if component.get("RootRelativeBundlePath") == "Applications/Nexa Collector.app"
+]
+if len(matches) != 1:
+    raise SystemExit("Expected exactly one Nexa Collector.app component in the package")
+matches[0]["BundleIsRelocatable"] = False
+with open(path, "wb") as destination:
+    plistlib.dump(components, destination)
+PY
 mkdir -p "$collector/target/release/bundle/pkg"
 output="$collector/target/release/bundle/pkg/NexaCollector-$version-$architecture-unsigned.pkg"
-/usr/bin/pkgbuild --root "$stage" --install-location / --scripts "$buildscripts" --identifier com.nexa.collector.installer --version "$version" --ownership recommended "$output"
+/usr/bin/pkgbuild --root "$stage" --component-plist "$component_plist" --install-location / --scripts "$buildscripts" --identifier com.nexa.collector.installer --version "$version" --ownership recommended "$output"
 test -s "$output"
 echo "Created unsigned Nexa Collector system installer: $output"
