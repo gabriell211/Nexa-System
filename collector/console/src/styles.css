@@ -19,3 +19,16 @@
 .secondary-button:hover:not(:disabled){background:#eaf1ff;border-color:#9fb8e8}
 .secondary-button:focus-visible{outline:2px solid #466fdf;outline-offset:2px}
 .secondary-button:disabled{opacity:.5;cursor:not-allowed}
+
+/* Privileged local-only discovery schedule editor. */
+.discovery-settings input[type="number"]{
+  width:min(100%,220px);padding:10px 12px;border:1px solid #cbd8eb;
+  border-radius:9px;background:#fff;color:#1c3657;font:inherit;
+}
+.discovery-settings .schedule-switch{
+  display:flex;align-items:center;gap:10px;cursor:pointer;
+}
+.discovery-settings .schedule-switch input[type="checkbox"]{
+  width:17px;height:17px;accent-color:#315cba;cursor:pointer;
+}
+.discovery-settings input:focus-visible {outline:2px solid #4a70e8;outline-offset:2px}
