@@ -32,8 +32,16 @@ Abra `http://127.0.0.1:8081`. O serviço `scheduler` executa os comandos agendad
 - **Requisitos documentados**: 324 itens numerados, todos pendentes.
 - **Testes de aceite descritos**: 62 cenários de ponta a ponta.
 - **Fonte**: documentação pública oficial consultada em 08/10/2026.
-- **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; não há prova de integração completa, operação em hardware real nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
+- **Implementação verificada**: API Laravel com isolamento por empresa, ingestão idempotente, Collector Rust inicial, portal React, estoque, chamados técnicos e E2E de navegador para jornadas específicas. Nenhum requisito NX foi aceito integralmente; a descoberta local foi observada em impressora real, mas não há leitura SNMP homologada, integração completa nem homologação de produção. Veja [rastreamento incremental](docs/EXECUTION-TRACKER.md) e [matriz de evidências](docs/REQUIREMENT-VERIFICATION-MATRIX.md).
 - **Paridade completa com ambiente autenticado**: ainda não verificável sem avaliação autorizada dos módulos, perfis, telas e equipamentos.
+
+### Cadastro e ciclo básico de contratos — incremento 60 (parcial)
+
+- A API e o portal permitem cadastrar e atualizar contratos por cliente com número documental único por empresa, unidade prestadora textual, local/fuso de cobrança, vigência determinada ou indeterminada e data de início do faturamento. Listagem e detalhe respeitam empresa, papel e carteira; alterações usam versão esperada e trilha de auditoria.
+- O contrato padrão é único por cliente ativo, inclusive sob solicitações concorrentes serializadas pelo registro da empresa e por índice parcial no banco. A troca audita o contrato anterior. Cliente com contrato ativo não pode ser desativado até a inativação contratual.
+- A consulta de competência usa o dia original do início de faturamento, ajusta meses curtos sem perder a âncora (ex.: 31/01 → 28/02 → 31/03), termina no dia anterior ao ciclo seguinte e limita o ciclo final ao término da vigência. A interface mostra as datas; não produz valores financeiros.
+- Testes Laravel verificam ciclo de fim de mês, contrato padrão, conflito de versão, datas, documento duplicado, isolamento por carteira/empresa e desativação. Playwright cobre cadastro e consulta do ciclo em desktop e móvel.
+- NX-156, NX-157, NX-158, NX-159, NX-171 e NX-302 seguem **PARCIAIS**: ainda faltam unidade prestadora com cadastro/CNPJ próprio, custos, vínculo automático de impressoras, alertas de vencimento, cálculo monetário, fechamento congelado e homologação fiscal. Nenhuma NF-e ou ERP foi definido para integração.
 
 ### Acompanhamento e confirmação documental de substituições — incremento 57 (parcial)
 

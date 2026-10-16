@@ -58,6 +58,11 @@ final class CustomerService
                     'customer' => 'Inative as unidades ativas antes de desativar o cliente.',
                 ]);
             }
+            if ($customer->contracts()->where('active', true)->exists()) {
+                throw ValidationException::withMessages([
+                    'customer' => 'Inative os contratos ativos antes de desativar o cliente.',
+                ]);
+            }
 
             $before = $customer->only(self::FIELDS);
             $customer->update(['active' => false]);

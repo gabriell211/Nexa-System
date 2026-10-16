@@ -4,7 +4,7 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-rou
 import {
   Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList, ClipboardCheck,
   Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon, ShieldAlert,
-  Search, ShieldCheck, Trash2, Users, X, MapPin, History, UserRoundCog,
+  Search, ShieldCheck, Trash2, Users, X, MapPin, History, UserRoundCog, FileText,
 } from 'lucide-react';
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
 import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
@@ -15,6 +15,7 @@ import { SuppliesPage } from './pages/SuppliesPage';
 import { TicketsPage } from './pages/TicketsPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { CollectorsPage } from './pages/CollectorsPage';
+import { ContractsPage } from './pages/ContractsPage';
 import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
 import { PrinterReadingHistoryPanel } from './pages/PrinterReadingHistoryPanel';
 import { PagedEntitySelect } from './components/PagedEntitySelect';
@@ -152,6 +153,7 @@ function Shell({ token, identity, onLogout }: {
         <span className="nav-caption">OPERAÇÃO</span>
         <NavLink to="/dashboard" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><LayoutDashboard size={19}/> Visão geral</NavLink>
         <NavLink to="/clientes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Users size={19}/> Clientes</NavLink>
+        <NavLink to="/contratos" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><FileText size={19}/> Contratos</NavLink>
         <NavLink to="/parque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><PrinterIcon size={19}/> Parque de impressoras</NavLink>
         {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
           <NavLink to="/agentes" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
@@ -192,6 +194,7 @@ function Shell({ token, identity, onLogout }: {
         <Routes>
           <Route path="/dashboard" element={<DashboardPage token={token} />} />
           <Route path="/clientes" element={<CustomersPage token={token} canWrite={canWrite} />} />
+          <Route path="/contratos" element={<ContractsPage token={token} canWrite={canWrite} />} />
           <Route path="/clientes/:id/unidades" element={<CustomerOrganizationPage token={token} canWrite={canWrite} />} />
           <Route path="/parque" element={<PrintersPage token={token} canWrite={canWrite} />} />
           {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&

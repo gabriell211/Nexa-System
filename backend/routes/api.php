@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\CollectorHealthIncidentController;
 use App\Http\Controllers\Api\V1\ResendWebhookController;
 use App\Http\Controllers\Api\V1\CostCenterController;
 use App\Http\Controllers\Api\V1\CustomerController;
+use App\Http\Controllers\Api\V1\CustomerContractController;
 use App\Http\Controllers\Api\V1\CustomerDepartmentController;
 use App\Http\Controllers\Api\V1\CustomerLocationController;
 use App\Http\Controllers\Api\V1\DashboardController;
@@ -49,6 +50,8 @@ $registerBackoffice = static function (): void {
     Route::middleware('nexa.roles:owner,admin,manager,supervisor,technician,finance,warehouse')->group(function (): void {
         Route::get('/dashboard', DashboardController::class);
         Route::apiResource('customers', CustomerController::class)->only(['index', 'show']);
+        Route::apiResource('contracts', CustomerContractController::class)->only(['index', 'show']);
+        Route::get('/contracts/{contract}/cycle', [CustomerContractController::class, 'cycle']);
         Route::apiResource('printers', PrinterController::class)->only(['index', 'show']);
         Route::get('/printers/{printer}/readings', PrinterReadingHistoryController::class);
         Route::get('/printers/{printer}/production-preview', PrinterProductionPreviewController::class);
@@ -61,6 +64,7 @@ $registerBackoffice = static function (): void {
 
     Route::middleware('nexa.roles:owner,admin,manager')->group(function (): void {
         Route::apiResource('customers', CustomerController::class)->only(['store', 'update', 'destroy']);
+        Route::apiResource('contracts', CustomerContractController::class)->only(['store', 'update']);
         Route::apiResource('printers', PrinterController::class)->only(['store', 'update', 'destroy']);
         Route::post('/printers/{printer}/assignments', [PrinterAssignmentController::class, 'store']);
         Route::post('/printers/{printer}/unassign', [PrinterAssignmentController::class, 'release']);
