@@ -1,5 +1,22 @@
 # Nexa System — monitoramento remoto, descoberta e adoção de impressoras
 
+## Incremento: canal Unix privado para decisões no Console (16/10/2026)
+
+Um transporte local de controle foi adicionado apenas a serviços Unix
+supervisionados. O socket `queue.sqlite.control.sock` vive em diretório
+privado `0700`, tem permissão `0600`, protocolo versionado com mensagens
+limitadas a 512 bytes e não expõe uma API TCP/HTTP. O Tauri oferece ações
+Salvar/Ignorar/Restaurar com **permissão efetiva do sistema operacional**,
+sem expor credencial no React. A operação continua protegida por transação
+SQLite e não registra a impressora automaticamente.
+
+**Windows permanece sem IPC de escrita**, pois ainda falta named pipe
+autenticado com DACL explícita. Em Linux/macOS, usuários gráficos comuns
+sem acesso ao socket também ficam bloqueados. A autorização por papéis e a
+elevação segura com privilégio mínimo continuam pendentes. O Console
+não edita agenda/faixas e nenhuma ação habilita monitoramento ou atribui
+um equipamento a cliente sem homologação real.
+
 ## Incremento: decisões locais persistentes para candidatos (16/10/2026)
 
 O Rust mantém até 200 decisões de revisão (`save`, `ignore` e reversão `reset`)
@@ -29,7 +46,7 @@ O Console Tauri passa as faixas para o Rust por `discover_authorized_printers`; 
 
 O daemon também lê uma agenda **opt-in** (`discovery_schedule.enabled`, `interval_hours` de 6 a 168 e `cidrs`) no JSON protegido. Em background, roda buscas independentes de upload e heartbeat e mantém as últimas 200 evidências de candidatos, quantidade encontrada, horário e falhas no estado SQLite existente. A agenda é validada no startup e vem desabilitada por padrão para instalações antigas. O Console exibe esse histórico em **Impressoras**.
 
-**Não concluídos:** editor persistente da agenda/faixas pelo operador via IPC privilegiado (por enquanto requer provisionamento administrativo do JSON), botões interativos de seleção no Console, ação Monitorar homologada, reservas IP/coletor e integração com API. O incremento não ativa nem monitora automaticamente nenhum equipamento.
+**Não concluídos:** editor da agenda/faixas, elevação/autorização por papéis do Console, IPC Windows com named pipe protegido, ação Monitorar homologada, reservas IP/coletor e integração com API. O incremento não ativa nem monitora automaticamente nenhum equipamento.
 
 
 **Situação em 16/10/2026: especificação e comparação com referência pública; fluxo remoto completo não implementado.**
