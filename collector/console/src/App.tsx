@@ -7,11 +7,12 @@ import { useCallback, useEffect, useState } from "react";
 
 type PrinterInfo = { printer_id: number; ip: string; oid: string };
 type DiscoveryCandidate = { ip: string; print_ports: number[]; http_server: string | null };
-type CanonUsbCandidate = {
+type UsbDeviceCandidate = {
   friendly_name: string;
   instance_id: string;
   status: string;
-  model_confirmed: boolean;
+  device_type: "printer" | "scanner" | "imaging";
+  vid_pid: string | null;
 };
 type DeliveryDiagnostics = {
   last_success_at: string | null;
@@ -81,7 +82,7 @@ export default function App() {
   const [discovered, setDiscovered] = useState<DiscoveryCandidate[] | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
-  const [usbScanners, setUsbScanners] = useState<CanonUsbCandidate[] | null>(null);
+  const [usbDevices, setUsbDevices] = useState<UsbDeviceCandidate[] | null>(null);
   const [usbDiscovering, setUsbDiscovering] = useState(false);
   const [usbError, setUsbError] = useState<string | null>(null);
 
@@ -101,9 +102,9 @@ export default function App() {
     setUsbDiscovering(true);
     setUsbError(null);
     try {
-      setUsbScanners(await invoke<CanonUsbCandidate[]>("discover_canon_usb_scanners"));
+      setUsbDevices(await invoke<UsbDeviceCandidate[]>("discover_usb_printers"));
     } catch (error) {
-      setUsbScanners(null);
+      setUsbDevices(null);
       setUsbError(String(error));
     } finally {
       setUsbDiscovering(false);
@@ -353,23 +354,24 @@ export default function App() {
               {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão respondeu nesta busca.</div>}
             </section>
             <section className="panel">
-              <div className="panel-title"><h2>Scanners Canon por USB</h2><span>Diagnóstico local · Windows</span></div>
-              <p>Busca apenas scanners conectados com identificação Canon DR-C225. A detecção não confirma o modelo II nem habilita a leitura dos contadores de digitalização.</p>
-              <button type="button" className="primary-button" onClick={() => void discoverUsb()} disabled={usbDiscovering}>
-                <RefreshCcw size={16} aria-hidden="true" />{usbDiscovering ? "Consultando USB..." : "Detectar scanners Canon"}
+              <div className="panel-title"><h2>Impressoras e dispositivos USB</h2><span>Descoberta local · Windows</span></div>
+              <p>Identifica impressoras e dispositivos de imagem conectados por USB, de qualquer fabricante. A identificação não confirma suporte à leitura de contadores.</p>
+              <button type="button" className="primary-button" onClick={() => void discoverUsb()} disabled={usbDiscovering} aria-label="Detectar impressoras USB">
+                <RefreshCcw size={16} aria-hidden="true" />{usbDiscovering ? "Consultando USB..." : "Detectar impressoras USB"}
               </button>
               {usbError && <div className="notice error" role="alert">{usbError}</div>}
-              {usbScanners && <div className="table-scroll"><table>
-                <thead><tr><th>Dispositivo</th><th>Windows</th><th>Modelo</th><th>Contadores</th></tr></thead>
-                <tbody>{usbScanners.map((candidate) => <tr key={candidate.instance_id}>
+              {usbDevices && <div className="table-scroll"><table>
+                <thead><tr><th>Dispositivo</th><th>Tipo</th><th>VID:PID</th><th>Windows</th><th>Contadores</th></tr></thead>
+                <tbody>{usbDevices.map((candidate) => <tr key={candidate.instance_id}>
                   <td>{candidate.friendly_name}</td>
+                  <td>{candidate.device_type === "printer" ? "Impressora" : candidate.device_type === "scanner" ? "Scanner" : "Dispositivo de imagem"}</td>
+                  <td className="mono">{candidate.vid_pid ?? "Não informado"}</td>
                   <td>{candidate.status}</td>
-                  <td>{candidate.model_confirmed ? "DR-C225 II indicado pelo driver" : "Revisão não confirmada"}</td>
-                  <td>Não homologados — sem leitura automática</td>
+                  <td>Leitura não homologada</td>
                 </tr>)}</tbody>
               </table></div>}
-              {usbScanners?.length === 0 && <div className="empty">Nenhum DR-C225 USB Canon conectado foi identificado. Verifique cabo e driver.</div>}
-              <div className="notice">Este diagnóstico não inicia digitalizações, não zera roletes e não envia medições ao servidor.</div>
+              {usbDevices?.length === 0 && <div className="empty">Nenhuma impressora ou dispositivo de imagem USB presente foi identificado. Verifique cabo, driver e conexão.</div>}
+              <div className="notice">Detecção local somente leitura. Equipamentos não são cadastrados automaticamente e nenhuma medição é transmitida nesta etapa.</div>
             </section>
             </>
           )}
