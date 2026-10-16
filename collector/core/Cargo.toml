@@ -17,6 +17,7 @@ serde_json = "1"
 snmp2 = "0.5.2"
 thiserror = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
+if-addrs = "0.15.0"
 
 [dev-dependencies]
 tempfile = "3"

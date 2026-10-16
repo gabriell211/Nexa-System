@@ -5,7 +5,7 @@ A **interface desktop usa Tauri 2.12 + React 19 + TypeScript**. A coleta roda no
 ## O que existe no código
 
 - Consulta SNMPv2c de um OID de páginas **explicitamente configurado e homologado** por impressora; apenas contador real é aceito (indisponível não é zero).
-- Configuração de equipamentos por IP, ID numérico atribuído pelo backend e rede/CIDR autorizada; não existe varredura automática nesta etapa.
+- Configuração de coleta por IP, ID numérico atribuído pelo backend e rede/CIDR autorizada. A descoberta local sob demanda lista candidatos sem cadastrar, atribuir cliente ou ativar coleta.
 - Outbox persistente em SQLite com modo WAL, chave única por UUID, limite configurável de amostras pendentes (`max_pending_samples`, padrão 50000), envio HTTPS e remoção apenas de amostras reconhecidas pelo backend. Com fila cheia, a coleta pausa, tenta transmitir pendências e não descarta leituras anteriores. IDs repetidos com payload divergente são recusados.
 - API Laravel autentica coletor por token individual, aceita até 100 leituras, valida propriedade do equipamento e retorna ACK idempotente.
 - Heartbeat autenticado independente do upload (`heartbeat_interval_seconds`, padrão 60s), enviado pelo daemon em um worker próprio, com timeout e jitter para reduzir rajadas. O backend registra a data de recebimento em `collector_agents.heartbeat_at`, separada de `last_seen_at` das leituras.
@@ -14,7 +14,7 @@ A **interface desktop usa Tauri 2.12 + React 19 + TypeScript**. A coleta roda no
 
 ## Limitações importantes — ainda não utilizar como coletor de produção
 
-- **NÃO implementados:** instalador do serviço Windows/systemd/launchd, IPC daemon-console com autenticação, registro pela interface, armazenamento cifrado da fila, cofre de credenciais do sistema, SNMPv3, descoberta automática, USB, perfis por fabricante, alertas, watchdog, update assinado e diagnóstico avançado.
+- A busca local sob demanda não substitui descoberta periódica, aprovação no backend, SNMPv3 ou homologação de OID por modelo. As demais limitações históricas deste documento devem ser conferidas com as seções de implementação posteriores.
 - A UI tem acesso **somente de leitura** à configuração e ao SQLite; a tela de agentes no portal apresenta o heartbeat observado pelo servidor, mas isso não prova execução contínua do serviço local. O controle por IPC autenticado ainda está pendente.
 - O token e a comunidade SNMP são fornecidos por variáveis de ambiente **somente para laboratório**. Para produção, implementar serviço protegido e cofre de segredos do SO.
 - Não há teste real de SNMP, execução Cargo, Tauri build ou homologação de impressoras comprovado neste commit.
@@ -31,6 +31,12 @@ Requisitos: Rust 1.90+ (Tauri 2.12), Node.js 22.12+, PHP/Composer e PostgreSQL p
 6. Para a interface, configure `NEXA_COLLECTOR_CONFIG` com o caminho absoluto de `config.local.json` e `NEXA_COLLECTOR_DB` com o caminho absoluto do mesmo SQLite. Em `collector/console`, execute `npm install` e `npm run tauri dev`.
 
 **Exemplo de IPs** usa o bloco de documentação TEST-NET-1, não representa um equipamento real.
+
+## Descoberta local sob demanda
+
+Execute `cargo run -p nexa-collector-daemon -- --discover-local` na pasta `collector`, ou use **Impressoras → Buscar impressoras** no Console. O comando não precisa de configuração, token ou comunidade SNMP. Ele examina apenas IPv4 privadas das interfaces locais, limita cada interface a sua própria faixa de no máximo /24, testa as portas de impressão 9100, 515 e 631 e mostra o cabeçalho HTTP `Server` quando disponível. O resultado é uma lista de candidatos, não um cadastro nem prova de contador funcional. Não há alteração do SQLite nem transmissão à API.
+
+Em um host Windows de homologação, a busca encontrou uma impressora instalada com portas 9100/515 e cabeçalho HTTP de equipamento multifuncional. Falta verificar credencial, OID e leituras SNMP reais antes de habilitar coleta. A varredura periódica, o envio de candidatos e o fluxo de aprovação no servidor continuam pendentes.
 
 ## Próximos passos
 

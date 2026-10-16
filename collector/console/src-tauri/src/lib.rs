@@ -1,5 +1,6 @@
 use chrono::Utc;
 use nexa_collector_core::{
+    discovery::{self, DiscoveryCandidate},
     recovery_guard::{RecoveryGuard, WatchdogSnapshot},
     read_config, DeliveryDiagnostics, Outbox, QuarantinedReading, SqliteFootprint,
 };
@@ -141,10 +142,17 @@ fn get_snapshot() -> CollectorSnapshot {
     snapshot
 }
 
+#[tauri::command]
+async fn discover_local_printers() -> Result<Vec<DiscoveryCandidate>, String> {
+    tauri::async_runtime::spawn_blocking(discovery::discover_local)
+        .await.map_err(|_| "A busca local foi interrompida.".to_owned())?
+        .map_err(|_| "Não foi possível consultar as interfaces de rede locais.".to_owned())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_snapshot])
+        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers])
         .run(tauri::generate_context!())
         .expect("failed to start Nexa Collector Console");
 }

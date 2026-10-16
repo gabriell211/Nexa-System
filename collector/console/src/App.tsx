@@ -6,6 +6,7 @@ import {
 import { useCallback, useEffect, useState } from "react";
 
 type PrinterInfo = { printer_id: number; ip: string; oid: string };
+type DiscoveryCandidate = { ip: string; print_ports: number[]; http_server: string | null };
 type DeliveryDiagnostics = {
   last_success_at: string | null;
   last_failure_at: string | null;
@@ -71,6 +72,21 @@ export default function App() {
   const [snapshot, setSnapshot] = useState<CollectorSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
+  const [discovered, setDiscovered] = useState<DiscoveryCandidate[] | null>(null);
+  const [discovering, setDiscovering] = useState(false);
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+
+  const discover = useCallback(async () => {
+    setDiscovering(true);
+    setDiscoveryError(null);
+    try {
+      setDiscovered(await invoke<DiscoveryCandidate[]>("discover_local_printers"));
+    } catch (error) {
+      setDiscoveryError(String(error));
+    } finally {
+      setDiscovering(false);
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -280,6 +296,7 @@ export default function App() {
           )}
 
           {tab === "printers" && (
+            <>
             <section className="panel">
               <div className="panel-title"><h2>Dispositivos configurados</h2><span>{snapshot?.printers.length ?? 0} registros</span></div>
               <div className="table-scroll"><table>
@@ -295,6 +312,25 @@ export default function App() {
               </table></div>
               {!snapshot?.printers.length && <div className="empty">Nenhuma impressora configurada neste ponto de coleta.</div>}
             </section>
+            <section className="panel">
+              <div className="panel-title"><h2>Descoberta na rede local</h2><span>Busca limitada às interfaces privadas deste computador</span></div>
+              <p>Portas de impressão acessíveis são indícios de equipamento. Confirme modelo, cliente e OID de contador antes do cadastro.</p>
+              <button type="button" className="primary-button" onClick={() => void discover()} disabled={discovering}>
+                <Network size={16} aria-hidden="true" />{discovering ? "Buscando..." : "Buscar impressoras"}
+              </button>
+              {discoveryError && <div className="notice error" role="alert">{discoveryError}</div>}
+              {discovered && <div className="table-scroll"><table>
+                <thead><tr><th>Endereço IP</th><th>Portas de impressão</th><th>Servidor HTTP</th><th>Estado</th></tr></thead>
+                <tbody>{discovered.map((candidate) => <tr key={candidate.ip}>
+                  <td className="mono">{candidate.ip}</td>
+                  <td>{candidate.print_ports.join(", ")}</td>
+                  <td>{candidate.http_server ?? "Não identificado"}</td>
+                  <td>Aguardando validação</td>
+                </tr>)}</tbody>
+              </table></div>}
+              {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão respondeu nesta busca.</div>}
+            </section>
+            </>
           )}
 
           {tab === "quarantine" && (
