@@ -2,6 +2,10 @@
 
 A **interface desktop usa Tauri 2.12 + React 19 + TypeScript**. A coleta roda no **daemon Rust separado**. Fechar o console não deve encerrar o daemon, desde que o serviço tenha sido iniciado pelo sistema operacional.
 
+## Canon DR-C225 II por USB (diagnóstico de homologação)
+
+O daemon agora oferece `--discover-canon-usb` no Windows e o Console tem a ação **Detectar scanners Canon** na aba Impressoras. A detecção lê apenas os dispositivos PnP presentes; **não lê, cadastra nem transmite contadores** até existir um método de leitura do driver verificado em equipamento real. Procedimento, evidências e critérios pendentes: [Homologação Canon DR-C225 II USB](../docs/CANON-DR-C225II-USB.md).
+
 ## O que existe no código
 
 - Consulta SNMPv2c de um OID de páginas **explicitamente configurado e homologado** por impressora; apenas contador real é aceito (indisponível não é zero).
