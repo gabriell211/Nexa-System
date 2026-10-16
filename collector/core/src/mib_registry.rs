@@ -17,6 +17,7 @@ pub enum Manufacturer {
     Canon,
     Epson,
     Xerox,
+    Brother,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -54,7 +55,7 @@ pub struct ManufacturerEntry {
     pub source: &'static str,
 }
 
-pub const VENDORS: [(Manufacturer, u32, &[&str], &str); 8] = [
+pub const VENDORS: [(Manufacturer, u32, &[&str], &str); 9] = [
     (Manufacturer::Ricoh, 367, &["RicohPrivateMIB", "Printer-MIB"], "https://emea.ricoh-developer.com/node/636"),
     (Manufacturer::KonicaMinolta, 18334, &["Printer-MIB", "vendor-dependent private MIB"], "https://manuals.konicaminolta.eu/bizhub-651i-551i-451i/EN/contents/WC_12_03_05.html"),
     (Manufacturer::Kyocera, 1347, &["KMCOMMON-MIB", "KYOCERA-MIB", "Printer-MIB"], "https://mibs.observium.org/object/KMCOMMON-MIB/kyocera"),
@@ -63,6 +64,7 @@ pub const VENDORS: [(Manufacturer, u32, &[&str], &str); 8] = [
     (Manufacturer::Canon, 1602, &["Printer-MIB", "Canon private MIB (device dependent)"], "https://files.canon-europe.com/files/soft03-48695/Manual/imageRUNNER_ADVANCE_6500i_Series_User_Guide_PT.pdf"),
     (Manufacturer::Epson, 1248, &["Printer-MIB", "Epson private MIB (device dependent)"], "https://download4.epson.biz/sec_pubs/wf-c8690b/admg/en/manual.pdf"),
     (Manufacturer::Xerox, 253, &["XEROX-COMMON-MIB", "XEROX-GENERAL-MIB", "Printer-MIB"], "https://origin-download.support.xerox.com/pub/drivers/MIBs/"),
+    (Manufacturer::Brother, 2435, &["BROTHER-MIB", "Printer-MIB", "HOST-RESOURCES-MIB"], "https://help.brother-usa.com/app/answers/detail/a_id/52976/~/how-to-obtain-brother-snmp-mib-information"),
 ];
 
 pub fn manufacturer_entries() -> Vec<ManufacturerEntry> {
@@ -148,6 +150,20 @@ pub fn supply_percentage(level: i32, capacity: i32) -> Option<u8> {
     Some(((u64::from(level as u32) * 100) / u64::from(capacity as u32)) as u8)
 }
 
+/// Private Brother OID documented by a public BROTHER-MIB index.
+/// This is a model enumeration for some legacy devices, not a universal
+/// model/serial probe. Modern devices may omit it. Never use for billing.
+pub const BROTHER_PRIVATE_OIDS: &[MibObject] = &[
+    MibObject {
+        name: "brInfoModelNumber",
+        module: "BROTHER-MIB",
+        oid: "1.3.6.1.4.1.2435.2.3.9.4.2.1.5.5.9.0",
+        kind: Kind::Identification,
+        requires_instance_walk: false,
+        billing_approved: false,
+    },
+];
+
 pub const OIDS: &[MibObject] = &[
     MibObject { name: "sysDescr", module: "SNMPv2-MIB", oid: "1.3.6.1.2.1.1.1.0", kind: Kind::Identification, requires_instance_walk: false, billing_approved: false },
     MibObject { name: "sysObjectID", module: "SNMPv2-MIB", oid: "1.3.6.1.2.1.1.2.0", kind: Kind::Identification, requires_instance_walk: false, billing_approved: false },
@@ -175,9 +191,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_eight_manufacturers_have_distinct_enterprise_ids() {
+    fn all_nine_manufacturers_have_distinct_enterprise_ids() {
         let entries = manufacturer_entries();
-        assert_eq!(entries.len(), 8);
+        assert_eq!(entries.len(), 9);
         let distinct: std::collections::HashSet<_> =
             entries.iter().map(|entry| entry.enterprise).collect();
         assert_eq!(distinct.len(), 8);
@@ -185,6 +201,19 @@ mod tests {
             assert_eq!(vendor_from_sys_object_id(&format!("{}.5.10.1", entry.enterprise_oid)), Some(entry.manufacturer));
             assert_eq!(entry.coverage, "generic_standard_discovery_only_not_model_certified");
         }
+    }
+
+    #[test]
+    fn brother_mib_is_a_non_certified_optional_identification_probe() {
+        assert_eq!(vendor_from_sys_object_id("1.3.6.1.4.1.2435.2.3.9"), Some(Manufacturer::Brother));
+        assert_eq!(vendor_from_sys_object_id(".1.3.6.1.4.1.2435"), Some(Manufacturer::Brother));
+        assert_eq!(vendor_from_sys_object_id("1.3.6.1.4.1.24350.1"), None);
+        assert_eq!(BROTHER_PRIVATE_OIDS.len(), 1);
+        assert!(BROTHER_PRIVATE_OIDS.iter().all(|obj|
+            obj.module == "BROTHER-MIB" &&
+            obj.kind == Kind::Identification &&
+            !obj.billing_approved &&
+            parse_oid(obj.oid).is_some()));
     }
 
     #[test]
