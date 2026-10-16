@@ -376,9 +376,14 @@ jobs:
           sudo stat -c '%a %U:%G %n' /etc/nexa-collector/config.json /etc/nexa-collector/credentials || true
           systemctl is-enabled nexa-collector.service || true
           getent passwd nexa-collector
-          test -f /etc/nexa-collector/config.json
-          test "$(stat -c '%a' /etc/nexa-collector/config.json)" = 640
-          test "$(stat -c '%a' /etc/nexa-collector/credentials)" = 700
+          # The runner is intentionally outside the service group: inspect via sudo.
+          sudo test -f /etc/nexa-collector/config.json
+          test "$(sudo stat -c '%a' /etc/nexa-collector/config.json)" = 640
+          test "$(sudo stat -c '%a' /etc/nexa-collector/credentials)" = 700
+          if test -r /etc/nexa-collector/config.json; then
+            echo 'Collector configuration must not be readable by unprivileged users' >&2
+            exit 1
+          fi
           test -x /usr/lib/nexa-collector/nexa-collector-daemon
           systemctl is-enabled nexa-collector.service && exit 1 || true
           if systemctl is-active --quiet nexa-collector.service; then
@@ -386,8 +391,8 @@ jobs:
             exit 1
           fi
           sudo dpkg --remove "$pkgname"
-          test -f /etc/nexa-collector/config.json
-          test -d /var/lib/nexa-collector
+          sudo test -f /etc/nexa-collector/config.json
+          sudo test -d /var/lib/nexa-collector
       - name: Upload Linux DEB and RPM installers
         uses: actions/upload-artifact@v4
         with:
@@ -457,13 +462,18 @@ jobs:
           pkg="$(find collector/target/release/bundle/pkg -type f -name '*.pkg' -print -quit)"
           sudo installer -pkg "$pkg" -target /
           echo '--- macOS installed files ---'
-          ls -ld "/Applications/Nexa Collector.app" "/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon" "/Library/Application Support/NexaCollector/config.json" "/Library/Application Support/NexaCollector/package/activate.sh" || true
+          sudo ls -ld "/Applications/Nexa Collector.app" "/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon" "/Library/Application Support/NexaCollector/config.json" "/Library/Application Support/NexaCollector/package/activate.sh"
           sudo find "/Library/Application Support/NexaCollector" -maxdepth 3 -print || true
           dscl . -read /Users/_nexacollector || true
-          test -d "/Applications/Nexa Collector.app"
-          test -x "/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon"
-          test -f "/Library/Application Support/NexaCollector/config.json"
-          test -f "/Library/Application Support/NexaCollector/package/activate.sh"
+          sudo test -d "/Applications/Nexa Collector.app"
+          sudo test -x "/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon"
+          sudo test -f "/Library/Application Support/NexaCollector/config.json"
+          sudo test -f "/Library/Application Support/NexaCollector/package/activate.sh"
+          test "$(sudo stat -f '%Sp %Su:%Sg' '/Library/Application Support/NexaCollector/config.json')" = '-rw-r----- root:_nexacollector'
+          if test -r "/Library/Application Support/NexaCollector/config.json"; then
+            echo 'Collector configuration must not be readable by unprivileged users' >&2
+            exit 1
+          fi
           dscl . -read /Users/_nexacollector
           if launchctl print system/com.nexa.collector >/dev/null 2>&1; then
             echo 'LaunchDaemon must not start before credentials are provisioned' >&2
