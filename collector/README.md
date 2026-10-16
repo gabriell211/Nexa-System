@@ -2,6 +2,40 @@
 
 A **interface desktop usa Tauri 2.12 + React 19 + TypeScript**. A coleta roda no **daemon Rust separado**. Fechar o console não deve encerrar o daemon, desde que o serviço tenha sido iniciado pelo sistema operacional.
 
+## Descoberta em CIDRs autorizados — incremento parcial
+
+O Console Tauri oferece **Configurações → Busca manual por faixa autorizada**.
+O operador escolhe de 1 a 4 faixas IPv4/CIDR privadas, cada uma de no máximo /24,
+já integralmente contida em `authorized_subnets` do JSON provisionado pelo
+administrador. A validação e a limitação conjunta de 1024 IPs ocorrem no Rust
+antes de sondar a rede. Candidatos não são aprovados, cadastrados ou monitorados
+pelo simples fato de responderem em TCP/eSCL.
+
+Para habilitar buscas automáticas por CLI/provisionamento **administrativo**,
+defina no arquivo protegido `config.json`:
+
+```json
+"discovery_schedule": {
+  "enabled": true,
+  "interval_hours": 24,
+  "cidrs": ["192.168.1.0/24"]
+}
+```
+
+A faixa também precisa estar em `authorized_subnets`. O padrão é
+`enabled: false`; janelas permitidas são 6 a 168 horas. O daemon salva no
+SQLite já usado pela outbox a data da última tentativa, eventuais falhas,
+contagem de candidatos e até 200 candidatos para revisão local. O Console
+exibe o último relatório e não comanda serviços nem edita dados privilegiados.
+O worker de descoberta executa independentemente dos heartbeats e leituras;
+o seu resultado **não** gera amostra nem autoriza monitoramento.
+
+Ainda falta: UI de cadastro e persistência da agenda/faixas via IPC
+autenticado e auxiliar privilegiado, fila local de ações Salvar/Ignorar/Monitorar,
+reservas por ponto no backend, homologação física, reinícios/upgrade e testes
+em instalações reais. Portanto o recurso **não** completa o monitoramento
+automático de impressoras.
+
 ## Descoberta de impressoras USB no Windows
 
 O daemon oferece `--discover-usb` no Windows e o Console tem o botão **Detectar impressoras USB** na aba Impressoras. A busca, sob demanda e somente leitura, identifica impressoras USB (inclusive multifuncionais) e dispositivos de imagem, de diferentes fabricantes. Usa as interfaces PnP USB presentes (`USB\\VID_*` e `USBPRINT\\*`), evitando reportar impressoras virtuais ou de rede como equipamentos fisicamente conectados. Exibe nome, tipo, status e VID:PID quando disponível. Dispositivos de imagem cujo tipo não é comprovado permanecem classificados como tal.

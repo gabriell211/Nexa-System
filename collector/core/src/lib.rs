@@ -202,6 +202,31 @@ pub struct UsbScannerConfig {
     pub profile: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DiscoverySchedule {
+    pub enabled: bool,
+    pub interval_hours: u64,
+    pub cidrs: Vec<String>,
+}
+
+impl Default for DiscoverySchedule {
+    fn default() -> Self {
+        Self { enabled: false, interval_hours: 24, cidrs: Vec::new() }
+    }
+}
+
+/// Read-only candidate snapshot. Persisted in the existing SQLite state table
+/// so a restart does not erase the observed scan time or candidate evidence.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DiscoveryReport {
+    pub last_completed_at: Option<DateTime<Utc>>,
+    pub last_error_kind: Option<String>,
+    pub observed_candidates: usize,
+    pub candidates: Vec<discovery::DiscoveryCandidate>,
+}
+
 fn default_heartbeat_interval() -> u64 { 60 }
 
 const DEFAULT_MAX_PENDING_SAMPLES: u64 = 50_000;
@@ -227,6 +252,8 @@ pub struct CollectorConfig {
     pub max_sqlite_files_bytes: u64,
     #[serde(default)]
     pub authorized_subnets: Vec<String>,
+    #[serde(default)]
+    pub discovery_schedule: DiscoverySchedule,
     pub printers: Vec<PrinterConfig>,
     #[serde(default)]
     pub usb_scanners: Vec<UsbScannerConfig>,
@@ -262,6 +289,19 @@ impl CollectorConfig {
         let subnets: Vec<IpNet> = self.authorized_subnets.iter()
             .map(|cidr| IpNet::from_str(cidr).map_err(|_| CollectorError::Configuration("invalid CIDR".into())))
             .collect::<Result<_,_>>()?;
+
+        if !(6..=168).contains(&self.discovery_schedule.interval_hours) {
+            return Err(CollectorError::Configuration(
+                "discovery schedule interval must be 6..168 hours".into(),
+            ));
+        }
+        if self.discovery_schedule.enabled || !self.discovery_schedule.cidrs.is_empty() {
+            discovery::plan_authorized_hosts(
+                &self.authorized_subnets, &self.discovery_schedule.cidrs,
+            ).map_err(|_| CollectorError::Configuration(
+                "discovery range is invalid, too broad, or not authorized".into(),
+            ))?;
+        }
 
         let mut ids = std::collections::HashSet::new();
         if self.usb_scanners.len() > 1 {
@@ -1113,6 +1153,29 @@ impl Outbox {
         let serialized = serde_json::to_string(diagnostics)?;
         self.connection.execute(
             "INSERT INTO state(key, value) VALUES ('delivery_diagnostics', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [&serialized],
+        )?;
+        Ok(())
+    }
+
+    pub fn discovery_report(&self) -> Result<DiscoveryReport, CollectorError> {
+        let raw: Option<String> = self.connection.query_row(
+            "SELECT value FROM state WHERE key = 'discovery_report'",
+            [], |row| row.get(0),
+        ).optional()?;
+        raw.map(|value| serde_json::from_str(&value).map_err(CollectorError::from))
+            .transpose()
+            .map(|value| value.unwrap_or_default())
+    }
+
+    pub fn save_discovery_report(&self, report: &DiscoveryReport) -> Result<(), CollectorError> {
+        if report.candidates.len() > 200 || report.observed_candidates > 1024 {
+            return Err(CollectorError::Configuration("discovery report exceeds safe size".into()));
+        }
+        let serialized = serde_json::to_string(report)?;
+        self.connection.execute(
+            "INSERT INTO state(key, value) VALUES ('discovery_report', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [&serialized],
         )?;
@@ -2050,6 +2113,7 @@ mod tests {
             max_sqlite_files_bytes: 512 * 1024 * 1024,
             authorized_subnets: vec!["192.0.2.0/24".into()],
             printers: vec![],
+            discovery_schedule: DiscoverySchedule::default(),
             usb_scanners: vec![],
         };
         assert!(cfg.validate().is_err());
@@ -2068,6 +2132,7 @@ mod tests {
                 printer_id: 1, ip: "10.1.1.10".parse().unwrap(),
                 marker_counter_oid: vec![1,3,6,1,2,1,43,10,2,1,4,1,1],
             }],
+            discovery_schedule: DiscoverySchedule::default(),
             usb_scanners: vec![],
         };
         assert!(cfg.validate().is_err());
@@ -2081,6 +2146,7 @@ mod tests {
             max_pending_payload_bytes: 64 * 1024 * 1024,
             max_sqlite_files_bytes: 512 * 1024 * 1024,
             authorized_subnets: vec!["192.168.1.0/24".into()], printers: vec![],
+            discovery_schedule: DiscoverySchedule::default(),
             usb_scanners: vec![],
         };
         assert!(cfg.validate().is_ok());
@@ -2100,6 +2166,7 @@ mod tests {
             max_pending_samples: 50_000, max_pending_payload_bytes: 64 * 1024 * 1024,
             max_sqlite_files_bytes: 512 * 1024 * 1024,
             authorized_subnets: vec!["192.0.2.0/24".into()], printers: vec![],
+            discovery_schedule: DiscoverySchedule::default(),
             usb_scanners: vec![UsbScannerConfig {
                 printer_id: 7,
                 instance_id: "USB\\VID_1083&PID_1658\\UNIT1".into(),
@@ -2119,6 +2186,61 @@ mod tests {
             printer_id: 7, ip: "192.0.2.10".parse().unwrap(),
             marker_counter_oid: vec![1, 3, 6, 1, 2, 1],
         });
+        assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn discovery_report_persists_across_restart_without_creating_readings() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("queue.sqlite");
+        let report = DiscoveryReport {
+            last_completed_at: Some(Utc::now()),
+            last_error_kind: None,
+            observed_candidates: 1,
+            candidates: vec![discovery::DiscoveryCandidate {
+                ip: "10.2.0.7".parse().unwrap(),
+                print_ports: vec![9100],
+                http_server: Some("Printer HTTP".into()),
+                escl_scanner: false,
+            }],
+        };
+        {
+            let store = Outbox::open_bounded(&path, 10).unwrap();
+            store.save_discovery_report(&report).unwrap();
+            assert_eq!(store.pending().unwrap(), 0);
+        }
+        let reopened = Outbox::open_bounded(&path, 10).unwrap();
+        let restored = reopened.discovery_report().unwrap();
+        assert_eq!(restored.observed_candidates, 1);
+        assert_eq!(restored.candidates[0].ip.to_string(), "10.2.0.7");
+        assert_eq!(reopened.pending().unwrap(), 0);
+    }
+
+    #[test]
+    fn discovery_schedule_is_opt_in_and_requires_scoped_private_ranges() {
+        let baseline = serde_json::json!({
+            "collector_id": Uuid::new_v4(),
+            "api_url": "https://nexa.example",
+            "interval_seconds": 1800,
+            "authorized_subnets": ["10.30.0.0/16"],
+            "printers": []
+        });
+        let parsed: CollectorConfig = serde_json::from_value(baseline.clone()).unwrap();
+        assert!(!parsed.discovery_schedule.enabled);
+        assert!(parsed.validate().is_ok());
+        let mut cfg = parsed;
+        cfg.discovery_schedule = DiscoverySchedule {
+            enabled: true, interval_hours: 6, cidrs: vec!["10.30.2.0/24".into()],
+        };
+        assert!(cfg.validate().is_ok());
+        cfg.discovery_schedule.cidrs = vec!["10.31.2.0/24".into()];
+        assert!(cfg.validate().is_err());
+        cfg.discovery_schedule.cidrs = vec!["10.30.0.0/16".into()];
+        assert!(cfg.validate().is_err());
+        cfg.discovery_schedule.cidrs = vec!["10.30.2.0/24".into()];
+        cfg.discovery_schedule.interval_hours = 5;
+        assert!(cfg.validate().is_err());
+        cfg.discovery_schedule.interval_hours = 169;
         assert!(cfg.validate().is_err());
     }
 
@@ -2386,6 +2508,7 @@ mod tests {
             max_sqlite_files_bytes: 512 * 1024 * 1024,
             authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![],
+            discovery_schedule: DiscoverySchedule::default(),
             usb_scanners: vec![],
         };
         assert!(cfg.validate().is_err());

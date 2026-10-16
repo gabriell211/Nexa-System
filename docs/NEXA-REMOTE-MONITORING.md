@@ -1,5 +1,21 @@
 # Nexa System — monitoramento remoto, descoberta e adoção de impressoras
 
+## Incremento: busca manual por faixas autorizadas (17/10/2026)
+
+O núcleo Rust agora expõe `plan_authorized_hosts` e `discover_authorized_ranges`:
+- exige 1 a 4 IPv4/CIDRs por execução, cada um com máscara /24 ou mais restrita;
+- exige que cada CIDR esteja **inteiramente** dentro de uma das faixas `authorized_subnets` previamente provisionadas no arquivo do Collector;
+- recusa intervalos públicos, loopback, link-local e escopos não autorizados;
+- limita o conjunto agregado a 1024 hosts e elimina duplicações;
+- detecta apenas candidatos por portas de impressão/eSCL, sem cadastro, autorização ou coleta de contador.
+
+O Console Tauri passa as faixas para o Rust por `discover_authorized_printers`; os limites são validados **no lado Rust**, não somente no formulário React. A ação manual fica em **Configurações → Busca manual por faixa autorizada** e exibe os candidatos em **Impressoras**. O Console não recebe permissões para editar o arquivo do serviço, alterar token ou cadastrar dispositivos na API.
+
+O daemon também lê uma agenda **opt-in** (`discovery_schedule.enabled`, `interval_hours` de 6 a 168 e `cidrs`) no JSON protegido. Em background, roda buscas independentes de upload e heartbeat e mantém as últimas 200 evidências de candidatos, quantidade encontrada, horário e falhas no estado SQLite existente. A agenda é validada no startup e vem desabilitada por padrão para instalações antigas. O Console exibe esse histórico em **Impressoras**.
+
+**Não concluídos:** editor persistente da agenda/faixas pelo operador via IPC privilegiado (por enquanto requer provisionamento administrativo do JSON), decisões persistidas Salvar/Monitorar/Ignorar, reservas IP/coletor, homologação de identidade e integração com API. O incremento não ativa nem monitora automaticamente nenhum equipamento.
+
+
 **Situação em 16/10/2026: especificação e comparação com referência pública; fluxo remoto completo não implementado.**
 O objetivo é disponibilizar no portal uma experiência de monitoramento remoto *sem depender de acesso remoto interativo ao computador do cliente*, por meio do Nexa Collector instalado e vinculado ao cliente.
 
@@ -80,8 +96,8 @@ A interface distingue **descoberto ≠ salvo no agente ≠ homologado ≠ monito
 | `collector/core/src/usb_devices.rs`: descoberta Windows USB impressora/imagem sob demanda | **Na PR #51**, diagnóstico sem contador |
 | Daemon, SQLite outbox e HTTPS para contadores **já configurados** por ID/OID | **Implementado** com limites; não serve de fila de *candidatos* automaticamente |
 | Laravel heartbeat/ingestão autenticados, isolamento por cliente e impressoras cadastradas | **Implementado** |
-| Configuração local segura de descoberta, canal IPC autorizado, candidatos locais e comunicação da seleção ao backend | **Não implementado** |
-| Agenda automática de 6–168 horas, faixas configuradas e persistidas no agente | **Não implementado** |
+| Configuração local segura de descoberta, canal IPC autorizado, candidatos locais e comunicação da seleção ao backend | **PARCIAL** — CIDRs são validados no núcleo Rust e último scan fica em SQLite; canal de edição, seleção/ignorados e backend ainda pendentes |
+| Agenda automática de 6–168 horas, faixas configuradas e persistidas no agente | **PARCIAL** — daemon agenda scans opt-in no JSON administrativo e persiste snapshots no SQLite; edição de faixas via Console/IPC ainda pendente |
 | Reserva prévia de IP+coletor, verificação física e ativação automática | **Não implementado** |
 | Console Tauri com fila local de candidatos, seleção/ignorar, anti-duplicidade e Monitorar | **Não implementado** |
 | Inserção manual auditada de contadores distinguível de telemetria | **Exige validação/implementação específica** |

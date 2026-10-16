@@ -1,10 +1,10 @@
 use nexa_collector_core::{
     collect_snmp_v2c, heartbeat_sleep_seconds, read_config, send_heartbeat, send_heartbeat_with_watchdog, upload_pending,
-    upload_error_kind, CollectorConfig, CollectorError, Outbox, UploadRetryPolicy, WatchdogHeartbeat,
+    upload_error_kind, CollectorConfig, CollectorError, DiscoveryReport, Outbox, UploadRetryPolicy, WatchdogHeartbeat,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use std::{
-    env, error::Error, fs, path::Path, sync::{atomic::{AtomicBool, Ordering}, Arc},
+    env, error::Error, fs, path::Path, sync::{atomic::{AtomicBool, Ordering}, mpsc, Arc},
     thread, time::{Duration, Instant},
 };
 use zeroize::Zeroizing;
@@ -274,6 +274,23 @@ fn run_application(
     let retry_seconds = stored_retry.seconds_until_retry(Utc::now())?;
     upload_retry.restore(Instant::now(), retry_seconds, stored_retry.consecutive_failures);
     let mut next_poll = Instant::now();
+    // The scheduler never registers printers or generates readings. Its
+    // non-sensitive candidate report is stored in the existing outbox state.
+    // A worker thread keeps slow probes independent from uploads/heartbeats.
+    // A corrupted optional discovery report must not block legacy installations
+    // whose scheduling feature is disabled.
+    let previous_discovery = if cfg.discovery_schedule.enabled {
+        outbox.discovery_report()?
+    } else {
+        DiscoveryReport::default()
+    };
+    let interval = ChronoDuration::hours(cfg.discovery_schedule.interval_hours as i64);
+    let now = Utc::now();
+    let mut next_discovery = previous_discovery.last_completed_at
+        .filter(|last| *last <= now)
+        .map(|last| last + interval)
+        .unwrap_or(now);
+    let mut discovery_receiver: Option<mpsc::Receiver<std::io::Result<Vec<nexa_collector_core::discovery::DiscoveryCandidate>>>> = None;
     on_ready()?;
     // Begin supervising both workers only after startup has completed.
     // The watcher cannot renew either worker's checkpoint itself.
@@ -283,6 +300,53 @@ fn run_application(
 
     loop {
         if shutdown.load(Ordering::Relaxed) { break; }
+        if cfg.discovery_schedule.enabled && !once {
+            if let Some(receiver) = discovery_receiver.as_ref() {
+                match receiver.try_recv() {
+                    Ok(result) => {
+                        let scan_at = Utc::now();
+                        let (candidates, count, kind) = match result {
+                            Ok(found) => {
+                                let count = found.len();
+                                (found.into_iter().take(200).collect(), count, None)
+                            }
+                            Err(_) => (Vec::new(), 0, Some("discovery-io".to_owned())),
+                        };
+                        outbox.save_discovery_report(&DiscoveryReport {
+                            last_completed_at: Some(scan_at),
+                            last_error_kind: kind,
+                            observed_candidates: count,
+                            candidates,
+                        })?;
+                        next_discovery = scan_at + interval;
+                        discovery_receiver = None;
+                    }
+                    Err(mpsc::TryRecvError::Empty) => {}
+                    Err(mpsc::TryRecvError::Disconnected) => {
+                        let scan_at = Utc::now();
+                        outbox.save_discovery_report(&DiscoveryReport {
+                            last_completed_at: Some(scan_at),
+                            last_error_kind: Some("discovery-worker-failed".into()),
+                            ..DiscoveryReport::default()
+                        })?;
+                        next_discovery = scan_at + interval;
+                        discovery_receiver = None;
+                    }
+                }
+            }
+            if discovery_receiver.is_none() && Utc::now() >= next_discovery {
+                let (sender, receiver) = mpsc::channel();
+                let authorized = cfg.authorized_subnets.clone();
+                let requested = cfg.discovery_schedule.cidrs.clone();
+                thread::spawn(move || {
+                    let scanned = nexa_collector_core::discovery::discover_authorized_ranges(
+                        &authorized, &requested,
+                    );
+                    let _ = sender.send(scanned);
+                });
+                discovery_receiver = Some(receiver);
+            }
+        }
         if Instant::now() >= next_poll {
             let disk_limited = outbox.disk_soft_limit_reached()?;
             if disk_limited {
