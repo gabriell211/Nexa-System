@@ -115,7 +115,7 @@ export default function App() {
   const discoverRanges = useCallback(async () => {
     setRangeDiscovering(true);
     setRangeError(null);
-    const cidrs = rangeDraft.split(/[\\s,;]+/).map(value => value.trim()).filter(Boolean);
+    const cidrs = rangeDraft.split(/[\s,;]+/).map(value => value.trim()).filter(Boolean);
     try {
       const candidates = await invoke<DiscoveryCandidate[]>("discover_authorized_printers", { cidrs });
       setDiscovered(candidates);
