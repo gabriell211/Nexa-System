@@ -218,6 +218,25 @@ impl Default for DiscoverySchedule {
     }
 }
 
+impl DiscoverySchedule {
+    /// Settings are a selection of pre-authorized scan ranges, never new network
+    /// authorization. Disabling the schedule may keep a valid draft range list.
+    pub fn validate_for(&self, authorized_subnets: &[String]) -> Result<(), CollectorError> {
+        if !(6..=168).contains(&self.interval_hours) {
+            return Err(CollectorError::Configuration(
+                "discovery schedule interval must be 6..168 hours".into(),
+            ));
+        }
+        if self.enabled || !self.cidrs.is_empty() {
+            discovery::plan_authorized_hosts(authorized_subnets, &self.cidrs)
+                .map_err(|_| CollectorError::Configuration(
+                    "discovery schedule includes invalid or unauthorized CIDRs".into(),
+                ))?;
+        }
+        Ok(())
+    }
+}
+
 /// Read-only candidate snapshot. Persisted in the existing SQLite state table
 /// so a restart does not erase the observed scan time or candidate evidence.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -292,18 +311,7 @@ impl CollectorConfig {
             .map(|cidr| IpNet::from_str(cidr).map_err(|_| CollectorError::Configuration("invalid CIDR".into())))
             .collect::<Result<_,_>>()?;
 
-        if !(6..=168).contains(&self.discovery_schedule.interval_hours) {
-            return Err(CollectorError::Configuration(
-                "discovery schedule interval must be 6..168 hours".into(),
-            ));
-        }
-        if self.discovery_schedule.enabled || !self.discovery_schedule.cidrs.is_empty() {
-            discovery::plan_authorized_hosts(
-                &self.authorized_subnets, &self.discovery_schedule.cidrs,
-            ).map_err(|_| CollectorError::Configuration(
-                "discovery range is invalid, too broad, or not authorized".into(),
-            ))?;
-        }
+        self.discovery_schedule.validate_for(&self.authorized_subnets)?;
 
         let mut ids = std::collections::HashSet::new();
         if self.usb_scanners.len() > 1 {
@@ -1180,6 +1188,35 @@ impl Outbox {
             "INSERT INTO state(key, value) VALUES ('discovery_report', ?1)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [&serialized],
+        )?;
+        Ok(())
+    }
+
+    /// Live schedule override. Does not touch config.json, credentials,
+    /// monitored printers, the pending outbox or any remote endpoint.
+    pub fn discovery_schedule_override(
+        &self, authorized_subnets: &[String],
+    ) -> Result<Option<DiscoverySchedule>, CollectorError> {
+        let raw: Option<String> = self.connection.query_row(
+            "SELECT value FROM state WHERE key = 'discovery_schedule_override'",
+            [], |row| row.get(0),
+        ).optional()?;
+        raw.map(|value| {
+            let schedule: DiscoverySchedule = serde_json::from_str(&value)?;
+            schedule.validate_for(authorized_subnets)?;
+            Ok(schedule)
+        }).transpose()
+    }
+
+    pub fn save_discovery_schedule_override(
+        &self, authorized_subnets: &[String], schedule: &DiscoverySchedule,
+    ) -> Result<(), CollectorError> {
+        schedule.validate_for(authorized_subnets)?;
+        let json = serde_json::to_string(schedule)?;
+        self.connection.execute(
+            "INSERT INTO state(key, value) VALUES ('discovery_schedule_override', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [&json],
         )?;
         Ok(())
     }
@@ -2377,6 +2414,41 @@ mod tests {
         store.save_discovery_report(&report).unwrap();
         assert!(store.review_candidate(address, candidate_review::ReviewAction::Ignore).is_err());
         assert!(store.candidate_reviews().unwrap().is_empty());
+    }
+
+    #[test]
+    fn live_discovery_schedule_is_persistent_and_does_not_change_meter_queue() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("outbox.sqlite");
+        let scopes = vec!["10.44.0.0/16".to_string()];
+        let saved = DiscoverySchedule {
+            enabled: true,
+            interval_hours: 6,
+            cidrs: vec!["10.44.1.0/24".into()],
+        };
+        {
+            let store = Outbox::open_bounded(&path, 10).unwrap();
+            assert!(store.discovery_schedule_override(&scopes).unwrap().is_none());
+            store.save_discovery_schedule_override(&scopes, &saved).unwrap();
+            assert_eq!(store.pending().unwrap(), 0);
+            for invalid in [
+                DiscoverySchedule { enabled: true, interval_hours: 5, cidrs: saved.cidrs.clone() },
+                DiscoverySchedule { enabled: true, interval_hours: 169, cidrs: saved.cidrs.clone() },
+                DiscoverySchedule { enabled: true, interval_hours: 24, cidrs: vec!["10.45.1.0/24".into()] },
+                DiscoverySchedule { enabled: true, interval_hours: 24, cidrs: vec!["8.8.8.0/24".into()] },
+            ] {
+                assert!(store.save_discovery_schedule_override(&scopes, &invalid).is_err());
+            }
+        }
+        let reopened = Outbox::open_bounded(&path, 10).unwrap();
+        let actual = reopened.discovery_schedule_override(&scopes).unwrap().unwrap();
+        assert!(actual.enabled);
+        assert_eq!(actual.interval_hours, 6);
+        assert_eq!(actual.cidrs, saved.cidrs);
+        assert_eq!(reopened.pending().unwrap(), 0);
+        let disabled = DiscoverySchedule { enabled: false, interval_hours: 24, cidrs: vec![] };
+        reopened.save_discovery_schedule_override(&scopes, &disabled).unwrap();
+        assert!(!reopened.discovery_schedule_override(&scopes).unwrap().unwrap().enabled);
     }
 
     #[test]
