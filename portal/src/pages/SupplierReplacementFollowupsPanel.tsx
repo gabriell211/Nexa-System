@@ -5,7 +5,7 @@ import { PagedEntitySelect } from '../components/PagedEntitySelect';
 import type { Page } from '../types';
 
 type Action = 'follow_up' | 'rescheduled' | 'supplier_confirmed' | 'closed_unresolved';
-type Status = 'awaiting_supplier' | 'supplier_confirmed' | 'closed_unresolved';
+type Status = 'awaiting_supplier' | 'supplier_confirmed' | 'closed_unresolved' | 'receipt_documented';
 
 interface ReturnRow {
   id: number;
@@ -13,6 +13,16 @@ interface ReturnRow {
   receipt: { invoice_reference: string; lot_number: string } | null;
 }
 interface Operator { id: number; name: string; active: boolean }
+interface MatchedReceipt {
+  purchase_receipt_match_id: number; line_id: number; sku: string;
+  invoice_reference: string; lot_number: string; quantity: number;
+  received_at: string | null;
+}
+interface ReceiptLink {
+  id: number; purchase_receipt_match_id: number; quantity: number; note: string;
+  invoice_reference: string; lot_number: string;
+  creator: { id: number; name: string } | null; created_at: string;
+}
 interface EventRow {
   id: number; action: string; note: string; supplier_reference: string | null;
   due_on: string | null; actor: { id: number; name: string } | null;
@@ -22,6 +32,10 @@ interface Followup {
   id: number; supplier_return_id: number; assigned_user_id: number;
   version: number; status: Status; due_on: string; overdue: boolean;
   supplier_reference: string | null; supplier_confirmed_at: string | null;
+  documented_quantity: number; remaining_quantity: number;
+  return?: { quantity: number; purchase_receipt_match_id: number;
+    purchase_order_line_id: number; reviewed_at: string | null };
+  replacement_receipts?: ReceiptLink[];
   assignee: { id: number; name: string } | null;
   creator: { id: number; name: string } | null;
   events?: EventRow[];
@@ -30,6 +44,7 @@ const labels: Record<Status, string> = {
   awaiting_supplier: 'Aguardando fornecedor',
   supplier_confirmed: 'Confirmado pelo fornecedor',
   closed_unresolved: 'Encerrado sem solução',
+  receipt_documented: 'Recebimento documentado',
 };
 const actions: Record<Action, string> = {
   follow_up: 'Registrar contato',
@@ -38,9 +53,9 @@ const actions: Record<Action, string> = {
   closed_unresolved: 'Encerrar sem solução',
 };
 
-export function SupplierReplacementFollowupsPanel({ orderId, returns, token, role, userId }: {
-  orderId: number; returns: ReturnRow[]; token: string | null;
-  role: string; userId: number;
+export function SupplierReplacementFollowupsPanel({ orderId, returns, receipts, token, role, userId, onChanged }: {
+  orderId: number; returns: ReturnRow[]; receipts: MatchedReceipt[]; token: string | null;
+  role: string; userId: number; onChanged: () => Promise<void>;
 }) {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
@@ -55,6 +70,10 @@ export function SupplierReplacementFollowupsPanel({ orderId, returns, token, rol
   const [reference, setReference] = useState('');
   const [nextDue, setNextDue] = useState('');
   const [eventId, setEventId] = useState(() => crypto.randomUUID());
+  const [receiptMatchId, setReceiptMatchId] = useState('');
+  const [receiptQuantity, setReceiptQuantity] = useState('1');
+  const [receiptNote, setReceiptNote] = useState('');
+  const [receiptRequestId, setReceiptRequestId] = useState(() => crypto.randomUUID());
   const [notice, setNotice] = useState('');
   const isManager = ['owner', 'admin', 'manager'].includes(role);
 
@@ -73,6 +92,17 @@ export function SupplierReplacementFollowupsPanel({ orderId, returns, token, rol
   const lastPage = cases.data?.meta?.last_page ?? cases.data?.last_page ?? 1;
   const alreadyOpened = new Set(cases.data?.data.map(item => item.supplier_return_id) ?? []);
   const completed = returns.filter(entry => entry.status === 'completed');
+  const eligibleReceipts = receipts.filter(receipt => detail?.return &&
+    receipt.line_id === detail.return.purchase_order_line_id &&
+    receipt.purchase_receipt_match_id !== detail.return.purchase_receipt_match_id &&
+    (!detail.return.reviewed_at || !receipt.received_at ||
+      new Date(receipt.received_at) >= new Date(detail.return.reviewed_at)) &&
+    !detail.replacement_receipts?.some(link => link.purchase_receipt_match_id === receipt.purchase_receipt_match_id));
+  const canLink = Boolean(detail && detail.remaining_quantity > 0 &&
+    detail.status !== 'closed_unresolved' && detail.status !== 'receipt_documented' &&
+    eligibleReceipts.some(receipt => receipt.purchase_receipt_match_id === Number(receiptMatchId)) &&
+    /^[1-9][0-9]*$/.test(receiptQuantity) && Number(receiptQuantity) <= detail.remaining_quantity &&
+    receiptNote.trim().length >= 5 && receiptNote.trim().length <= 500);
   const canOpen = Boolean(returnId && assigneeId && dueOn && openingNote.trim().length >= 5 &&
     openingNote.trim().length <= 500 && !alreadyOpened.has(Number(returnId)));
   const canEvent = Boolean(detail && detail.status === 'awaiting_supplier' && eventNote.trim().length >= 5 &&
@@ -125,6 +155,23 @@ export function SupplierReplacementFollowupsPanel({ orderId, returns, token, rol
     },
   });
 
+  const linkReceipt = useMutation({
+    mutationFn: () => api('/stock/supplier-replacements/' + caseId + '/receipts', token, {
+      method: 'POST',
+      body: JSON.stringify({
+        request_id: receiptRequestId, expected_version: detail?.version,
+        purchase_receipt_match_id: Number(receiptMatchId),
+        quantity: Number(receiptQuantity), note: receiptNote.trim(),
+      }),
+    }),
+    onSuccess: async () => {
+      setNotice('Entrada documentada vinculada ao acompanhamento. Nenhum novo movimento foi criado.');
+      setReceiptRequestId(crypto.randomUUID()); setReceiptMatchId('');
+      setReceiptQuantity('1'); setReceiptNote('');
+      await Promise.all([refresh(), onChanged()]);
+    },
+  });
+
   function submitCreate(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     if (canOpen && !create.isPending) create.mutate();
@@ -132,6 +179,10 @@ export function SupplierReplacementFollowupsPanel({ orderId, returns, token, rol
   function submitEvent(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     if (canEvent && !addEvent.isPending) addEvent.mutate();
+  }
+  function submitReceipt(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    if (canLink && !linkReceipt.isPending) linkReceipt.mutate();
   }
 
   return <section className="stock-form" aria-label="Acompanhamento de substituições">
@@ -212,6 +263,16 @@ export function SupplierReplacementFollowupsPanel({ orderId, returns, token, rol
         selected.error ? <p role="alert">{readableError(selected.error)}</p> : detail && <>
           <p><strong>Estado:</strong> {labels[detail.status]} · <strong>Prazo:</strong> {detail.due_on}</p>
           <p><strong>Confirmação externa:</strong> {detail.supplier_reference ?? 'Não confirmada'}</p>
+          <p><strong>Recebimento vinculado:</strong> {detail.documented_quantity} de {detail.return?.quantity ?? '—'} unidade(s).
+            Este histórico não representa o saldo físico atual.</p>
+          {detail.replacement_receipts && detail.replacement_receipts.length > 0 &&
+            <div className="table-wrap"><table><thead><tr><th>Entrada</th><th>Lote</th>
+              <th>Quantidade</th><th>Responsável</th><th>Justificativa</th></tr></thead>
+              <tbody>{detail.replacement_receipts.map(link => <tr key={link.id}>
+                <td>{link.invoice_reference} <small>#{link.purchase_receipt_match_id}</small></td>
+                <td>{link.lot_number}</td><td>{link.quantity}</td>
+                <td>{link.creator?.name ?? '—'}</td><td>{link.note}</td>
+              </tr>)}</tbody></table></div>}
           <div className="table-wrap"><table><thead><tr><th>Data</th><th>Autor</th>
             <th>Tipo</th><th>Registro</th><th>Referência</th></tr></thead>
             <tbody>{detail.events?.map(entry => <tr key={entry.id}>
@@ -254,6 +315,40 @@ export function SupplierReplacementFollowupsPanel({ orderId, returns, token, rol
             </button>
             {addEvent.error && <p role="alert" className="notice error">{readableError(addEvent.error)}</p>}
           </form>}
+          {detail.remaining_quantity > 0 && detail.status !== 'closed_unresolved' &&
+            detail.status !== 'receipt_documented' && <form onSubmit={submitReceipt}>
+              <h4>Vincular entrada física já conciliada</h4>
+              <p className="stock-hint">Registre e concilie a nota no pedido antes de vincular a substituição.
+                A vinculação não altera o razão de estoque.</p>
+              <div className="stock-form-grid">
+                <div className="stock-field">
+                  <label htmlFor="replacement-receipt-match">Entrada conciliada *</label>
+                  <select id="replacement-receipt-match" required value={receiptMatchId}
+                    onChange={event => { setReceiptMatchId(event.target.value); setReceiptRequestId(crypto.randomUUID()); }}>
+                    <option value="">Selecione a entrada</option>
+                    {eligibleReceipts.map(receipt => <option key={receipt.purchase_receipt_match_id}
+                      value={receipt.purchase_receipt_match_id}>
+                      {receipt.sku} · {receipt.invoice_reference} · {receipt.lot_number} · {receipt.quantity} un.
+                    </option>)}
+                  </select>
+                </div>
+                <div className="stock-field">
+                  <label htmlFor="replacement-receipt-quantity">Quantidade vinculada *</label>
+                  <input id="replacement-receipt-quantity" type="number" min={1}
+                    max={detail.remaining_quantity} step={1} required value={receiptQuantity}
+                    onChange={event => { setReceiptQuantity(event.target.value); setReceiptRequestId(crypto.randomUUID()); }} />
+                </div>
+                <div className="stock-field">
+                  <label htmlFor="replacement-receipt-note">Conferência da substituição *</label>
+                  <textarea id="replacement-receipt-note" rows={2} required minLength={5} maxLength={500}
+                    value={receiptNote} onChange={event => { setReceiptNote(event.target.value); setReceiptRequestId(crypto.randomUUID()); }} />
+                </div>
+              </div>
+              <button type="submit" className="button primary" disabled={!canLink || linkReceipt.isPending}>
+                {linkReceipt.isPending ? 'Vinculando...' : 'Vincular recebimento'}
+              </button>
+              {linkReceipt.error && <p role="alert" className="notice error">{readableError(linkReceipt.error)}</p>}
+            </form>}
         </>}
     </div>}
   </section>;

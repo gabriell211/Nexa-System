@@ -63,6 +63,7 @@ final class StockPurchaseOrderResource extends JsonResource
                         'receipt_detail_id' => (int) $match->receipt_detail_id,
                         'invoice_reference' => $match->receipt?->invoice_reference,
                         'lot_number' => $match->receipt?->lot_number,
+                        'received_at' => $match->receipt?->created_at?->toIso8601String(),
                         'quantity' => (int) $match->quantity,
                         'unit_cost_cents' => (int) $match->received_unit_cost_cents,
                         'variance_reason' => $match->variance_reason,

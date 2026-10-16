@@ -6,6 +6,8 @@ namespace App\Services;
 use App\Models\StockSupplierReturn;
 use App\Models\StockSupplierReplacementCase;
 use App\Models\StockSupplierReplacementEvent;
+use App\Models\StockSupplierReplacementReceipt;
+use App\Models\StockPurchaseReceiptMatch;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -18,8 +20,11 @@ final class StockSupplierReplacementService
     public function find(int $tenantId, int $id): StockSupplierReplacementCase
     {
         return StockSupplierReplacementCase::query()->where('tenant_id', $tenantId)
-            ->with(['creator:id,name', 'assignee:id,name', 'supplierReturn',
-                'events' => static fn ($q) => $q->orderBy('id'), 'events.actor:id,name'])
+            ->with(['creator:id,name', 'assignee:id,name', 'supplierReturn.purchaseMatch',
+                'events' => static fn ($q) => $q->orderBy('id'), 'events.actor:id,name',
+                'replacementReceipts' => static fn ($q) => $q->orderBy('id'),
+                'replacementReceipts.creator:id,name',
+                'replacementReceipts.purchaseMatch.receipt'])
             ->findOrFail($id);
     }
 
@@ -130,6 +135,84 @@ final class StockSupplierReplacementService
                 'reference'=>$reference,'note'=>$note,
             ]);
             return [$this->find((int)$tenant->id, $id), true];
+        }, 3);
+    }
+
+    /** @return array{StockSupplierReplacementCase,bool} */
+    public function linkReceipt(Tenant $tenant, User $actor, int $id, array $data): array
+    {
+        $note = trim($data['note']);
+        $matchId = (int) $data['purchase_receipt_match_id'];
+        $quantity = (int) $data['quantity'];
+        $hash = $this->hash([(int) $actor->id, $id, $matchId, $quantity, $note]);
+
+        return DB::transaction(function () use ($tenant, $actor, $id, $data, $note, $matchId, $quantity, $hash): array {
+            $tenantId = (int) $tenant->id;
+            // Every allocation of a matched receipt takes this lock, including allocations
+            // to different replacement cases. The case lock serializes its own quota.
+            $match = StockPurchaseReceiptMatch::query()->where('tenant_id', $tenantId)
+                ->with('receipt')->lockForUpdate()->findOrFail($matchId);
+            $case = StockSupplierReplacementCase::query()->where('tenant_id', $tenantId)
+                ->with('supplierReturn.purchaseMatch')->lockForUpdate()->findOrFail($id);
+            $prior = StockSupplierReplacementReceipt::query()->where('tenant_id', $tenantId)
+                ->where('request_id', $data['request_id'])->first();
+            if ($prior) {
+                if ((int) $prior->replacement_case_id !== $id || !hash_equals($prior->request_hash, $hash)) {
+                    throw ValidationException::withMessages(['request_id' => 'UUID já utilizado com outra vinculação.']);
+                }
+                return [$this->find($tenantId, $id), false];
+            }
+            if ((int) $case->version !== (int) $data['expected_version']
+                || in_array($case->status, ['closed_unresolved', 'receipt_documented'], true)) {
+                abort(409, 'O acompanhamento foi modificado ou já está encerrado.');
+            }
+            $returned = $case->supplierReturn;
+            $original = $returned->purchaseMatch;
+            if ($returned->status !== 'completed'
+                || (int) $original->purchase_order_id !== (int) $match->purchase_order_id
+                || (int) $original->purchase_order_line_id !== (int) $match->purchase_order_line_id
+                || (int) $original->id === (int) $match->id
+                || $match->receipt === null
+                || $returned->reviewed_at === null
+                || $match->receipt->created_at->lt($returned->reviewed_at)) {
+                throw ValidationException::withMessages([
+                    'purchase_receipt_match_id' => 'Selecione uma entrada posterior à devolução, conciliada com o mesmo pedido e material.',
+                ]);
+            }
+            if (StockSupplierReplacementReceipt::query()->where('tenant_id', $tenantId)
+                ->where('replacement_case_id', $id)->where('purchase_receipt_match_id', $matchId)->exists()) {
+                throw ValidationException::withMessages([
+                    'purchase_receipt_match_id' => 'Esta entrada já foi vinculada ao acompanhamento.',
+                ]);
+            }
+            $caseQuantity = (int) $case->replacementReceipts()->sum('quantity');
+            $matchQuantity = (int) StockSupplierReplacementReceipt::query()->where('tenant_id', $tenantId)
+                ->where('purchase_receipt_match_id', $matchId)->sum('quantity');
+            if ($caseQuantity + $quantity > (int) $returned->quantity
+                || $matchQuantity + $quantity > (int) $match->quantity) {
+                throw ValidationException::withMessages([
+                    'quantity' => 'A quantidade excede a devolução ou a entrada ainda não vinculada.',
+                ]);
+            }
+            $case->replacementReceipts()->create([
+                'tenant_id' => $tenantId, 'purchase_receipt_match_id' => $matchId,
+                'quantity' => $quantity, 'request_id' => $data['request_id'],
+                'request_hash' => $hash, 'note' => $note, 'created_by_user_id' => $actor->id,
+            ]);
+            $before = ['status' => $case->status, 'version' => $case->version,
+                'documented_quantity' => $caseQuantity];
+            $case->forceFill([
+                'version' => $case->version + 1,
+                'status' => $caseQuantity + $quantity === (int) $returned->quantity
+                    ? 'receipt_documented' : $case->status,
+            ])->save();
+            $this->audit->write($tenant, $actor, 'stock.supplier_replacement.receipt_linked', $case,
+                $before, ['status' => $case->status, 'version' => $case->version,
+                    'documented_quantity' => $caseQuantity + $quantity,
+                    'purchase_receipt_match_id' => $matchId, 'quantity' => $quantity,
+                    'invoice_reference' => $match->receipt->invoice_reference,
+                    'lot_number' => $match->receipt->lot_number, 'note' => $note]);
+            return [$this->find($tenantId, $id), true];
         }, 3);
     }
 

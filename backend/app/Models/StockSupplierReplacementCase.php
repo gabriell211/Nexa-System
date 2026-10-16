@@ -34,4 +34,9 @@ final class StockSupplierReplacementCase extends Model
     {
         return $this->hasMany(StockSupplierReplacementEvent::class, 'replacement_case_id');
     }
+
+    public function replacementReceipts(): HasMany
+    {
+        return $this->hasMany(StockSupplierReplacementReceipt::class, 'replacement_case_id');
+    }
 }
