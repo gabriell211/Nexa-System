@@ -359,12 +359,31 @@ jobs:
           dpkg-deb --ctrl-tarfile "$deb" | tar -tf -
           echo '--- RPM LIFECYCLE SCRIPTS ---'
           rpm -qp --scripts "$rpmfile"
-          dpkg-deb --contents "$deb" | grep '/usr/lib/nexa-collector/nexa-collector-daemon'
+          dpkg-deb --contents "$deb" | grep 'usr/lib/nexa-collector/nexa-collector-daemon'
           dpkg-deb --contents "$deb" | grep 'nexa-collector.service'
           dpkg-deb --ctrl-tarfile "$deb" | tar -tf - | grep 'postinst'
           rpm -qpl "$rpmfile" | grep '/usr/lib/nexa-collector/nexa-collector-daemon'
           rpm -qpl "$rpmfile" | grep 'nexa-collector.service'
           rpm -qp --scripts "$rpmfile" | grep 'systemctl daemon-reload'
+      - name: Smoke install and remove DEB on disposable Ubuntu runner
+        run: |
+          set -euo pipefail
+          deb="$(find collector/target/release/bundle/deb -name '*.deb' -type f -print -quit)"
+          pkgname="$(dpkg-deb -f "$deb" Package)"
+          sudo dpkg -i "$deb"
+          getent passwd nexa-collector
+          test -f /etc/nexa-collector/config.json
+          test "$(stat -c '%a' /etc/nexa-collector/config.json)" = 640
+          test "$(stat -c '%a' /etc/nexa-collector/credentials)" = 700
+          test -x /usr/lib/nexa-collector/nexa-collector-daemon
+          systemctl is-enabled nexa-collector.service && exit 1 || true
+          if systemctl is-active --quiet nexa-collector.service; then
+            echo 'Collector must not auto-start without credentials' >&2
+            exit 1
+          fi
+          sudo dpkg --remove "$pkgname"
+          test -f /etc/nexa-collector/config.json
+          test -d /var/lib/nexa-collector
       - name: Upload Linux DEB and RPM installers
         uses: actions/upload-artifact@v4
         with:
@@ -428,6 +447,20 @@ jobs:
           find "$tmp/expanded" -maxdepth 2 -print
           test -e "$tmp/expanded/Scripts"
           test -f "$tmp/expanded/PackageInfo"
+      - name: Smoke install PKG without activating launchd (disposable runner)
+        run: |
+          set -euo pipefail
+          pkg="$(find collector/target/release/bundle/pkg -type f -name '*.pkg' -print -quit)"
+          sudo installer -pkg "$pkg" -target /
+          test -d "/Applications/Nexa Collector.app"
+          test -x "/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon"
+          test -f "/Library/Application Support/NexaCollector/config.json"
+          test -f "/Library/Application Support/NexaCollector/package/activate.sh"
+          dscl . -read /Users/_nexacollector
+          if launchctl print system/com.nexa.collector >/dev/null 2>&1; then
+            echo 'LaunchDaemon must not start before credentials are provisioned' >&2
+            exit 1
+          fi
       - name: Upload unsigned macOS full installer
         uses: actions/upload-artifact@v4
         with:
