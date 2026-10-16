@@ -36,6 +36,45 @@ reservas por ponto no backend, homologação física, reinícios/upgrade e teste
 em instalações reais. Portanto o recurso **não** completa o monitoramento
 automático de impressoras.
 
+## Decisões locais de candidatos — incremento parcial
+
+A descoberta automática já guarda as observações na tabela `state` do SQLite.
+Agora cada candidato presente no **último relatório concluído sem erros** pode
+receber a decisão local `save` (salvo para análise), `ignore` (ignorado) ou
+`reset` (limpa a decisão). Nenhuma delas altera a lista de impressoras
+monitoradas, ativa SNMP, cria leituras ou atribui cliente.
+
+A alteração da fila exige **permissão administrativa do sistema operacional**
+para acessar o arquivo SQLite do serviço. Por enquanto, não há canal IPC
+privilegiado entre Console e daemon, portanto as ações são CLI administrativas:
+
+```sh
+nexa-collector-daemon <config.json> <queue.sqlite> --review-candidate 192.168.1.50 save
+nexa-collector-daemon <config.json> <queue.sqlite> --review-candidate 192.168.1.50 ignore
+nexa-collector-daemon <config.json> <queue.sqlite> --review-candidate 192.168.1.50 reset
+```
+
+Use os caminhos reais já provisionados no host e a credencial da outbox
+disponibilizada de modo protegido; esses comandos não recebem segredo como
+argumento. Em instalações com a conta de serviço isolada, execute a manutenção
+sob o usuário autorizado, nunca tornando `config.json`, `credentials/` ou
+`queue.sqlite` graváveis por todos.
+
+O histórico de até **200 decisões** sobrevive a reinícios e mantém um retrato
+da observação que existia quando o operador escolheu. Quando IP/portas/eSCL/
+cabeçalho HTTP mudam, ou o candidato deixa de aparecer, o Console sinaliza
+**revisar**, não considera essa decisão prova de identidade ou homologação.
+Um relatório ausente, com erro ou com mais de oito dias não permite novas
+decisões `save/ignore`. `reset` permanece possível para limpeza local.
+O banco aplica transação SQLite ao atualizar decisões para evitar perda por
+escritas concorrentes; não existe endpoint web para aprovar dispositivos.
+
+**Pendente:** editor da agenda e faixas no Console via canal IPC
+autenticado com serviço privilegiado; botões locais para salvar/ignorar;
+identidade real por serial/fabricante, proteção a IP reutilizado, processo de
+homologação do OID/contador e ação Monitorar com verificação no backend.
+Esta etapa ainda não cria uma fila de impressoras prontas para operar.
+
 ## Descoberta de impressoras USB no Windows
 
 O daemon oferece `--discover-usb` no Windows e o Console tem o botão **Detectar impressoras USB** na aba Impressoras. A busca, sob demanda e somente leitura, identifica impressoras USB (inclusive multifuncionais) e dispositivos de imagem, de diferentes fabricantes. Usa as interfaces PnP USB presentes (`USB\\VID_*` e `USBPRINT\\*`), evitando reportar impressoras virtuais ou de rede como equipamentos fisicamente conectados. Exibe nome, tipo, status e VID:PID quando disponível. Dispositivos de imagem cujo tipo não é comprovado permanecem classificados como tal.

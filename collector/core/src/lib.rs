@@ -1,5 +1,6 @@
 pub mod recovery_guard;
 pub mod discovery;
+pub mod candidate_review;
 pub mod usb_devices;
 pub mod canon_drc225;
 use aes_gcm::{
@@ -1182,6 +1183,103 @@ impl Outbox {
         Ok(())
     }
 
+    /// Persistent, bounded local operator decisions. These observations do not
+    /// activate monitoring and do not change the immutable scan evidence.
+    pub fn candidate_reviews(
+        &self,
+    ) -> Result<Vec<candidate_review::CandidateReview>, CollectorError> {
+        let raw: Option<String> = self.connection.query_row(
+            "SELECT value FROM state WHERE key = 'candidate_reviews'",
+            [], |row| row.get(0),
+        ).optional()?;
+        let reviews: Vec<candidate_review::CandidateReview> = match raw {
+            Some(json) => serde_json::from_str(&json)?,
+            None => Vec::new(),
+        };
+        candidate_review::validate_reviews(&reviews)?;
+        Ok(reviews)
+    }
+
+    /// Only an administrator with write access to the protected local SQLite
+    /// file can run this operation. Use a transaction to avoid lost updates
+    /// when the daemon and an offline maintenance command run concurrently.
+    pub fn review_candidate(
+        &mut self,
+        ip: std::net::Ipv4Addr,
+        action: candidate_review::ReviewAction,
+    ) -> Result<Option<candidate_review::CandidateReview>, CollectorError> {
+        use candidate_review::{CandidateDecision, CandidateReview, ReviewAction, MAX_REVIEWS};
+
+        let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let raw: Option<String> = tx.query_row(
+            "SELECT value FROM state WHERE key = 'candidate_reviews'",
+            [], |row| row.get(0),
+        ).optional()?;
+        let mut reviews: Vec<CandidateReview> = match raw {
+            Some(json) => serde_json::from_str(&json)?,
+            None => Vec::new(),
+        };
+        candidate_review::validate_reviews(&reviews)?;
+
+        if action == ReviewAction::Reset {
+            reviews.retain(|item| item.candidate.ip != ip);
+            let json = serde_json::to_string(&reviews)?;
+            tx.execute(
+                "INSERT INTO state(key, value) VALUES ('candidate_reviews', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [&json],
+            )?;
+            tx.commit()?;
+            return Ok(None);
+        }
+
+        let report_raw: Option<String> = tx.query_row(
+            "SELECT value FROM state WHERE key = 'discovery_report'",
+            [], |row| row.get(0),
+        ).optional()?;
+        let report: DiscoveryReport = report_raw
+            .ok_or_else(|| CollectorError::Configuration("no completed discovery report".into()))
+            .and_then(|value| serde_json::from_str(&value).map_err(CollectorError::from))?;
+        if report.last_error_kind.is_some()
+            || report.last_completed_at
+                .map(|completed| {
+                    completed > Utc::now()
+                        || Utc::now().signed_duration_since(completed).num_hours() > 192
+                })
+                != Some(false)
+        {
+            return Err(CollectorError::Configuration(
+                "discovery evidence is stale or was not completed successfully".into(),
+            ));
+        }
+        let candidate = report.candidates.into_iter().find(|item| item.ip == ip)
+            .ok_or_else(|| CollectorError::Configuration(
+                "IP not present in the most recent completed discovery".into(),
+            ))?;
+        if reviews.iter().all(|item| item.candidate.ip != ip) && reviews.len() >= MAX_REVIEWS {
+            return Err(CollectorError::Configuration("candidate review limit exceeded".into()));
+        }
+        let review = CandidateReview {
+            candidate,
+            decision: if action == ReviewAction::Save {
+                CandidateDecision::Saved
+            } else {
+                CandidateDecision::Ignored
+            },
+            decided_at: Utc::now(),
+        };
+        reviews.retain(|item| item.candidate.ip != ip);
+        reviews.push(review.clone());
+        let json = serde_json::to_string(&reviews)?;
+        tx.execute(
+            "INSERT INTO state(key, value) VALUES ('candidate_reviews', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [&json],
+        )?;
+        tx.commit()?;
+        Ok(Some(review))
+    }
+
     pub fn mark_run(&self) -> Result<(), CollectorError> {
         self.connection.execute(
             "INSERT INTO state(key, value) VALUES ('last_run', ?1)
@@ -2214,6 +2312,70 @@ mod tests {
         assert_eq!(restored.observed_candidates, 1);
         assert_eq!(restored.candidates[0].ip.to_string(), "10.2.0.7");
         assert_eq!(reopened.pending().unwrap(), 0);
+    }
+
+    #[test]
+    fn reviewed_discovery_is_durable_and_never_enqueues_meter_or_changes_report() {
+        let temp = tempfile::tempdir().unwrap();
+        let db = temp.path().join("queue.sqlite");
+        let address = "192.168.20.44".parse().unwrap();
+        {
+            let mut store = Outbox::open_bounded(&db, 20).unwrap();
+            assert!(store.review_candidate(address, candidate_review::ReviewAction::Save).is_err());
+            store.save_discovery_report(&DiscoveryReport {
+                last_completed_at: Some(Utc::now()),
+                last_error_kind: None,
+                observed_candidates: 1,
+                candidates: vec![discovery::DiscoveryCandidate {
+                    ip: address,
+                    print_ports: vec![9100],
+                    http_server: Some("Printer service".into()),
+                    escl_scanner: false,
+                }],
+            }).unwrap();
+            assert!(store.review_candidate("192.168.20.45".parse().unwrap(),
+                candidate_review::ReviewAction::Save).is_err());
+            assert_eq!(store.candidate_reviews().unwrap().len(), 0);
+            let result = store.review_candidate(address, candidate_review::ReviewAction::Save).unwrap().unwrap();
+            assert_eq!(result.decision, candidate_review::CandidateDecision::Saved);
+            assert_eq!(store.pending().unwrap(), 0);
+            assert_eq!(store.discovery_report().unwrap().candidates.len(), 1);
+        }
+        {
+            let mut reopened = Outbox::open_bounded(&db, 20).unwrap();
+            assert_eq!(reopened.candidate_reviews().unwrap().len(), 1);
+            assert_eq!(reopened.candidate_reviews().unwrap()[0].decision,
+                candidate_review::CandidateDecision::Saved);
+            reopened.review_candidate(address, candidate_review::ReviewAction::Ignore).unwrap();
+            assert_eq!(reopened.candidate_reviews().unwrap().len(), 1);
+            assert_eq!(reopened.candidate_reviews().unwrap()[0].decision,
+                candidate_review::CandidateDecision::Ignored);
+            assert_eq!(reopened.pending().unwrap(), 0);
+            reopened.review_candidate(address, candidate_review::ReviewAction::Reset).unwrap();
+            assert!(reopened.candidate_reviews().unwrap().is_empty());
+        }
+    }
+
+    #[test]
+    fn failed_and_stale_discovery_cannot_be_accepted() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Outbox::open_bounded(temp.path().join("queue.sqlite"), 10).unwrap();
+        let address = "10.20.1.2".parse().unwrap();
+        let mut report = DiscoveryReport {
+            last_completed_at: Some(Utc::now()),
+            last_error_kind: Some("discovery-io".into()),
+            observed_candidates: 1,
+            candidates: vec![discovery::DiscoveryCandidate {
+                ip: address, print_ports: vec![631], http_server: None, escl_scanner: false,
+            }],
+        };
+        store.save_discovery_report(&report).unwrap();
+        assert!(store.review_candidate(address, candidate_review::ReviewAction::Save).is_err());
+        report.last_error_kind = None;
+        report.last_completed_at = Some(Utc::now() - chrono::Duration::days(9));
+        store.save_discovery_report(&report).unwrap();
+        assert!(store.review_candidate(address, candidate_review::ReviewAction::Ignore).is_err());
+        assert!(store.candidate_reviews().unwrap().is_empty());
     }
 
     #[test]

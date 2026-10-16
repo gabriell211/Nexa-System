@@ -51,6 +51,23 @@ type WatchdogSnapshot = {
   last_reset_at: string | null;
   incidents: { at: string; worker: "main-loop" | "heartbeat-worker" }[];
 };
+type CandidateReview = {
+  candidate: DiscoveryCandidate;
+  decision: "saved" | "ignored";
+  decided_at: string;
+};
+function sameObservedEvidence(a: DiscoveryCandidate, b: DiscoveryCandidate): boolean {
+  return a.ip === b.ip
+    && a.escl_scanner === b.escl_scanner
+    && a.http_server === b.http_server
+    && a.print_ports.join(",") === b.print_ports.join(",");
+}
+function candidateReviewStatus(candidate: DiscoveryCandidate, reviews: CandidateReview[]): string {
+  const reviewed = reviews.find(item => item.candidate.ip === candidate.ip);
+  if (!reviewed) return "Aguardando seleção local";
+  if (!sameObservedEvidence(candidate, reviewed.candidate)) return "Revisar: evidência mudou";
+  return reviewed.decision === "saved" ? "Salvo localmente (não monitorado)" : "Ignorado pelo operador";
+}
 type DiscoverySchedule = { enabled: boolean; interval_hours: number; cidrs: string[] };
 type DiscoveryReport = {
   last_completed_at: string | null;
@@ -66,6 +83,8 @@ type CollectorSnapshot = {
   authorized_subnets: string[];
   discovery_schedule: DiscoverySchedule | null;
   discovery_report: DiscoveryReport | null;
+  candidate_reviews: CandidateReview[];
+  candidate_reviews_error: string | null;
   printers: PrinterInfo[];
   usb_scanners: UsbScannerInfo[];
   queue_pending: number | null;
@@ -425,9 +444,39 @@ export default function App() {
                   <tr key={candidate.ip}><td className="mono">{candidate.ip}</td>
                     <td>{candidate.print_ports.join(", ") || "—"}</td>
                     <td>{candidate.escl_scanner ? "Detectado" : "—"}</td>
-                    <td>Candidato sem homologação</td></tr>
+                    <td>{candidateReviewStatus(candidate, snapshot?.candidate_reviews ?? [])}</td></tr>
                 ))}</tbody>
               </table></div>
+              {snapshot?.candidate_reviews_error && <div className="notice error" role="alert">
+                {snapshot.candidate_reviews_error}
+              </div>}
+              <div className="panel-title"><h2>Decisões locais do operador</h2>
+                <span>Somente leitura · máximo de 200 decisões</span></div>
+              <div className="table-scroll"><table>
+                <thead><tr><th>IP</th><th>Decisão</th><th>Data da decisão</th><th>Validação</th></tr></thead>
+                <tbody>{snapshot?.candidate_reviews.map(review => {
+                  const recent = snapshot?.discovery_report?.candidates.find(
+                    item => item.ip === review.candidate.ip
+                  );
+                  const current = recent && sameObservedEvidence(recent, review.candidate)
+                    && !snapshot?.discovery_report?.last_error_kind;
+                  return <tr key={review.candidate.ip}>
+                    <td className="mono">{review.candidate.ip}</td>
+                    <td>{review.decision === "saved" ? "Salvo" : "Ignorado"}</td>
+                    <td>{formatDate(review.decided_at)}</td>
+                    <td>{current ? "Observação correspondente" : "Revisar: ausente ou evidência mudou"}</td>
+                  </tr>;
+                })}</tbody>
+              </table></div>
+              {!snapshot?.candidate_reviews.length && <div className="empty">
+                Nenhuma decisão local registrada. Os candidatos permanecem sem aprovação.
+              </div>}
+              <div className="notice">
+                Salvar ou ignorar exige acesso administrativo ao banco protegido do Collector e o comando
+                <code> --review-candidate IP save|ignore|reset</code>. Esta janela não possui permissão
+                para alterar a fila nem para ativar monitoramento. Um IP ou porta aberta nunca confirma a
+                identidade do equipamento; exige-se validação de fabricante, série e OID antes da coleta.
+              </div>
               {!snapshot?.discovery_report?.candidates.length && <div className="empty">
                 Nenhum candidato disponível nesta varredura. Confira se a agenda foi habilitada pelo administrador.
               </div>}

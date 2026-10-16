@@ -1,5 +1,21 @@
 # Nexa System — monitoramento remoto, descoberta e adoção de impressoras
 
+## Incremento: decisões locais persistentes para candidatos (16/10/2026)
+
+O Rust mantém até 200 decisões de revisão (`save`, `ignore` e reversão `reset`)
+na base SQLite existente, sob transação e somente para candidatos do último
+relatório bem-sucedido (até oito dias). Um registro guarda a observação
+que fundamentou a decisão; divergências posteriores de IP/portas/eSCL/
+servidor HTTP sinalizam **revisar**, não validam identidade. A tela
+**Collector → Impressoras** exibe status e histórico em modo somente leitura.
+
+A manutenção está inicialmente disponível por comando local administrativo
+`--review-candidate IP save|ignore|reset` com permissão ao arquivo do
+serviço, não por uma chamada Tauri irrestrita. O comando não altera o
+`CollectorConfig.printers`, não ativa contadores, não vincula ao cliente e
+não transmite candidatos. A seleção interativa com autenticação via IPC,
+a verificação real do hardware e o fluxo **Monitorar** seguem pendentes.
+
 ## Incremento: busca manual por faixas autorizadas (17/10/2026)
 
 O núcleo Rust agora expõe `plan_authorized_hosts` e `discover_authorized_ranges`:
@@ -13,7 +29,7 @@ O Console Tauri passa as faixas para o Rust por `discover_authorized_printers`; 
 
 O daemon também lê uma agenda **opt-in** (`discovery_schedule.enabled`, `interval_hours` de 6 a 168 e `cidrs`) no JSON protegido. Em background, roda buscas independentes de upload e heartbeat e mantém as últimas 200 evidências de candidatos, quantidade encontrada, horário e falhas no estado SQLite existente. A agenda é validada no startup e vem desabilitada por padrão para instalações antigas. O Console exibe esse histórico em **Impressoras**.
 
-**Não concluídos:** editor persistente da agenda/faixas pelo operador via IPC privilegiado (por enquanto requer provisionamento administrativo do JSON), decisões persistidas Salvar/Monitorar/Ignorar, reservas IP/coletor, homologação de identidade e integração com API. O incremento não ativa nem monitora automaticamente nenhum equipamento.
+**Não concluídos:** editor persistente da agenda/faixas pelo operador via IPC privilegiado (por enquanto requer provisionamento administrativo do JSON), botões interativos de seleção no Console, ação Monitorar homologada, reservas IP/coletor e integração com API. O incremento não ativa nem monitora automaticamente nenhum equipamento.
 
 
 **Situação em 16/10/2026: especificação e comparação com referência pública; fluxo remoto completo não implementado.**
@@ -96,10 +112,10 @@ A interface distingue **descoberto ≠ salvo no agente ≠ homologado ≠ monito
 | `collector/core/src/usb_devices.rs`: descoberta Windows USB impressora/imagem sob demanda | **Na PR #51**, diagnóstico sem contador |
 | Daemon, SQLite outbox e HTTPS para contadores **já configurados** por ID/OID | **Implementado** com limites; não serve de fila de *candidatos* automaticamente |
 | Laravel heartbeat/ingestão autenticados, isolamento por cliente e impressoras cadastradas | **Implementado** |
-| Configuração local segura de descoberta, canal IPC autorizado, candidatos locais e comunicação da seleção ao backend | **PARCIAL** — CIDRs são validados no núcleo Rust e último scan fica em SQLite; canal de edição, seleção/ignorados e backend ainda pendentes |
+| Configuração local segura de descoberta, canal IPC autorizado, candidatos locais e comunicação da seleção ao backend | **PARCIAL** — CIDRs validados no Rust, candidatos e decisões administrativas persistidos em SQLite; falta IPC de edição e confirmação ao backend |
 | Agenda automática de 6–168 horas, faixas configuradas e persistidas no agente | **PARCIAL** — daemon agenda scans opt-in no JSON administrativo e persiste snapshots no SQLite; edição de faixas via Console/IPC ainda pendente |
 | Reserva prévia de IP+coletor, verificação física e ativação automática | **Não implementado** |
-| Console Tauri com fila local de candidatos, seleção/ignorar, anti-duplicidade e Monitorar | **Não implementado** |
+| Console Tauri com fila local de candidatos, seleção/ignorar, anti-duplicidade e Monitorar | **PARCIAL** — estado local salvo/ignorado, reversível via CLI privilegiada e visível no Console; falta UI de edição autorizada via IPC e monitoramento com verificação física |
 | Inserção manual auditada de contadores distinguível de telemetria | **Exige validação/implementação específica** |
 
 ## Testes mínimos de aceite
