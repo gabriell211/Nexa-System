@@ -1,6 +1,7 @@
 pub mod recovery_guard;
 pub mod discovery;
 pub mod candidate_review;
+pub mod local_control;
 pub mod usb_devices;
 pub mod canon_drc225;
 use aes_gcm::{
