@@ -204,7 +204,7 @@ pub struct UsbScannerConfig {
     pub profile: String,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct DiscoverySchedule {
     pub enabled: bool,
