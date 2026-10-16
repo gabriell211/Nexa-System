@@ -7,6 +7,46 @@ use std::{net::Ipv4Addr, path::{Path, PathBuf}};
 
 pub const PROTOCOL_VERSION: u8 = 1;
 pub const MAX_MESSAGE_BYTES: u64 = 512;
+#[cfg(windows)]
+pub const WINDOWS_PIPE_NAME: &str = r"\\.\pipe\NexaCollector.Control.v1";
+
+#[cfg(windows)]
+pub fn submit_windows(ip: Ipv4Addr, action: ReviewAction) -> Result<(), String> {
+    use windows_sys::Win32::System::Pipes::CallNamedPipeW;
+    let name: Vec<u16> = WINDOWS_PIPE_NAME.encode_utf16().chain(Some(0)).collect();
+    let payload = serde_json::to_vec(&ControlRequest {
+        version: PROTOCOL_VERSION, ip, action,
+    }).map_err(|_| "Requisição local inválida.".to_owned())?;
+    if payload.len() as u64 > MAX_MESSAGE_BYTES {
+        return Err("Requisição local excede o limite.".into());
+    }
+    let mut reply = [0_u8; MAX_MESSAGE_BYTES as usize + 1];
+    let mut read = 0_u32;
+    // The service creates a local-only, DACL-restricted named pipe.
+    // No password, API token, or DB encryption key is sent to the pipe.
+    let ok = unsafe {
+        CallNamedPipeW(
+            name.as_ptr(),
+            payload.as_ptr() as _, payload.len() as u32,
+            reply.as_mut_ptr() as _, reply.len() as u32,
+            &mut read, 5000,
+        )
+    };
+    if ok == 0 {
+        return Err("Canal administrativo indisponível ou acesso negado. Use sessão elevada.".into());
+    }
+    if read as u64 > MAX_MESSAGE_BYTES {
+        return Err("Resposta local acima do limite.".into());
+    }
+    let answer: ControlResponse = serde_json::from_slice(&reply[..read as usize])
+        .map_err(|_| "Resposta local inválida.".to_owned())?;
+    if answer.accepted {
+        Ok(())
+    } else {
+        Err(answer.reason.unwrap_or_else(|| "O serviço recusou a operação.".into()))
+    }
+}
+
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
