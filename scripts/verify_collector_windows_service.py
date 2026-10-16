@@ -3,7 +3,6 @@
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1]
-installer = (root / "collector/windows/install.ps1").read_text(encoding="utf-8")
 runtime = (root / "collector/daemon/src/windows_service_runtime.rs").read_text(encoding="utf-8")
 daemon = (root / "collector/daemon/src/main.rs").read_text(encoding="utf-8")
 manifest = (root / "collector/daemon/Cargo.toml").read_text(encoding="utf-8")
