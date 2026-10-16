@@ -19,6 +19,11 @@ mod macos_launchd_runtime;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
+    if args.len() == 2 && args[1] == "--discover-canon-usb" {
+        let candidates = nexa_collector_core::usb_canon::discover_canon_usb()?;
+        println!("{}", serde_json::to_string_pretty(&candidates)?);
+        return Ok(());
+    }
     if args.len() == 2 && args[1] == "--discover-local" {
         let candidates = nexa_collector_core::discovery::discover_local()?;
         println!("{}", serde_json::to_string_pretty(&candidates)?);
