@@ -4,7 +4,7 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-rou
 import {
   Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList, ClipboardCheck,
   Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon, ShieldAlert,
-  Search, ShieldCheck, Trash2, Users, X, MapPin, History, UserRoundCog, FileText,
+  Search, ShieldCheck, Trash2, Users, X, MapPin, History, UserRoundCog, FileText, KeyRound,
 } from 'lucide-react';
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
 import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
@@ -15,6 +15,7 @@ import { SuppliesPage } from './pages/SuppliesPage';
 import { TicketsPage } from './pages/TicketsPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { CollectorsPage } from './pages/CollectorsPage';
+import { CollectorCredentialDialog } from './components/CollectorCredentialDialog';
 import { ContractsPage } from './pages/ContractsPage';
 import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
 import { PrinterReadingHistoryPanel } from './pages/PrinterReadingHistoryPanel';
@@ -129,6 +130,7 @@ function Shell({ token, identity, onLogout }: {
   token: string | null; identity: CurrentUser; onLogout: () => Promise<void>;
 }) {
   const canWrite = adminRoles.has(identity.role);
+  const canIssueCollectorCredential = ['owner', 'admin'].includes(identity.role);
   const canAudit = ['owner', 'admin'].includes(identity.role);
   const canStock = (canAudit || identity.customer_scope === 'all') &&
     ['owner','admin','manager','warehouse'].includes(identity.role);
@@ -193,7 +195,7 @@ function Shell({ token, identity, onLogout }: {
       <main className="main-content">
         <Routes>
           <Route path="/dashboard" element={<DashboardPage token={token} />} />
-          <Route path="/clientes" element={<CustomersPage token={token} canWrite={canWrite} />} />
+          <Route path="/clientes" element={<CustomersPage token={token} canWrite={canWrite} canIssueCollectorCredential={canIssueCollectorCredential} />} />
           <Route path="/contratos" element={<ContractsPage token={token} canWrite={canWrite} />} />
           <Route path="/clientes/:id/unidades" element={<CustomerOrganizationPage token={token} canWrite={canWrite} />} />
           <Route path="/parque" element={<PrintersPage token={token} canWrite={canWrite} />} />
@@ -289,13 +291,16 @@ function CustomerDialog({ customer, onClose, onSave, pending }: {
   </div>;
 }
 
-function CustomersPage({ token, canWrite }: { token: string | null; canWrite: boolean }) {
+function CustomersPage({ token, canWrite, canIssueCollectorCredential }: {
+  token: string | null; canWrite: boolean; canIssueCollectorCredential: boolean;
+}) {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const delayed = useDeferredValue(search);
   const [activeOnly, setActiveOnly] = useState(true);
   const [editing, setEditing] = useState<'new' | Customer | null>(null);
+  const [credentialCustomer, setCredentialCustomer] = useState<Customer | null>(null);
   const [notice, setNotice] = useState('');
 
   const listing = useQuery({
@@ -348,7 +353,7 @@ function CustomersPage({ token, canWrite }: { token: string | null; canWrite: bo
           <tbody>{listing.data.data.map((customer) => <tr key={customer.id}>
             <td><strong><Link className="entity-link" to={'/clientes/' + customer.id + '/unidades'} title="Ver unidades, departamentos e centros de custo">{customer.name}</Link></strong><small>#{customer.id} • Ver unidades e centros de custo</small></td><td>{customer.document || '—'}</td>
             <td>{customer.email || '—'}</td><td><span className={'state-pill ' + (customer.active ? 'online' : 'neutral')}>{customer.active ? 'Ativo' : 'Inativo'}</span></td>
-            {canWrite && <td><div className="table-actions"><button className="icon-button" title="Editar cliente" aria-label={'Editar ' + customer.name} onClick={() => setEditing(customer)}><Pencil size={16}/></button>
+            {canWrite && <td><div className="table-actions">{canIssueCollectorCredential && customer.active && <button type="button" className="icon-button" title="Gerar e copiar chave do Collector" aria-label={'Gerar chave para ' + customer.name} onClick={() => setCredentialCustomer(customer)}><KeyRound size={16}/></button>}<button className="icon-button" title="Editar cliente" aria-label={'Editar ' + customer.name} onClick={() => setEditing(customer)}><Pencil size={16}/></button>
               {customer.active && <button className="icon-button danger-icon" title="Inativar cliente" aria-label={'Inativar ' + customer.name}
                 onClick={() => remove(customer)} disabled={deactivate.isPending}><Trash2 size={16}/></button>}</div></td>}
           </tr>)}</tbody></table></div>
@@ -358,6 +363,9 @@ function CustomersPage({ token, canWrite }: { token: string | null; canWrite: bo
     {editing !== null && <CustomerDialog key={editing === 'new' ? 'new' : editing.id} customer={editing === 'new' ? null : editing}
       pending={save.isPending} onClose={() => setEditing(null)}
       onSave={async (values) => { await save.mutateAsync(values); }}/>}
+    {credentialCustomer && <CollectorCredentialDialog key={credentialCustomer.id} customer={credentialCustomer}
+      token={token} onClose={() => setCredentialCustomer(null)}
+      onIssued={() => { void qc.invalidateQueries({ queryKey: ['collector-agents'] }); }}/>}
   </>;
 }
 
