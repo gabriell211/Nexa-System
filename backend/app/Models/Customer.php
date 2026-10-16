@@ -15,4 +15,5 @@ final class Customer extends Model
     public function printers(): HasMany { return $this->hasMany(Printer::class); }
     public function locations(): HasMany { return $this->hasMany(CustomerLocation::class); }
     public function costCenters(): HasMany { return $this->hasMany(CostCenter::class); }
+    public function contracts(): HasMany { return $this->hasMany(CustomerContract::class); }
 }
