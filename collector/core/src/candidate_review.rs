@@ -14,7 +14,8 @@ pub enum CandidateDecision {
     Ignored,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub enum ReviewAction {
     Save,
     Ignore,
