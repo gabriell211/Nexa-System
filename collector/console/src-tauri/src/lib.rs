@@ -1,7 +1,7 @@
 use chrono::Utc;
 use nexa_collector_core::{
     canon_drc225::{self, CanonDrc225Meter},
-    candidate_review::CandidateReview,
+    candidate_review::{CandidateReview, ReviewAction},
     discovery::{self, DiscoveryCandidate},
     usb_devices::{self, UsbDeviceCandidate},
     recovery_guard::{RecoveryGuard, WatchdogSnapshot},
@@ -41,6 +41,7 @@ struct CollectorSnapshot {
     discovery_report: Option<DiscoveryReport>,
     candidate_reviews: Vec<CandidateReview>,
     candidate_reviews_error: Option<String>,
+    local_control_supported: bool,
     printers: Vec<PrinterInfo>,
     usb_scanners: Vec<UsbScannerInfo>,
     queue_pending: Option<u64>,
@@ -70,6 +71,7 @@ fn get_snapshot() -> CollectorSnapshot {
         discovery_report: None,
         candidate_reviews: Vec::new(),
         candidate_reviews_error: None,
+        local_control_supported: cfg!(unix),
         printers: Vec::new(),
         usb_scanners: Vec::new(),
         queue_pending: None,
@@ -230,10 +232,33 @@ async fn read_canon_drc225_meter() -> Result<CanonMeterView, String> {
         })
 }
 
+#[tauri::command]
+async fn review_local_candidate(ip: String, action: String) -> Result<(), String> {
+    let ip = ip.parse::<std::net::Ipv4Addr>()
+        .map_err(|_| "Endereço IPv4 inválido.".to_owned())?;
+    let action = action.parse::<ReviewAction>()
+        .map_err(|_| "Ação de revisão inválida.".to_owned())?;
+    #[cfg(unix)]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let queue = env::var_os("NEXA_COLLECTOR_DB")
+                .ok_or_else(|| "NEXA_COLLECTOR_DB não configurado.".to_owned())?;
+            nexa_collector_core::local_control::submit(
+                std::path::Path::new(&queue), ip, action,
+            )
+        }).await.map_err(|_| "O canal local foi interrompido.".to_owned())?
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = (ip, action);
+        Err("Controle local ainda indisponível neste sistema; não há transporte com ACL homologada.".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter])
+        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate])
         .run(tauri::generate_context!())
         .expect("failed to start Nexa Collector Console");
 }
