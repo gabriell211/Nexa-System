@@ -11,10 +11,10 @@
 
 ## O que este incremento entrega
 
-- Descoberta **sob demanda**, sem credencial e somente Windows, limitada a dispositivos USB Canon presentes cujo nome contém DR-C225. Requer o driver PnP funcional.
-- Comando: a partir de `collector`, execute `cargo run -p nexa-collector-daemon -- --discover-canon-usb`. Não requer `config.local.json`, token, SNMP ou SQLite.
-- Botão **Detectar scanners Canon** na aba **Impressoras** do console Tauri.
-- Distingue *driver identifica DR-C225 II* de *revisão não confirmada*. Não confunde DR-C225 genérico com revisão II.
+- Descoberta **sob demanda**, sem credencial e somente Windows, de impressoras USB e dispositivos de imagem de **qualquer fabricante**, incluindo a Canon. Requer o driver PnP funcional.
+- Comando: a partir de `collector`, execute `cargo run -p nexa-collector-daemon -- --discover-usb`. Não requer `config.local.json`, token, SNMP ou SQLite.
+- Botão **Detectar impressoras USB** na aba **Impressoras** do console Tauri. A tabela mostra nome, tipo, status Windows e VID:PID quando disponível.
+- O scanner observado pelo usuário é `CANON DR-C225 USB` (classe `Image`, status `OK`, `VID_1083&PID_1658`); portanto **não se pode filtrar apenas VID_04A9**. O nome mostrado pelo driver não comprova revisão II; verificar etiqueta/documentação antes da homologação.
 - Não realiza varredura de documentos, leitura/escrita de registradores USB, reset de roletes, registro de equipamentos nem coleta/envio de valores.
 
 ## Homologação no computador com o scanner
@@ -22,7 +22,7 @@
 1. Conectar a Canon DR-C225 II via USB e instalar o driver oficial atualizado.
 2. Verificar que o scanner funciona no CaptureOnTouch.
 3. Abrir o Canon imageFORMULA Utility/Driver Setting Tool, selecionar a Canon USB e consultar **Maintenance**; anotar *Total Scanning* e *Current Rollers* antes e após digitalizar 3 folhas. **Não clicar em Reset.**
-4. Executar `cargo run -p nexa-collector-daemon -- --discover-canon-usb` ou a descoberta na aba Impressoras. Se a lista vier vazia, executar no PowerShell `Get-PnpDevice -PresentOnly | Where-Object { $_.FriendlyName -match 'DR.C225|imageFORMULA' } | Format-List FriendlyName,InstanceId,Status,Class` e conferir o driver. Ao compartilhar logs, ocultar a parte identificadora/serial de `InstanceId`.
+4. Executar `cargo run -p nexa-collector-daemon -- --discover-usb` ou a descoberta na aba Impressoras. Se a lista vier vazia, executar no PowerShell `Get-PnpDevice -PresentOnly | Where-Object { $_.FriendlyName -match 'DR.C225|imageFORMULA' } | Format-List FriendlyName,InstanceId,Status,Class` e conferir o driver. Ao compartilhar logs, ocultar a parte identificadora/serial de `InstanceId`.
 5. Confirmar com a Canon um método **documentado e de somente leitura** para consultar os contadores em Windows, ou investigar um recurso WIA/TWAIN exposto pelo driver mediante documentação/inspeção de laboratório. Capturar o resultado contra os valores oficiais.
 6. Só depois do passo 5 implementar o provider de contadores e testes de integração, com vinculação explícita a equipamento e cliente no backend, idempotência, fila local e ACK existente. Um contador indisponível deve ficar **null**, nunca ser reportado como zero. Se o contador de roletes zerar, preservar histórico separado da medição de vida útil.
 
