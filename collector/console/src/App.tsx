@@ -56,6 +56,7 @@ type CollectorSnapshot = {
   collector_id: string | null;
   endpoint: string | null;
   interval_seconds: number | null;
+  authorized_subnets: string[];
   printers: PrinterInfo[];
   usb_scanners: UsbScannerInfo[];
   queue_pending: number | null;
@@ -89,6 +90,9 @@ export default function App() {
   const [discovered, setDiscovered] = useState<DiscoveryCandidate[] | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [rangeDraft, setRangeDraft] = useState("");
+  const [rangeDiscovering, setRangeDiscovering] = useState(false);
+  const [rangeError, setRangeError] = useState<string | null>(null);
   const [usbDevices, setUsbDevices] = useState<UsbDeviceCandidate[] | null>(null);
   const [usbDiscovering, setUsbDiscovering] = useState(false);
   const [usbError, setUsbError] = useState<string | null>(null);
@@ -107,6 +111,22 @@ export default function App() {
       setDiscovering(false);
     }
   }, []);
+
+  const discoverRanges = useCallback(async () => {
+    setRangeDiscovering(true);
+    setRangeError(null);
+    const cidrs = rangeDraft.split(/[\\s,;]+/).map(value => value.trim()).filter(Boolean);
+    try {
+      const candidates = await invoke<DiscoveryCandidate[]>("discover_authorized_printers", { cidrs });
+      setDiscovered(candidates);
+      setDiscoveryError(null);
+      setTab("printers");
+    } catch (error) {
+      setRangeError(String(error));
+    } finally {
+      setRangeDiscovering(false);
+    }
+  }, [rangeDraft]);
 
   const discoverUsb = useCallback(async () => {
     setUsbDiscovering(true);
@@ -501,7 +521,7 @@ export default function App() {
 
           {tab === "settings" && (
             <section className="panel">
-              <div className="panel-title"><h2>Configuração atual</h2><span>Somente leitura</span></div>
+              <div className="panel-title"><h2>Configuração atual</h2><span>Faixas definidas pelo administrador</span></div>
               <div className="config-rows">
                 <Info icon={Network} label="Endpoint da API" value={snapshot?.endpoint ?? "Não configurado"} />
                 <Info icon={Activity} label="Intervalo de coleta" value={snapshot?.interval_seconds ? snapshot.interval_seconds + " segundos" : "Não configurado"} />
@@ -510,6 +530,24 @@ export default function App() {
                 <Info icon={HardDrive} label="Limite preventivo DB + WAL + SHM" value={snapshot?.sqlite_footprint ? `${snapshot.sqlite_footprint.soft_limit_bytes.toLocaleString("pt-BR")} bytes` : "Não verificado"} />
                 <Info icon={ShieldCheck} label="Criptografia da outbox" value={snapshot?.payload_encryption_enabled === true ? "AES-256-GCM ativo" : snapshot?.payload_encryption_enabled === false ? "Texto claro (legado)" : "Não verificada"} />
                 <Info icon={ShieldCheck} label="Identificador do coletor" value={snapshot?.collector_id ?? "Não configurado"} />
+                <Info icon={Network} label="Sub-redes autorizadas" value={snapshot?.authorized_subnets?.join(", ") || "Nenhuma faixa autorizada"} />
+              </div>
+              <div className="discovery-settings">
+                <h3>Busca manual por faixa autorizada</h3>
+                <p>Informe até quatro faixas IPv4/CIDR privadas, separadas por vírgula ou linha.
+                  Cada faixa deve caber em /24 e estar integralmente contida nas sub-redes já autorizadas pelo administrador.</p>
+                <label htmlFor="manual-discovery-cidrs">Faixas para esta varredura</label>
+                <textarea id="manual-discovery-cidrs" rows={3} value={rangeDraft}
+                  placeholder="192.168.1.0/24" spellCheck={false} autoComplete="off"
+                  onChange={event => setRangeDraft(event.target.value)} maxLength={256} />
+                <button type="button" className="primary-button" onClick={() => void discoverRanges()}
+                  disabled={rangeDiscovering || !snapshot?.configured || !rangeDraft.trim()}>
+                  <Network size={16} aria-hidden="true" />
+                  {rangeDiscovering ? "Verificando faixas..." : "Buscar apenas nas faixas informadas"}
+                </button>
+                {rangeError && <div className="notice error" role="alert">{rangeError}</div>}
+                <p>Resultados aparecem em Impressoras apenas como candidatos. Esta consulta não altera o cadastro,
+                  não habilita monitoramento e não configura varredura periódica.</p>
               </div>
               <div className="notice">Tokens de acesso e comunidades SNMP nunca são carregados ou exibidos nesta interface.</div>
             </section>
