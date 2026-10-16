@@ -304,6 +304,189 @@ jobs:
         working-directory: collector
         run: cargo test --locked -p nexa-collector-core -p nexa-collector-daemon
 
+  collector-linux-installers:
+    name: Nexa Collector Linux DEB and RPM installers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: collector/console/package-lock.json
+      - name: Install Linux GUI build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libxdo-dev rpm
+      - name: Check native Unix packaging
+        run: python3 scripts/verify_collector_unix_installers.py
+      - name: Build Linux Collector daemon
+        working-directory: collector
+        run: cargo build --locked --release -p nexa-collector-daemon
+      - name: Stage Linux sidecar
+        run: |
+          mkdir -p collector/console/src-tauri/binaries
+          cp collector/target/release/nexa-collector-daemon collector/console/src-tauri/binaries/nexa-collector-daemon-x86_64-unknown-linux-gnu
+          chmod 755 collector/console/src-tauri/binaries/nexa-collector-daemon-x86_64-unknown-linux-gnu
+      - name: Install desktop dependencies
+        working-directory: collector/console
+        run: npm ci
+      - name: Build Linux DEB and RPM with GUI and service
+        working-directory: collector/console
+        run: npm run tauri build -- --bundles deb,rpm
+      - name: Keep Linux packages for debugging failed validation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexa-collector-linux-x64-installers-diagnostic
+          path: |
+            collector/target/release/bundle/deb/*.deb
+            collector/target/release/bundle/rpm/*.rpm
+          if-no-files-found: warn
+          retention-days: 2
+      - name: Inspect native package service and scripts
+        run: |
+          set -euo pipefail
+          deb="$(find collector/target/release/bundle/deb -name '*.deb' -type f -print -quit)"
+          rpmfile="$(find collector/target/release/bundle/rpm -name '*.rpm' -type f -print -quit)"
+          test -n "$deb" && test -n "$rpmfile"
+          echo '--- DEB MANIFEST ---'
+          dpkg-deb --contents "$deb"
+          echo '--- RPM MANIFEST ---'
+          rpm -qpl "$rpmfile"
+          echo '--- DEB CONTROL ---'
+          dpkg-deb --ctrl-tarfile "$deb" | tar -tf -
+          echo '--- RPM LIFECYCLE SCRIPTS ---'
+          rpm -qp --scripts "$rpmfile"
+          dpkg-deb --contents "$deb" | grep 'usr/lib/nexa-collector/nexa-collector-daemon'
+          dpkg-deb --contents "$deb" | grep 'nexa-collector.service'
+          dpkg-deb --ctrl-tarfile "$deb" | tar -tf - | grep 'postinst'
+          rpm -qpl "$rpmfile" | grep '/usr/lib/nexa-collector/nexa-collector-daemon'
+          rpm -qpl "$rpmfile" | grep 'nexa-collector.service'
+          rpm -qp --scripts "$rpmfile" | grep 'systemctl daemon-reload'
+      - name: Smoke install and remove DEB on disposable Ubuntu runner
+        run: |
+          set -euo pipefail
+          deb="$(find collector/target/release/bundle/deb -name '*.deb' -type f -print -quit)"
+          pkgname="$(dpkg-deb -f "$deb" Package)"
+          sudo dpkg -i "$deb"
+          echo '--- Linux installed files ---'
+          sudo find /etc/nexa-collector /var/lib/nexa-collector -maxdepth 2 -printf '%m %u:%g %p\n' || true
+          sudo stat -c '%a %U:%G %n' /etc/nexa-collector/config.json /etc/nexa-collector/credentials || true
+          systemctl is-enabled nexa-collector.service || true
+          getent passwd nexa-collector
+          # The runner is intentionally outside the service group: inspect via sudo.
+          sudo test -f /etc/nexa-collector/config.json
+          test "$(sudo stat -c '%a' /etc/nexa-collector/config.json)" = 640
+          test "$(sudo stat -c '%a' /etc/nexa-collector/credentials)" = 700
+          if test -r /etc/nexa-collector/config.json; then
+            echo 'Collector configuration must not be readable by unprivileged users' >&2
+            exit 1
+          fi
+          test -x /usr/lib/nexa-collector/nexa-collector-daemon
+          systemctl is-enabled nexa-collector.service && exit 1 || true
+          if systemctl is-active --quiet nexa-collector.service; then
+            echo 'Collector must not auto-start without credentials' >&2
+            exit 1
+          fi
+          sudo dpkg --remove "$pkgname"
+          sudo test -f /etc/nexa-collector/config.json
+          sudo test -d /var/lib/nexa-collector
+      - name: Upload Linux DEB and RPM installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexa-collector-linux-x64-deb-rpm-unsigned
+          path: |
+            collector/target/release/bundle/deb/*.deb
+            collector/target/release/bundle/rpm/*.rpm
+          if-no-files-found: error
+          retention-days: 7
+
+  collector-macos-installers:
+    name: Nexa Collector macOS PKG (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: collector/console/package-lock.json
+      - name: Validate package hooks and architecture
+        run: |
+          test "$(uname -m)" = "${{ matrix.arch }}"
+          python3 scripts/verify_collector_unix_installers.py
+          plutil -lint collector/macos/com.nexa.collector.plist
+      - name: Compile native macOS Collector daemon
+        working-directory: collector
+        run: cargo build --locked --release -p nexa-collector-daemon
+      - name: Stage native macOS Tauri sidecar
+        run: |
+          triple="$(rustc -vV | awk '/^host: / {print $2}')"
+          mkdir -p collector/console/src-tauri/binaries
+          cp collector/target/release/nexa-collector-daemon "collector/console/src-tauri/binaries/nexa-collector-daemon-$triple"
+          chmod 755 "collector/console/src-tauri/binaries/nexa-collector-daemon-$triple"
+      - name: Install frontend
+        working-directory: collector/console
+        run: npm ci
+      - name: Bundle macOS graphical application
+        working-directory: collector/console
+        run: npm run tauri build -- --bundles app
+      - name: Build full native Apple Installer PKG
+        run: bash collector/macos/build-pkg.sh
+      - name: Inspect macOS package
+        run: |
+          set -euo pipefail
+          pkg="$(find collector/target/release/bundle/pkg -type f -name '*.pkg' -print -quit)"
+          test -s "$pkg"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          pkgutil --expand "$pkg" "$tmp/expanded"
+          echo '--- Expanded macOS PKG ---'
+          find "$tmp/expanded" -maxdepth 2 -print
+          test -e "$tmp/expanded/Scripts"
+          test -f "$tmp/expanded/PackageInfo"
+      - name: Smoke install PKG without activating launchd (disposable runner)
+        run: |
+          set -euo pipefail
+          pkg="$(find collector/target/release/bundle/pkg -type f -name '*.pkg' -print -quit)"
+          sudo installer -pkg "$pkg" -target /
+          echo '--- macOS installed files ---'
+          sudo ls -ld "/Applications/Nexa Collector.app" "/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon" "/Library/Application Support/NexaCollector/config.json" "/Library/Application Support/NexaCollector/package/activate.sh"
+          sudo find "/Library/Application Support/NexaCollector" -maxdepth 3 -print || true
+          dscl . -read /Users/_nexacollector || true
+          sudo test -d "/Applications/Nexa Collector.app"
+          sudo test -x "/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon"
+          sudo test -f "/Library/Application Support/NexaCollector/config.json"
+          sudo test -f "/Library/Application Support/NexaCollector/package/activate.sh"
+          test "$(sudo stat -f '%Sp %Su:%Sg' '/Library/Application Support/NexaCollector/config.json')" = '-rw-r----- root:_nexacollector'
+          if test -r "/Library/Application Support/NexaCollector/config.json"; then
+            echo 'Collector configuration must not be readable by unprivileged users' >&2
+            exit 1
+          fi
+          dscl . -read /Users/_nexacollector
+          if launchctl print system/com.nexa.collector >/dev/null 2>&1; then
+            echo 'LaunchDaemon must not start before credentials are provisioned' >&2
+            exit 1
+          fi
+      - name: Upload unsigned macOS full installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexa-collector-macos-${{ matrix.arch }}-pkg-unsigned
+          path: collector/target/release/bundle/pkg/*.pkg
+          if-no-files-found: error
+          retention-days: 7
+
   collector-windows-service:
     name: Windows Collector native SCM build and tests
     runs-on: windows-latest

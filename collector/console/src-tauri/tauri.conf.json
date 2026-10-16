@@ -54,6 +54,31 @@
         "installerHooks": "./windows/installer-hooks.nsh",
         "startMenuFolder": "Nexa System"
       }
+    },
+    "category": "Utility",
+    "shortDescription": "Agente local Nexa para monitoramento de impressoras",
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/lib/nexa-collector/nexa-collector-daemon": "binaries/nexa-collector-daemon-x86_64-unknown-linux-gnu",
+          "/lib/systemd/system/nexa-collector.service": "../../linux/package/nexa-collector.service",
+          "/usr/share/nexa-collector/config.example.json": "../../config.example.json"
+        },
+        "postInstallScript": "../../linux/package/postinstall.sh",
+        "preRemoveScript": "../../linux/package/preremove.sh"
+      },
+      "rpm": {
+        "files": {
+          "/usr/lib/nexa-collector/nexa-collector-daemon": "binaries/nexa-collector-daemon-x86_64-unknown-linux-gnu",
+          "/usr/lib/systemd/system/nexa-collector.service": "../../linux/package/nexa-collector.service",
+          "/usr/share/nexa-collector/config.example.json": "../../config.example.json"
+        },
+        "postInstallScript": "../../linux/package/postinstall.sh",
+        "preRemoveScript": "../../linux/package/preremove.sh"
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "12.0"
     }
   }
 }
