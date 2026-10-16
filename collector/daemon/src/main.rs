@@ -1,6 +1,6 @@
 use nexa_collector_core::{
     collect_snmp_v2c, heartbeat_sleep_seconds, read_config, send_heartbeat, send_heartbeat_with_watchdog, upload_pending,
-    upload_error_kind, CollectorConfig, CollectorError, DiscoveryReport, Outbox, UploadRetryPolicy, WatchdogHeartbeat,
+    upload_error_kind, CollectorConfig, CollectorError, DiscoveryReport, DiscoverySchedule, Outbox, UploadRetryPolicy, WatchdogHeartbeat,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use std::{
@@ -298,12 +298,20 @@ fn run_application(
     // A worker thread keeps slow probes independent from uploads/heartbeats.
     // A corrupted optional discovery report must not block legacy installations
     // whose scheduling feature is disabled.
-    let previous_discovery = if cfg.discovery_schedule.enabled {
+    let mut active_schedule = match outbox.discovery_schedule_override(&cfg.authorized_subnets) {
+        Ok(Some(schedule)) => schedule,
+        Ok(None) => cfg.discovery_schedule.clone(),
+        Err(_) => {
+            eprintln!("Stored discovery policy failed validation; scheduling disabled without interrupting meter uploads");
+            DiscoverySchedule::default()
+        }
+    };
+    let previous_discovery = if active_schedule.enabled {
         outbox.discovery_report()?
     } else {
         DiscoveryReport::default()
     };
-    let interval = ChronoDuration::hours(cfg.discovery_schedule.interval_hours as i64);
+    let interval = ChronoDuration::hours(active_schedule.interval_hours as i64);
     let now = Utc::now();
     let mut next_discovery = previous_discovery.last_completed_at
         .filter(|last| *last <= now)
@@ -337,7 +345,24 @@ fn run_application(
 
     loop {
         if shutdown.load(Ordering::Relaxed) { break; }
-        if cfg.discovery_schedule.enabled && !once {
+        if !once {
+            // The privileged IPC server writes only a bounded, verified
+            // schedule override. Read it every loop (at most every ~5 s)
+            // without restarting or delaying the meter/heartbeat workers.
+            let latest = match outbox.discovery_schedule_override(&cfg.authorized_subnets) {
+                Ok(Some(schedule)) => schedule,
+                Ok(None) => cfg.discovery_schedule.clone(),
+                Err(_) => DiscoverySchedule::default(),
+            };
+            if latest != active_schedule {
+                active_schedule = latest;
+                // Settings changed: do not attach the results of a prior scan
+                // to a newly authorized schedule.
+                discovery_receiver = None;
+                next_discovery = Utc::now();
+            }
+        }
+        if active_schedule.enabled && !once {
             if let Some(receiver) = discovery_receiver.as_ref() {
                 match receiver.try_recv() {
                     Ok(result) => {
@@ -355,7 +380,7 @@ fn run_application(
                             observed_candidates: count,
                             candidates,
                         })?;
-                        next_discovery = scan_at + interval;
+                        next_discovery = scan_at + ChronoDuration::hours(active_schedule.interval_hours as i64);
                         discovery_receiver = None;
                     }
                     Err(mpsc::TryRecvError::Empty) => {}
@@ -366,7 +391,7 @@ fn run_application(
                             last_error_kind: Some("discovery-worker-failed".into()),
                             ..DiscoveryReport::default()
                         })?;
-                        next_discovery = scan_at + interval;
+                        next_discovery = scan_at + ChronoDuration::hours(active_schedule.interval_hours as i64);
                         discovery_receiver = None;
                     }
                 }
@@ -374,7 +399,7 @@ fn run_application(
             if discovery_receiver.is_none() && Utc::now() >= next_discovery {
                 let (sender, receiver) = mpsc::channel();
                 let authorized = cfg.authorized_subnets.clone();
-                let requested = cfg.discovery_schedule.cidrs.clone();
+                let requested = active_schedule.cidrs.clone();
                 thread::spawn(move || {
                     let scanned = nexa_collector_core::discovery::discover_authorized_ranges(
                         &authorized, &requested,

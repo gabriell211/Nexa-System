@@ -2,6 +2,7 @@
 //! until an equivalent ACL-restricted native named-pipe transport is provided.
 //! Messages contain no credentials and are never forwarded to the cloud.
 use crate::candidate_review::ReviewAction;
+use crate::DiscoverySchedule;
 use serde::{Deserialize, Serialize};
 use std::{net::Ipv4Addr, path::{Path, PathBuf}};
 
@@ -14,6 +15,15 @@ pub struct ControlRequest {
     pub version: u8,
     pub ip: Ipv4Addr,
     pub action: ReviewAction,
+}
+
+/// Separate typed schedule command; never shares a field with printer
+/// enrollment or permits changing administrator-provisioned subnet grants.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScheduleControlRequest {
+    pub version: u8,
+    pub schedule: DiscoverySchedule,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -36,6 +46,22 @@ pub fn socket_path(queue_path: &Path) -> PathBuf {
 pub fn submit(
     queue_path: &Path, ip: Ipv4Addr, action: ReviewAction,
 ) -> Result<(), String> {
+    let payload = serde_json::to_vec(&ControlRequest {
+        version: PROTOCOL_VERSION, ip, action,
+    }).map_err(|_| "Requisição local inválida.".to_owned())?;
+    submit_payload(queue_path, &payload)
+}
+
+#[cfg(unix)]
+pub fn submit_schedule(queue_path: &Path, schedule: DiscoverySchedule) -> Result<(), String> {
+    let payload = serde_json::to_vec(&ScheduleControlRequest {
+        version: PROTOCOL_VERSION, schedule,
+    }).map_err(|_| "Configuração de agenda inválida.".to_owned())?;
+    submit_payload(queue_path, &payload)
+}
+
+#[cfg(unix)]
+fn submit_payload(queue_path: &Path, payload: &[u8]) -> Result<(), String> {
     use std::{io::{Read, Write}, net::Shutdown, os::unix::net::UnixStream, time::Duration};
     let mut stream = UnixStream::connect(socket_path(queue_path))
         .map_err(|_| "Canal de controle indisponível ou acesso negado. Execute com conta autorizada.".to_owned())?;
@@ -43,9 +69,6 @@ pub fn submit(
         .map_err(|_| "Não foi possível configurar o timeout do canal local.".to_owned())?;
     stream.set_write_timeout(Some(Duration::from_secs(3)))
         .map_err(|_| "Não foi possível configurar o timeout do canal local.".to_owned())?;
-    let payload = serde_json::to_vec(&ControlRequest {
-        version: PROTOCOL_VERSION, ip, action,
-    }).map_err(|_| "Requisição local inválida.".to_owned())?;
     if payload.len() as u64 > MAX_MESSAGE_BYTES {
         return Err("Requisição local maior que o limite permitido.".into());
     }
@@ -71,6 +94,27 @@ pub fn submit(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn schedule_protocol_rejects_ambiguous_or_unexpected_fields() {
+        let valid = ScheduleControlRequest {
+            version: PROTOCOL_VERSION,
+            schedule: DiscoverySchedule {
+                enabled: true, interval_hours: 24,
+                cidrs: vec!["10.1.2.0/24".into()],
+            },
+        };
+        let json = serde_json::to_vec(&valid).unwrap();
+        assert!(json.len() <= MAX_MESSAGE_BYTES as usize);
+        let parsed: ScheduleControlRequest = serde_json::from_slice(&json).unwrap();
+        assert_eq!(parsed.schedule.interval_hours, 24);
+        assert!(serde_json::from_str::<ScheduleControlRequest>(
+            r#"{"version":1,"schedule":{"enabled":true,"interval_hours":24,"cidrs":[]}, "token":"bad"}"#
+        ).is_err());
+        assert!(serde_json::from_str::<ScheduleControlRequest>(
+            r#"{"version":1,"ip":"10.1.2.4","action":"save"}"#
+        ).is_err());
+    }
+
     #[test]
     fn rejects_unknown_protocol_fields_and_actions() {
         assert!(serde_json::from_str::<ControlRequest>(

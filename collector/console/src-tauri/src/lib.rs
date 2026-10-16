@@ -162,6 +162,13 @@ fn get_snapshot() -> CollectorSnapshot {
                         Err(_) => snapshot.error = Some("Histórico de transmissão local inválido.".into()),
                     }
                     snapshot.last_run = outbox.last_run().ok().flatten();
+                    match outbox.discovery_schedule_override(&snapshot.authorized_subnets) {
+                        Ok(Some(updated)) => snapshot.discovery_schedule = Some(updated),
+                        Ok(None) => {},
+                        Err(_) => snapshot.error = Some(
+                            "Agenda local armazenada inválida; o serviço desativa a descoberta.".into()
+                        ),
+                    }
                     match outbox.candidate_reviews() {
                         Ok(reviews) => snapshot.candidate_reviews = reviews,
                         Err(_) => snapshot.candidate_reviews_error = Some(
@@ -255,10 +262,35 @@ async fn review_local_candidate(ip: String, action: String) -> Result<(), String
     }
 }
 
+#[tauri::command]
+async fn save_discovery_schedule(schedule: DiscoverySchedule) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let config_path = env::var_os("NEXA_COLLECTOR_CONFIG")
+                .ok_or_else(|| "Configuração do serviço não encontrada.".to_owned())?;
+            let config = read_config(config_path)
+                .map_err(|_| "Configuração autorizada do serviço inválida.".to_owned())?;
+            schedule.validate_for(&config.authorized_subnets)
+                .map_err(|_| "Intervalo ou faixas fora do escopo autorizado.".to_owned())?;
+            let queue = env::var_os("NEXA_COLLECTOR_DB")
+                .ok_or_else(|| "Banco local do Collector não configurado.".to_owned())?;
+            nexa_collector_core::local_control::submit_schedule(
+                std::path::Path::new(&queue), schedule,
+            )
+        }).await.map_err(|_| "A alteração da agenda foi interrompida.".to_owned())?
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = schedule;
+        Err("Edição da agenda disponível somente no IPC Unix protegido nesta etapa.".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate])
+        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate, save_discovery_schedule])
         .run(tauri::generate_context!())
         .expect("failed to start Nexa Collector Console");
 }
