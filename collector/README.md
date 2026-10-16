@@ -36,6 +36,36 @@ reservas por ponto no backend, homologação física, reinícios/upgrade e teste
 em instalações reais. Portanto o recurso **não** completa o monitoramento
 automático de impressoras.
 
+## Agenda editável no Console Linux/macOS — incremento parcial
+
+Em **Collector → Configuração → Agenda de descoberta automática**, o técnico
+com acesso administrativo ao canal local protegido pode definir: habilitar/
+desabilitar, intervalo inteiro de **6 a 168 horas** e de **1 a 4 faixas
+IPv4/CIDR privadas** (cada uma /24 ou menor). A operação usa um pedido IPC
+tipado e limitado, sem token nem credencial em JavaScript.
+
+A configuração é persistida em `state.discovery_schedule_override` no SQLite
+protegido do daemon e sobrevive a reinicializações. O daemon relê o override
+a cada ciclo (~5 segundos), aplica imediatamente alterações da agenda sem
+reiniciar o heartbeat ou SNMP e limpa a referência ao relatório da busca
+anterior ao alterar o escopo. Uma varredura já iniciada pode terminar em
+background; não é cancelada fisicamente.
+
+**Importante:** isto configura as **faixas de descoberta escolhidas entre as
+sub-redes já autorizadas** em `authorized_subnets`. A interface não amplia
+a autorização de rede, não altera `config.json`, não expõe comunidades SNMP e
+não altera impressoras monitoradas. Um administrador precisa provisionar
+previamente o limite de rede dentro do arquivo protegido.
+Mesmo com agenda desabilitada, intervalos e faixas informadas são validados.
+Se o override salvo ficar ilegível ou inválido, o daemon desativa a agenda,
+mas preserva o serviço de coleta.
+
+A edição pelo Console ainda está **desabilitada no Windows** nesta etapa,
+pendente extensão do protocolo da named pipe com a mesma validação e
+homologação de ACLs. Usuários gráficos sem permissão na pasta/socket do
+serviço Unix também recebem acesso negado. **Monitorar** ainda exige
+homologação real e vínculo com cliente/reserva.
+
 ## Canal de controle local protegido (Linux/macOS, incremento)
 
 O serviço supervisionado (systemd em Linux, launchd em macOS) inicia um
