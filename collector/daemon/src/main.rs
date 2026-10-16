@@ -24,6 +24,19 @@ mod macos_launchd_runtime;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
+    if args.len() == 2 && args[1] == "--mib-catalog" {
+        // Offline read-only metadata dump; does not scan any IP address,
+        // access SNMP secrets or enroll a monitored printer.
+        let payload = serde_json::json!({
+            "schema_version": 1,
+            "coverage": "generic_printer_mib_v2_not_model_certified",
+            "manufacturers": nexa_collector_core::mib_registry::manufacturer_entries(),
+            "standard_oids": nexa_collector_core::mib_registry::OIDS,
+            "brother_private_identification_oids": nexa_collector_core::mib_registry::BROTHER_PRIVATE_OIDS,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
     if args.len() == 2 && args[1] == "--discover-usb" {
         let candidates = nexa_collector_core::usb_devices::discover_usb_devices()?;
         println!("{}", serde_json::to_string_pretty(&candidates)?);
