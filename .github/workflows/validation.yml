@@ -315,18 +315,46 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Compile and execute Windows Collector core/daemon tests
         run: cargo test --locked -p nexa-collector-core -p nexa-collector-daemon
-      - name: Validate Windows PowerShell installer syntax and service safety
+      - name: Validate native NSIS installer security and service safety
         shell: pwsh
         working-directory: .
+        run: python scripts/verify_collector_windows_service.py
+
+  collector-windows-installer:
+    name: Nexa Collector Windows Setup.exe build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: collector/console/package-lock.json
+      - name: Validate installer contract before packaging
+        run: python scripts/verify_collector_windows_service.py
+      - name: Compile Windows Collector service executable
+        working-directory: collector
+        run: cargo build --locked --release -p nexa-collector-daemon
+      - name: Stage native Rust sidecar for Tauri
+        shell: pwsh
         run: |
-          $tokens = $null
-          $errors = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'collector/windows/install.ps1').Path,
-            [ref]$tokens, [ref]$errors
-          )
-          if ($errors.Count -ne 0) { throw ($errors | Out-String) }
-          python scripts/verify_collector_windows_service.py
+          New-Item -ItemType Directory -Force -Path collector/console/src-tauri/binaries | Out-Null
+          Copy-Item -LiteralPath collector/target/release/nexa-collector-daemon.exe -Destination collector/console/src-tauri/binaries/nexa-collector-daemon-x86_64-pc-windows-msvc.exe
+          if (-not (Test-Path collector/console/src-tauri/binaries/nexa-collector-daemon-x86_64-pc-windows-msvc.exe)) { throw 'Collector sidecar not staged' }
+      - name: Install desktop dependencies
+        working-directory: collector/console
+        run: npm ci
+      - name: Bundle unsigned NSIS Setup.exe with Tauri 2
+        working-directory: collector/console
+        run: npm run tauri build -- --bundles nsis
+      - name: Upload Windows installer for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexa-collector-windows-setup-unsigned
+          path: collector/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7
 
   collector:
     name: Rust collector core tests
