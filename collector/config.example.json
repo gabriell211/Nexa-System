@@ -9,6 +9,11 @@
   "authorized_subnets": [
     "192.0.2.0/24"
   ],
+  "discovery_schedule": {
+    "enabled": false,
+    "interval_hours": 24,
+    "cidrs": []
+  },
   "printers": [
     {
       "printer_id": 1,
