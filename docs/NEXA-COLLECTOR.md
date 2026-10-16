@@ -22,6 +22,7 @@ A navegação descrita tem **Impressoras**, **Ferramentas**, **Status do Client*
 | Resumo do cadastro em massa | [salvar-impressoras.png](https://help.printwayy.com/wp-content/uploads/2023/01/salvar-impressoras.png) |
 | Detecção USB | [busca-USB.png](https://help.printwayy.com/wp-content/uploads/2023/01/busca-USB.png) |
 | Assistente de instalação | [instalador-1a.png](https://help.printwayy.com/wp-content/uploads/2024/12/instalador-1a.png) · [instalador-2.png](https://help.printwayy.com/wp-content/uploads/2024/12/instalador-2.png) · [instalador-3.png](https://help.printwayy.com/wp-content/uploads/2024/12/instalador-3.png) |
+| Proxy durante instalação | [config_proxy.gif](https://help.printwayy.com/wp-content/uploads/2021/11/config_proxy.gif) |
 | Proxy após instalação | [config_proxy_instalado.png](https://help.printwayy.com/wp-content/uploads/2021/11/config_proxy_instalado.png) |
 
 A documentação descreve duas ações distintas: **Salvar impressoras** (traz à lista local) e **Monitorar** (ativa a coleta/transmissão). Na busca por IP, o software testa a comunicação e exibe os contadores antes de ativar.
@@ -38,6 +39,10 @@ A documentação descreve duas ações distintas: **Salvar impressoras** (traz �
 **Não copiar:** nomes dos executáveis e serviços, formato `.plog`, conteúdo/algoritmo privado, endpoints internos ou identidade visual. Nexa precisa de protocolo **próprio** com contratos e testes de interoperabilidade internos.
 
 A referência pública menciona coleta a **30 minutos** na FAQ e a **60 minutos** no tutorial de monitoramento por IP. Não presumir uma única cadência universal: registrar divergência documental e oferecer **intervalos independentes, configuráveis** em Nexa.
+
+### Referência adicional: fluxo de proxy
+
+O tutorial [Configuração de proxy](https://help.printwayy.com/proxy/#instalacao) confirma que a opção aparece quando se seleciona **Internet (Web Services)** durante o instalador. Um formulário é apresentado e há também uma tela posterior de **Configurações** com **Salvar** e **Testar comunicação**. O Nexa ainda não oferece essa edição na UI atual: consulte [Especificação de instalador e proxy](NEXA-COLLECTOR-INSTALLER-PROXY.md) para requisitos de segurança, integração com Windows Service e testes pendentes.
 
 ### Instalação e identificação
 
@@ -65,6 +70,14 @@ A documentação do Client ensina copiar a pasta **Database** antes de reinstala
 
 No modo alternativo por e-mail, a documentação recomenda caixa exclusiva e alerta para alto volume de mensagens. Portanto **não** torná-lo padrão no Nexa. Quando for implementado, usar conta dedicada, cotas/controle de envios e **não usar métodos descontinuados de segurança ou desabilitar MFA**.
 
+### Monitoramento remoto: dois fluxos documentados
+
+O tutorial [Monitorando impressoras de forma remota](https://help.printwayy.com/monitorando-remotamente/) descreve (1) varredura periódica da rede do cliente, configurável entre **6 e 168 horas** e com faixas de IP ou descoberta da rede local, cujos dispositivos são enviados à fila de **Novas impressoras**; e (2) **pré-cadastro da impressora por IP**, indicando um ponto de instalação do cliente para que o collector detecte o dispositivo e habilite o monitoramento após validação. Também distingue cadastramento **manual** de monitoramento automático.
+
+**Decisão de produto Nexa:** as faixas IPv4/CIDR e a agenda automática serão configuradas **no Nexa Collector → Configurações**; a seleção e ação **Monitorar** também serão feitas **no agente**. A fila de *Novas impressoras* no portal descrita pela PrintWayy é uma característica da referência, **não** o fluxo de aprovação escolhido para o Nexa. O portal Nexa ficará responsável por reservas de IP por ponto de instalação e acompanhamento de estados. O Nexa hoje possui descoberta local **sob demanda**, heartbeat/ingestão e telemetria de equipamentos previamente cadastrados; **ainda faltam** editor local seguro de faixas, scheduler, fila de seleção local, reservas de IP e ativação homologada. Especificação detalhada: [Monitoramento remoto Nexa](NEXA-REMOTE-MONITORING.md).
+
+Capturas de referência: [varredura](https://help.printwayy.com/wp-content/uploads/2024/12/varredura.png) · [manual ou automático](https://help.printwayy.com/wp-content/uploads/2024/12/impressora-manual.png). A identidade visual e contratos devem ser próprios do Nexa.
+
 ### Descoberta e operação remota
 
 - Cadastro manual por IP, credenciais SNMP e HTTP, com teste e leitura real antes de confirmar.
@@ -74,7 +87,7 @@ No modo alternativo por e-mail, a documentação recomenda caixa exclusiva e ale
 - Reserva remota de IP e ponto de instalação para adotar impressora quando detectada.
 - Equipamento USB precisa estar conectado ao host com o Client; alterações de porta, driver e identificador podem prejudicar detecção.
 - As fontes alertam que identificadores de série USB podem ser lidos de dados remanescentes do sistema operacional; validar associação com série física antes de monitorar.
-- Impressoras novas detectadas vão para aprovação/adoção no portal; não assumir que todo dispositivo da rede é do provedor.
+- **Na referência PrintWayy**, impressoras novas detectadas aparecem na fila do portal; **no Nexa**, a aprovação/seleção ocorrerá no agente. Não assumir que todo dispositivo é do provedor.
 - O portal possui gerenciamento de pontos de instalação, status de comunicação, contagem de impressoras monitoradas e sintomas de falha.
 
 ### Conteúdo coletado e limitações conhecidas

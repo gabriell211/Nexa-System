@@ -7,6 +7,13 @@ import { useCallback, useEffect, useState } from "react";
 
 type PrinterInfo = { printer_id: number; ip: string; oid: string };
 type DiscoveryCandidate = { ip: string; print_ports: number[]; http_server: string | null };
+type UsbDeviceCandidate = {
+  friendly_name: string;
+  instance_id: string;
+  status: string;
+  device_type: "printer" | "scanner" | "imaging";
+  vid_pid: string | null;
+};
 type DeliveryDiagnostics = {
   last_success_at: string | null;
   last_failure_at: string | null;
@@ -75,6 +82,9 @@ export default function App() {
   const [discovered, setDiscovered] = useState<DiscoveryCandidate[] | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+  const [usbDevices, setUsbDevices] = useState<UsbDeviceCandidate[] | null>(null);
+  const [usbDiscovering, setUsbDiscovering] = useState(false);
+  const [usbError, setUsbError] = useState<string | null>(null);
 
   const discover = useCallback(async () => {
     setDiscovering(true);
@@ -85,6 +95,19 @@ export default function App() {
       setDiscoveryError(String(error));
     } finally {
       setDiscovering(false);
+    }
+  }, []);
+
+  const discoverUsb = useCallback(async () => {
+    setUsbDiscovering(true);
+    setUsbError(null);
+    try {
+      setUsbDevices(await invoke<UsbDeviceCandidate[]>("discover_usb_printers"));
+    } catch (error) {
+      setUsbDevices(null);
+      setUsbError(String(error));
+    } finally {
+      setUsbDiscovering(false);
     }
   }, []);
 
@@ -329,6 +352,26 @@ export default function App() {
                 </tr>)}</tbody>
               </table></div>}
               {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão respondeu nesta busca.</div>}
+            </section>
+            <section className="panel">
+              <div className="panel-title"><h2>Impressoras e dispositivos USB</h2><span>Descoberta local · Windows</span></div>
+              <p>Identifica impressoras e dispositivos de imagem conectados por USB, de qualquer fabricante. A identificação não confirma suporte à leitura de contadores.</p>
+              <button type="button" className="primary-button" onClick={() => void discoverUsb()} disabled={usbDiscovering} aria-label="Detectar impressoras USB">
+                <RefreshCcw size={16} aria-hidden="true" />{usbDiscovering ? "Consultando USB..." : "Detectar impressoras USB"}
+              </button>
+              {usbError && <div className="notice error" role="alert">{usbError}</div>}
+              {usbDevices && <div className="table-scroll"><table>
+                <thead><tr><th>Dispositivo</th><th>Tipo</th><th>VID:PID</th><th>Windows</th><th>Contadores</th></tr></thead>
+                <tbody>{usbDevices.map((candidate) => <tr key={candidate.instance_id}>
+                  <td>{candidate.friendly_name}</td>
+                  <td>{candidate.device_type === "printer" ? "Impressora" : candidate.device_type === "scanner" ? "Scanner" : "Dispositivo de imagem"}</td>
+                  <td className="mono">{candidate.vid_pid ?? "Não informado"}</td>
+                  <td>{candidate.status}</td>
+                  <td>Leitura não homologada</td>
+                </tr>)}</tbody>
+              </table></div>}
+              {usbDevices?.length === 0 && <div className="empty">Nenhuma impressora ou dispositivo de imagem USB presente foi identificado. Verifique cabo, driver e conexão.</div>}
+              <div className="notice">Detecção local somente leitura. Equipamentos não são cadastrados automaticamente e nenhuma medição é transmitida nesta etapa.</div>
             </section>
             </>
           )}
