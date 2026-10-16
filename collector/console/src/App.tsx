@@ -51,12 +51,21 @@ type WatchdogSnapshot = {
   last_reset_at: string | null;
   incidents: { at: string; worker: "main-loop" | "heartbeat-worker" }[];
 };
+type DiscoverySchedule = { enabled: boolean; interval_hours: number; cidrs: string[] };
+type DiscoveryReport = {
+  last_completed_at: string | null;
+  last_error_kind: string | null;
+  observed_candidates: number;
+  candidates: DiscoveryCandidate[];
+};
 type CollectorSnapshot = {
   configured: boolean;
   collector_id: string | null;
   endpoint: string | null;
   interval_seconds: number | null;
   authorized_subnets: string[];
+  discovery_schedule: DiscoverySchedule | null;
+  discovery_report: DiscoveryReport | null;
   printers: PrinterInfo[];
   usb_scanners: UsbScannerInfo[];
   queue_pending: number | null;
@@ -404,6 +413,26 @@ export default function App() {
               {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão ou scanner eSCL respondeu nesta busca.</div>}
             </section>
             <section className="panel">
+              <div className="panel-title"><h2>Candidatos da última varredura programada</h2>
+                <span>Relatório persistido na fila local</span></div>
+              <p style={{ padding: "0 24px" }}>Última conclusão: {formatDate(snapshot?.discovery_report?.last_completed_at ?? null)}.
+                A busca encontrou {snapshot?.discovery_report?.observed_candidates ?? 0} candidato(s); o histórico retém até 200.</p>
+              {snapshot?.discovery_report?.last_error_kind && <div role="alert" className="notice error">
+                A última busca terminou com falha ({snapshot.discovery_report.last_error_kind}). Os resultados anteriores não são tratados como atuais.
+              </div>}
+              <div className="table-scroll"><table><thead><tr><th>IP</th><th>Portas</th><th>eSCL</th><th>Estado</th></tr></thead>
+                <tbody>{snapshot?.discovery_report?.candidates.map(candidate => (
+                  <tr key={candidate.ip}><td className="mono">{candidate.ip}</td>
+                    <td>{candidate.print_ports.join(", ") || "—"}</td>
+                    <td>{candidate.escl_scanner ? "Detectado" : "—"}</td>
+                    <td>Candidato sem homologação</td></tr>
+                ))}</tbody>
+              </table></div>
+              {!snapshot?.discovery_report?.candidates.length && <div className="empty">
+                Nenhum candidato disponível nesta varredura. Confira se a agenda foi habilitada pelo administrador.
+              </div>}
+            </section>
+            <section className="panel">
               <div className="panel-title"><h2>Impressoras e dispositivos USB</h2><span>Descoberta local · Windows</span></div>
               <p>Identifica impressoras e dispositivos de imagem conectados por USB, de qualquer fabricante. A identificação não confirma suporte à leitura de contadores.</p>
               <button type="button" className="primary-button" onClick={() => void discoverUsb()} disabled={usbDiscovering} aria-label="Detectar impressoras USB">
@@ -531,6 +560,11 @@ export default function App() {
                 <Info icon={ShieldCheck} label="Criptografia da outbox" value={snapshot?.payload_encryption_enabled === true ? "AES-256-GCM ativo" : snapshot?.payload_encryption_enabled === false ? "Texto claro (legado)" : "Não verificada"} />
                 <Info icon={ShieldCheck} label="Identificador do coletor" value={snapshot?.collector_id ?? "Não configurado"} />
                 <Info icon={Network} label="Sub-redes autorizadas" value={snapshot?.authorized_subnets?.join(", ") || "Nenhuma faixa autorizada"} />
+                <Info icon={Activity} label="Descoberta programada" value={snapshot?.discovery_schedule?.enabled
+                  ? `Ativa a cada ${snapshot.discovery_schedule.interval_hours} horas` : "Desabilitada"} />
+                <Info icon={Network} label="Faixas programadas" value={snapshot?.discovery_schedule?.cidrs.join(", ") || "Nenhuma"} />
+                <Info icon={Activity} label="Última busca programada"
+                  value={formatDate(snapshot?.discovery_report?.last_completed_at ?? null)} />
               </div>
               <div className="discovery-settings">
                 <h3>Busca manual por faixa autorizada</h3>
@@ -546,8 +580,9 @@ export default function App() {
                   {rangeDiscovering ? "Verificando faixas..." : "Buscar apenas nas faixas informadas"}
                 </button>
                 {rangeError && <div className="notice error" role="alert">{rangeError}</div>}
-                <p>Resultados aparecem em Impressoras apenas como candidatos. Esta consulta não altera o cadastro,
-                  não habilita monitoramento e não configura varredura periódica.</p>
+                <p>Resultados aparecem em Impressoras apenas como candidatos. Esta consulta não altera o cadastro
+                  e não habilita monitoramento. A agenda periódica somente pode ser habilitada no arquivo
+                  protegido pelo administrador; a interface não altera a configuração do serviço.</p>
               </div>
               <div className="notice">Tokens de acesso e comunidades SNMP nunca são carregados ou exibidos nesta interface.</div>
             </section>
