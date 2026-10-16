@@ -191,35 +191,32 @@ O serviço restringe permissões de kernel/filesystem e reinicia em falhas de pr
 
 **CI:** `scripts/verify_collector_linux_service.py` verifica estruturalmente o unit, hardening, sintaxe Bash e ausência de auto-start; testes Rust exercitam leitura de credenciais com limites, conteúdo vazio e multilinha. Isso NÃO valida execução real do serviço na estação.
 
-## Serviço nativo Windows — entrega 26
+## Windows: instalador nativo Nexa Collector Setup.exe (Tauri 2 + NSIS)
 
-O Collector agora oferece integração inicial com o **Windows Service Control Manager** via crate `windows-service` (somente na compilação Windows). O comando `--service` é reservado à execução pelo SCM e recebe `Stop` para encerrar cooperativamente entre operações. Como consultas SNMP e chamadas HTTPS são bloqueantes, a parada pode levar até o timeout dessas operações; **não** há watchdog do loop ainda.
+O Console Tauri e o daemon Rust são empacotados num instalador `*-setup.exe` nativo. Sem Docker e sem PowerShell durante a instalação; exige elevação UAC e instala por máquina.
 
-### Instalação administrativa (não inicia automaticamente)
+### Compilar o Setup para Windows x64
 
-Compile `nexa-collector-daemon.exe` para Windows, abra PowerShell elevado e execute:
+`$ cd collector`
+`$ cargo build --locked --release -p nexa-collector-daemon`
+`$ New-Item -ItemType Directory -Force console/src-tauri/binaries | Out-Null`
+`$ Copy-Item target/release/nexa-collector-daemon.exe console/src-tauri/binaries/nexa-collector-daemon-x86_64-pc-windows-msvc.exe`
+`$ cd console`
+`$ npm ci`
+`$ npm run tauri build -- --bundles nsis`
 
-```powershell
-.\collector\windows\install.ps1 -DaemonExe "C:\caminho\absoluto\nexa-collector-daemon.exe"
-```
+Execute em PowerShell (sem símbolo $ inicial nos comandos) com Rust MSVC, Node 24 e pré-requisitos do Tauri instalados. O `*-setup.exe` será gerado em `collector/target/release/bundle/nsis/`. A CI também gera o instalador e disponibiliza um artefato **não assinado** para teste.
 
-O instalador registra `NexaCollector` com conta `NT AUTHORITY\LocalService`, início **manual** e recuperação em caso de falha reconhecida pelo SCM. Recusa um serviço ou diretório de dados existente: atualizações exigem procedimento de manutenção revisado. A instalação não contém senhas/chaves em argumentos, PowerShell ou registro do serviço.
+O instalador NSIS em `collector/console/src-tauri/windows/installer-hooks.nsh`:
 
-Edite `%ProgramData%\NexaCollector\config.json` com os identificadores reais, URL HTTPS e impressoras permitidas. Provisione os arquivos UTF-8 (sem BOM) em `%ProgramData%\NexaCollector\credentials`: `NEXA_COLLECTOR_TOKEN` (64 caracteres hex), `NEXA_COLLECTOR_DB_KEY_HEX` (64 caracteres hex aleatórios independentes), e `NEXA_SNMP_COMMUNITY` se houver impressoras configuradas. Os diretórios recebem ACL para SYSTEM, Administradores e LocalService; confirme as ACLs dos próprios arquivos antes de iniciar, principalmente se copiados de outras pastas. **Não** use um `.env` do sistema, nem distribua segredos em scripts, logs ou documentação.
+- Empacota Console e `nexa-collector-daemon.exe`, registra serviço `NexaCollector` no Windows SCM sob `NT AUTHORITY\LocalService` (início manual até vincular o agente).
+- Prepara `%ProgramData%\NexaCollector` com `config.json`, `data\` e `credentials\`; protege o banco de dados, as credenciais e os arquivos do serviço com ACLs. Configuração existente não é sobrescrita.
+- Configura recuperação contra falhas de processo. Na desinstalação, remove o serviço e preserva a fila criptografada, credenciais e configuração.
+- Recusa instalar sobre um serviço já existente para evitar corromper instalações ativas; uma rotina auditada de atualização/rollback será necessária.
 
-A base criptografada nova é criada sob `%ProgramData%\NexaCollector\data\queue.sqlite`. Bancos existentes plaintext precisam passar antes pela migração auditada e explicitamente apontada pelo operador.
+**Provisionamento:** antes de iniciar o serviço, um administrador ainda precisa vincular `collector_id` e `api_url` ao cliente no arquivo `config.json`, configurar equipamentos e OIDs realmente homologados, e instalar os arquivos protegidos `NEXA_COLLECTOR_TOKEN`, `NEXA_COLLECTOR_DB_KEY_HEX`, `NEXA_SNMP_COMMUNITY` em `credentials/`. Nenhuma credencial vai no instalador ou no registro SCM. O Setup **não** contém ainda o wizard de chave de cliente/proxy nem ativa o serviço antes do provisionamento.
 
-Só depois de verificar a configuração e o provisionamento, inicie manualmente:
-
-```powershell
-Start-Service -Name NexaCollector
-Get-Service -Name NexaCollector
-Stop-Service -Name NexaCollector
-```
-
-O SCM mostra estados StartPending/Running/Stopped. A parada solicita interrupção do loop e deixa o SQLite ser fechado pelo processo. Falha de inicialização reporta saída com erro; as ações configuradas de recuperação não substituem supervisão de processos travados que permanecem vivos.
-
-**Limites:** não foi executado em estação Windows física, ainda não há política de atualização assinada, instalador MSI, DPAPI/Credential Manager, watchdog de deadlock, comunicação IPC autenticada com Tauri nem testes de falha de rede/energia. O estado Running indica inicialização do daemon, não disponibilidade das impressoras. NX-035, NX-039 e NX-041 permanecem parciais.
+**Limites:** bundle NSIS e checagens de segurança do CI não substituem teste real de instalação/desinstalação no Windows, revisão de ACL, assinatura do executável, atualização/rollback e ensaio de hardware. Não distribuir em produção sem esses critérios.
 
 ## Serviço nativo macOS — entrega 27 (launchd)
 
