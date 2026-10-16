@@ -24,8 +24,9 @@ fn parse_candidates(json: &str) -> io::Result<Vec<CanonUsbCandidate>> {
             || device.instance_id.len() > 1024
             || device.friendly_name.is_empty()
             || device.friendly_name.len() > 512
-            || !device.instance_id.to_ascii_uppercase().starts_with("USB\\VID_04A9")
-            || !device.friendly_name.to_ascii_uppercase().contains("DR-C225")
+            || !device.instance_id.to_ascii_uppercase().starts_with("USB\\VID_04A9&")
+            || !device.friendly_name.to_ascii_uppercase().replace('-', "").replace(' ', "").contains("DRC225")
+            || device.status.len() > 100
     }) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -66,7 +67,7 @@ ConvertTo-Json -InputObject $devices -Compress -Depth 3
         .output()?;
     if !result.status.success() {
         return Err(io::Error::new(
-            io::ErrorKind::Other,
+            io::ErrorKind::PermissionDenied,
             "Windows USB enumeration failed; verify PnP access and Canon driver",
         ));
     }
