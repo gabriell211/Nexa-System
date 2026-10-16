@@ -130,6 +130,9 @@ mod tests {
     #[test]
     fn socket_is_private_and_reviews_persist_without_generating_readings() {
         let dir = tempfile::tempdir().unwrap();
+        // The runner may have an unusual umask; use the same private
+        // permissions as the real service StateDirectory before binding.
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
         let queue = dir.path().join("queue.sqlite");
         let config = config();
         let key = Zeroizing::new("11".repeat(32));
