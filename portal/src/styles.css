@@ -292,3 +292,12 @@ td.mono { font-family: ui-monospace, monospace; }
 .meter-preview-grid span { font-size: 21px; font-weight: 700; color: #1e3150; overflow-wrap: anywhere; }
 .meter-preview-grid small { color: #64748b; font-size: 11px; }
 @media(max-width: 540px) { .meter-preview-grid { grid-template-columns: 1fr; } }
+
+
+/* One-time collector credential fields must not overflow on narrow screens. */
+.collector-credential-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.collector-credential-row input { min-width: 0; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+.collector-credential-row .button { white-space: nowrap; }
+@media (max-width: 600px) {
+  .collector-credential-row { grid-template-columns: minmax(0, 1fr); }
+}
