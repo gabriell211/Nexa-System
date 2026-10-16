@@ -70,6 +70,14 @@ A documentação do Client ensina copiar a pasta **Database** antes de reinstala
 
 No modo alternativo por e-mail, a documentação recomenda caixa exclusiva e alerta para alto volume de mensagens. Portanto **não** torná-lo padrão no Nexa. Quando for implementado, usar conta dedicada, cotas/controle de envios e **não usar métodos descontinuados de segurança ou desabilitar MFA**.
 
+### Monitoramento remoto: dois fluxos documentados
+
+O tutorial [Monitorando impressoras de forma remota](https://help.printwayy.com/monitorando-remotamente/) descreve (1) varredura periódica da rede do cliente, configurável entre **6 e 168 horas** e com faixas de IP ou descoberta da rede local, cujos dispositivos são enviados à fila de **Novas impressoras**; e (2) **pré-cadastro da impressora por IP**, indicando um ponto de instalação do cliente para que o collector detecte o dispositivo e habilite o monitoramento após validação. Também distingue cadastramento **manual** de monitoramento automático.
+
+O Nexa possui descoberta privada local **sob demanda**, heartbeat/ingestão e telemetria de impressoras previamente cadastradas; **não possui ainda** scheduler de descoberta remota, upload de candidatos, tela de aprovação/ignorar, reservas de IP ou ativação automática verificada. Estes requisitos, contratos, restrições de rede e E2E foram especificados separadamente em [Monitoramento remoto Nexa](NEXA-REMOTE-MONITORING.md).
+
+Capturas de referência: [varredura](https://help.printwayy.com/wp-content/uploads/2024/12/varredura.png) · [manual ou automático](https://help.printwayy.com/wp-content/uploads/2024/12/impressora-manual.png). A identidade visual e contratos devem ser próprios do Nexa.
+
 ### Descoberta e operação remota
 
 - Cadastro manual por IP, credenciais SNMP e HTTP, com teste e leitura real antes de confirmar.
