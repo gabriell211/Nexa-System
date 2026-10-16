@@ -1,11 +1,13 @@
 # Nexa Collector — cliente e limites de homologação
 
-## Catálogo MIB/OID multi-fabricante (8 marcas)
+## Catálogo MIB/OID multi-fabricante (9 marcas)
 
 Novo catálogo local em `core/src/mib_registry.rs`, com os OIDs das
 MIBs públicas SNMPv2, Host Resources e Printer-MIB v2, além das raízes
-empresariais Ricoh, Konica Minolta, Kyocera, HP, Samsung, Canon, Epson
-e Xerox. Rode `nexa-collector-daemon --mib-catalog` para obter JSON
+empresariais Ricoh, Konica Minolta, Kyocera, HP, Samsung, Canon, Epson,
+Xerox e **Brother** (PEN `2435`, `BROTHER-MIB`). A MIB privada Brother
+é obtida mediante solicitação ao fabricante e alguns OIDs históricos só
+servem como identificação, não como prova de contador. Rode `nexa-collector-daemon --mib-catalog` para obter JSON
 sem ligar-se a qualquer impressora ou consultar credenciais.
 
 A base não configura automaticamente `marker_counter_oid`, não
