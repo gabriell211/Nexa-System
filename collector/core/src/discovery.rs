@@ -307,8 +307,8 @@ mod tests {
             &authorized, &["10.20.1.0/24".into(), "10.20.1.128/25".into()],
         ).unwrap();
         assert_eq!(hosts.len(), 254);
-        assert_eq!(hosts.first().unwrap(), &"10.20.1.1".parse().unwrap());
-        assert_eq!(hosts.last().unwrap(), &"10.20.1.254".parse().unwrap());
+        assert_eq!(hosts.first().unwrap(), &"10.20.1.1".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(hosts.last().unwrap(), &"10.20.1.254".parse::<Ipv4Addr>().unwrap());
     }
 
     #[test]
