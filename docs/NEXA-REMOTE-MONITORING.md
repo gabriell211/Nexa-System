@@ -11,7 +11,9 @@ O núcleo Rust agora expõe `plan_authorized_hosts` e `discover_authorized_range
 
 O Console Tauri passa as faixas para o Rust por `discover_authorized_printers`; os limites são validados **no lado Rust**, não somente no formulário React. A ação manual fica em **Configurações → Busca manual por faixa autorizada** e exibe os candidatos em **Impressoras**. O Console não recebe permissões para editar o arquivo do serviço, alterar token ou cadastrar dispositivos na API.
 
-**Não concluídos:** edição persistente de faixas pelo operador autorizado via IPC privilegiado; agendamento automático de 6–168h; histórico/fila local e decisões Salvar/Monitorar/Ignorar; pré-reserva IP/coletor e integração com API. O incremento não ativa nem monitora nenhum equipamento.
+O daemon também lê uma agenda **opt-in** (`discovery_schedule.enabled`, `interval_hours` de 6 a 168 e `cidrs`) no JSON protegido. Em background, roda buscas independentes de upload e heartbeat e mantém as últimas 200 evidências de candidatos, quantidade encontrada, horário e falhas no estado SQLite existente. A agenda é validada no startup e vem desabilitada por padrão para instalações antigas. O Console exibe esse histórico em **Impressoras**.
+
+**Não concluídos:** editor persistente da agenda/faixas pelo operador via IPC privilegiado (por enquanto requer provisionamento administrativo do JSON), decisões persistidas Salvar/Monitorar/Ignorar, reservas IP/coletor, homologação de identidade e integração com API. O incremento não ativa nem monitora automaticamente nenhum equipamento.
 
 
 **Situação em 16/10/2026: especificação e comparação com referência pública; fluxo remoto completo não implementado.**
