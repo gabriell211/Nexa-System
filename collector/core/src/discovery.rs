@@ -3,7 +3,7 @@
 
 use if_addrs::{get_if_addrs, IfAddr};
 use ipnet::Ipv4Net;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
     io::{Read, Write},
@@ -21,7 +21,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_millis(180);
 const MAX_HOSTS: usize = 1024;
 const WORKERS: usize = 16;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DiscoveryCandidate {
     pub ip: Ipv4Addr,
     /// A reachable print port is evidence of a candidate, not a model or meter certification.
