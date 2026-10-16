@@ -96,8 +96,8 @@ A interface distingue **descoberto ≠ salvo no agente ≠ homologado ≠ monito
 | `collector/core/src/usb_devices.rs`: descoberta Windows USB impressora/imagem sob demanda | **Na PR #51**, diagnóstico sem contador |
 | Daemon, SQLite outbox e HTTPS para contadores **já configurados** por ID/OID | **Implementado** com limites; não serve de fila de *candidatos* automaticamente |
 | Laravel heartbeat/ingestão autenticados, isolamento por cliente e impressoras cadastradas | **Implementado** |
-| Configuração local segura de descoberta, canal IPC autorizado, candidatos locais e comunicação da seleção ao backend | **Não implementado** |
-| Agenda automática de 6–168 horas, faixas configuradas e persistidas no agente | **Não implementado** |
+| Configuração local segura de descoberta, canal IPC autorizado, candidatos locais e comunicação da seleção ao backend | **PARCIAL** — CIDRs são validados no núcleo Rust e último scan fica em SQLite; canal de edição, seleção/ignorados e backend ainda pendentes |
+| Agenda automática de 6–168 horas, faixas configuradas e persistidas no agente | **PARCIAL** — daemon agenda scans opt-in no JSON administrativo e persiste snapshots no SQLite; edição de faixas via Console/IPC ainda pendente |
 | Reserva prévia de IP+coletor, verificação física e ativação automática | **Não implementado** |
 | Console Tauri com fila local de candidatos, seleção/ignorar, anti-duplicidade e Monitorar | **Não implementado** |
 | Inserção manual auditada de contadores distinguível de telemetria | **Exige validação/implementação específica** |
