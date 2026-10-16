@@ -4,7 +4,7 @@ use nexa_collector_core::{
     discovery::{self, DiscoveryCandidate},
     usb_devices::{self, UsbDeviceCandidate},
     recovery_guard::{RecoveryGuard, WatchdogSnapshot},
-    read_config, DeliveryDiagnostics, Outbox, QuarantinedReading, SqliteFootprint,
+    read_config, DeliveryDiagnostics, DiscoveryReport, DiscoverySchedule, Outbox, QuarantinedReading, SqliteFootprint,
 };
 use serde::Serialize;
 use std::env;
@@ -36,6 +36,8 @@ struct CollectorSnapshot {
     endpoint: Option<String>,
     interval_seconds: Option<u64>,
     authorized_subnets: Vec<String>,
+    discovery_schedule: Option<DiscoverySchedule>,
+    discovery_report: Option<DiscoveryReport>,
     printers: Vec<PrinterInfo>,
     usb_scanners: Vec<UsbScannerInfo>,
     queue_pending: Option<u64>,
@@ -61,6 +63,8 @@ fn get_snapshot() -> CollectorSnapshot {
         endpoint: None,
         interval_seconds: None,
         authorized_subnets: Vec::new(),
+        discovery_schedule: None,
+        discovery_report: None,
         printers: Vec::new(),
         usb_scanners: Vec::new(),
         queue_pending: None,
@@ -87,6 +91,7 @@ fn get_snapshot() -> CollectorSnapshot {
                 snapshot.endpoint = Some(config.api_url);
                 snapshot.interval_seconds = Some(config.interval_seconds);
                 snapshot.authorized_subnets = config.authorized_subnets.clone();
+                snapshot.discovery_schedule = Some(config.discovery_schedule.clone());
                 snapshot.queue_capacity = Some(config.max_pending_samples);
                 snapshot.payload_bytes_limit = Some(config.max_pending_payload_bytes);
                 capacity_limits = Some((config.max_pending_samples, config.max_pending_payload_bytes, config.max_sqlite_files_bytes));
@@ -150,6 +155,12 @@ fn get_snapshot() -> CollectorSnapshot {
                         Err(_) => snapshot.error = Some("Histórico de transmissão local inválido.".into()),
                     }
                     snapshot.last_run = outbox.last_run().ok().flatten();
+                    match outbox.discovery_report() {
+                        Ok(report) => snapshot.discovery_report = Some(report),
+                        Err(_) => snapshot.error = Some(
+                            "Histórico local da varredura está inválido ou inacessível.".into()
+                        ),
+                    }
                 }
                 Err(error) => snapshot.error = Some(match error {
                     nexa_collector_core::CollectorError::EncryptionRequired =>
