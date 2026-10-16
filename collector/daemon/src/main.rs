@@ -32,6 +32,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "coverage": "generic_printer_mib_v2_not_model_certified",
             "manufacturers": nexa_collector_core::mib_registry::manufacturer_entries(),
             "standard_oids": nexa_collector_core::mib_registry::OIDS,
+            "brother_private_identification_oids": nexa_collector_core::mib_registry::BROTHER_PRIVATE_OIDS,
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
         return Ok(());
