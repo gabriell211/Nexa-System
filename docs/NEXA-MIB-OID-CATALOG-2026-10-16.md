@@ -14,6 +14,7 @@
 | Canon | `1.3.6.1.4.1.1602` | `Printer-MIB` e MIB privada por família | A linha imageRUNNER ADVANCE documenta SNMPv1/v3 e consulta de números de impressões; sem prova de OID privado universal. Fonte: https://files.canon-europe.com/files/soft03-48695/Manual/imageRUNNER_ADVANCE_6500i_Series_User_Guide_PT.pdf |
 | Epson | `1.3.6.1.4.1.1248` | `Printer-MIB`, objetos Epson dependentes do firmware | A documentação da WF-C8690B indica SNMP/161 para consulta de MIB; tanques e manutenção podem ser não expostos no padrão. Fonte: https://download4.epson.biz/sec_pubs/wf-c8690b/admg/en/manual.pdf |
 | Xerox | `1.3.6.1.4.1.253` | Xerox XCMI, `XEROX-COMMON-MIB`, `XEROX-GENERAL-MIB`, `Printer-MIB` | **Pacotes oficiais 2026** SMIv1/SMIv2/Textual Conventions: https://origin-download.support.xerox.com/pub/drivers/MIBs/ |
+| Brother | `1.3.6.1.4.1.2435` | `BROTHER-MIB`, `Printer-MIB`, `HOST-RESOURCES-MIB` | A Brother exige **solicitação oficial** para disponibilização da MIB privada; alguns OIDs públicos de referência são históricos e não garantem modelos atuais. Fonte: https://help.brother-usa.com/app/answers/detail/a_id/52976/~/how-to-obtain-brother-snmp-mib-information |
 
 A árvore empresarial pode ser diferente em hardware OEM ou MFP remarcada. O Nexa só identifica automaticamente a fabricante quando o `sysObjectID` realmente aponta para um desses PENs; descrições de texto não substituem identificação física. Uma MIB descreve objetos, mas **não garante** que determinado equipamento implemente cada OID.
 
@@ -43,6 +44,16 @@ A árvore empresarial pode ser diferente em hardware OEM ou MFP remarcada. O Nex
 
 Referências: https://www.rfc-editor.org/rfc/rfc3805.html , https://www.rfc-editor.org/rfc/rfc2790.html e https://www.rfc-editor.org/rfc/rfc3418.html
 
+### Brother — objetos privados documentados publicamente
+
+| Campo | OID numérico | Garantia |
+|---|---|---|
+| `BROTHER-MIB::brInfoModelNumber.0` | `1.3.6.1.4.1.2435.2.3.9.4.2.1.5.5.9.0` | Identificação enumerada presente em **algumas gerações históricas**; não equivale ao nome comercial de todo modelo atual e **não é contador**. |
+
+Fonte da definição publicada: https://mibs.observium.org/object/BROTHER-MIB/brInfoModelNumber . A própria fabricante instrui solicitar a MIB privada à Brother: https://help.brother-usa.com/app/answers/detail/a_id/52976/~/how-to-obtain-brother-snmp-mib-information .
+
+Não supor que `brInfoModelNumber` esteja implementado nos modelos DCP/HL/MFC/ADS mais recentes. O catálogo marca `billing_approved: false`; SNMP GET/WALK somente com dispositivo autorizado e credenciais read-only do operador. Não incorporar arquivos MIB privados ao repositório sem direito de redistribuição.
+
 **Não usar** `prtMarkerLifeCount` de forma isolada para identificar P&B, cor, digitalizações, A3/A4, frente e verso, cópias ou produção faturável. Mesmo se a unidade for impressões/sheets, a semântica da cobrança precisa de perfil **modelo + firmware + índice + modalidade** validado antes/depois em hardware real.
 
 ## Fluxo para todos os modelos, novos e antigos
@@ -69,10 +80,11 @@ Estas são *filas de homologação*, não lista de compatibilidade aprovada:
 | Canon | imageRUNNER ADVANCE/DX, imageCLASS/i-SENSYS, PIXMA/MAXIFY |
 | Epson | EcoTank L6270, WorkForce WF-4820, WF-C, SureColor |
 | Xerox | WorkCentre 78xx, AltaLink B/C, VersaLink B/C, Phaser |
+| Brother | DCP-L, HL-L, MFC-L, MFC-J, DCP-J, ADS (scanners), impressoras de etiquetas com SNMP quando documentado |
 
 ### Catálogo disponível no Nexa
 
-O módulo `collector/core/src/mib_registry.rs` reúne todas as oito PENs, 19 OIDs padronizados, interpretação segura de índices/counters e interpretação de capacidade/nível. Execute o comando **offline**, sem IP ou credencial:
+O módulo `collector/core/src/mib_registry.rs` reúne todas as nove PENs, 19 OIDs padronizados, interpretação segura de índices/counters e interpretação de capacidade/nível. Execute o comando **offline**, sem IP ou credencial:
 
 ```sh
 nexa-collector-daemon --mib-catalog
