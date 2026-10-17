@@ -1,5 +1,30 @@
 # Nexa Collector — cliente e limites de homologação
 
+## Inspeção SNMP explícita de inventário (incremento)
+
+Com credencial SNMPv2c **somente leitura** colocada em
+`NEXA_SNMP_COMMUNITY` fora da linha de comando, faça uma consulta
+manual em **um único IPv4 privado** previamente autorizado:
+
+```sh
+nexa-collector-daemon --inspect-snmp /caminho/config.json 192.168.1.50
+```
+
+O coletor faz até 19 consultas limitadas às colunas padronizadas,
+com até oito linhas por coluna via GETBULK. Reúne, quando disponíveis,
+`sysObjectID`, descrição/modelo, serial, unidade/total de marcadores,
+status e suprimentos por índices reais. A saída JSON identifica os nove
+fabricantes quando `sysObjectID` pertence a uma das árvores conhecidas.
+Campos ausentes ficam ausentes ou reportados como não disponíveis:
+toner `-3/-2/-1` **não** significa 0%. Marcadores não são faturáveis até
+ensaio físico de unidade, firmware, modalidade e correlação com painel.
+
+Este diagnóstico **não** altera configuração, reserva IP, grava dados,
+cria amostras, monitora impressoras nem comunica com o portal. Um
+dispositivo com SNMP bloqueado/inexistente não pode ser considerado
+homologado. SNMPv2c não criptografa credenciais na LAN; requer rede
+segura ou implementação SNMPv3 autenticada/privada para produção.
+
 ## Catálogo MIB/OID multi-fabricante (9 marcas)
 
 Novo catálogo local em `core/src/mib_registry.rs`, com os OIDs das
