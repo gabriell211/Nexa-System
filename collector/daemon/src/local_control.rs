@@ -89,7 +89,15 @@ pub fn start(
                 Ok((mut stream, _)) => {
                     // Serializing requests bounds CPU, memory, and database
                     // write concurrency. One local request per connection.
-                    let response = if authorized_peer(&stream) {
+                    // macOS/BSD may inherit O_NONBLOCK from the listener.
+                    // Restore blocking reads before applying a finite read timeout:
+                    // otherwise a fragmented request can be rejected with WouldBlock.
+                    let response = if stream.set_nonblocking(false).is_err() {
+                        ControlResponse {
+                            accepted: false,
+                            reason: Some("Erro no canal local.".into()),
+                        }
+                    } else if authorized_peer(&stream) {
                         handle(&mut stream, &queue, &cfg, &key)
                     } else {
                         ControlResponse {
@@ -221,6 +229,49 @@ mod tests {
         stopping.store(true, Ordering::Relaxed);
         handle.join().unwrap();
         assert!(!socket.exists());
+    }
+
+    #[test]
+    fn socket_accepts_fragmented_requests_without_premature_would_block() {
+        use nexa_collector_core::DiscoverySchedule;
+
+        let dir = tempfile::tempdir().unwrap();
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let queue = dir.path().join("queue.sqlite");
+        let cfg = config();
+        let key = Zeroizing::new("11".repeat(32));
+        let store = Outbox::open_encrypted_disk_guard(
+            &queue, cfg.max_pending_samples, cfg.max_pending_payload_bytes,
+            cfg.max_sqlite_files_bytes, &key,
+        ).unwrap();
+        drop(store);
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let server = start(&queue, cfg, key, Arc::clone(&stop)).unwrap();
+        let mut client = UnixStream::connect(socket_path(&queue)).unwrap();
+        client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+
+        let request = serde_json::to_vec(&ScheduleControlRequest {
+            version: PROTOCOL_VERSION,
+            schedule: DiscoverySchedule {
+                enabled: true, interval_hours: 6, cidrs: vec!["10.20.1.0/24".into()],
+            },
+        }).unwrap();
+        let split = request.len() / 2;
+        client.write_all(&request[..split]).unwrap();
+        // The server must wait for the rest of the frame rather than returning
+        // WouldBlock when the listener's accept socket is nonblocking on macOS.
+        thread::sleep(Duration::from_millis(120));
+        client.write_all(&request[split..]).unwrap();
+        client.write_all(b"\n").unwrap();
+
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).unwrap();
+        let accepted: ControlResponse = serde_json::from_slice(&response).unwrap();
+        assert!(accepted.accepted, "{:?}", accepted.reason);
+
+        stop.store(true, Ordering::Relaxed);
+        server.join().unwrap();
     }
 
     #[test]
