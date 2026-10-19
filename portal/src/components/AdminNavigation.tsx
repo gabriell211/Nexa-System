@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   AlertTriangle, ArrowRight, ChevronDown, ClipboardCheck,
   ClipboardList, Database, FileText, LayoutDashboard, Printer, Settings,
-  ShieldAlert, UserRoundCog, Users, Wallet,
+  ShieldAlert, Users, Wallet,
 } from 'lucide-react';
 
 type IconComponent = typeof LayoutDashboard;
