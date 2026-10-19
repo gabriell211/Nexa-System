@@ -32,7 +32,7 @@ final class PrinterController extends Controller
 
         return PrinterResource::collection(
             $this->portfolio->printers($tenant->printers(), $request)
-                ->with(['customer:id,name','currentAssignment.location:id,name','latestReading'])
+                ->with(['customer:id,name','currentAssignment.location:id,name','currentAssignment.department:id,name','currentAssignment.costCenter:id,name,code','latestReading'])
                 ->when(isset($filters['customer_id']), fn (Builder $query) => $query->where('customer_id', (int) $filters['customer_id']))
                 ->when($request->boolean('active_only'), fn (Builder $query) => $query->where('active', true))
                 ->when($term !== '', function (Builder $query) use ($term): void {
@@ -40,7 +40,9 @@ final class PrinterController extends Controller
                         $like = '%'.$term.'%';
                         $match->whereRaw('LOWER(manufacturer) LIKE ?', [$like])
                             ->orWhereRaw('LOWER(model) LIKE ?', [$like])
-                            ->orWhereRaw('LOWER(serial_number) LIKE ?', [$like]);
+                            ->orWhereRaw('LOWER(serial_number) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(asset_number) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(CAST(ip_address AS TEXT)) LIKE ?', [$like]);
                     });
                 })
                 ->orderByDesc('id')
