@@ -7,6 +7,7 @@ import {
   Search, ShieldCheck, Trash2, Users, X, MapPin, History, UserRoundCog, FileText, KeyRound,
 } from 'lucide-react';
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
+import { ActivationPage } from './pages/ActivationPage';
 import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
 import { StaffPage } from './pages/StaffPage';
 import { InventoryPage } from './pages/InventoryPage';
@@ -594,6 +595,8 @@ export function App() {
       setLogoutError('Não foi possível encerrar a sessão no servidor: ' + readableError(error));
     }
   }
+
+  if (window.location.pathname === '/ativar') return <ActivationPage />;
 
   if (identity.isPending) return <div className="boot-state"><LoadingState /></div>;
   if (identity.error) return <main className="blocked">
