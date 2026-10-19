@@ -315,7 +315,7 @@ export default function App() {
       <main className="main">
         <header className="topbar">
           <div className="crumb">Nexa System <span>/</span> Collector Console</div>
-          <div className="version">DESKTOP 0.1.0</div>
+          <div className="version">DESKTOP 0.1.1</div>
         </header>
         <div className="content">
           <div className="heading">
