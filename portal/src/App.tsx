@@ -18,6 +18,7 @@ import { CollectorsPage } from './pages/CollectorsPage';
 import { CollectorCredentialDialog } from './components/CollectorCredentialDialog';
 import { ContractsPage } from './pages/ContractsPage';
 import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
+import { PrinterDetailsPanel } from './pages/PrinterDetailsPanel';
 import { PrinterReadingHistoryPanel } from './pages/PrinterReadingHistoryPanel';
 import { PagedEntitySelect } from './components/PagedEntitySelect';
 import type {
@@ -416,6 +417,8 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
   const [editing, setEditing] = useState<'new' | Printer | null>(null);
   const [assignmentPrinter, setAssignmentPrinter] = useState<Printer | null>(null);
   const [historyPrinter, setHistoryPrinter] = useState<Printer | null>(null);
+  const [detailsPrinterId, setDetailsPrinterId] = useState<number | null>(null);
+  const [selectedPrinterId, setSelectedPrinterId] = useState<number | null>(null);
   const [notice, setNotice] = useState('');
 
   useEffect(() => {
@@ -466,8 +469,19 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
   const pagination = pageInfo(listing.data);
 
   return <>
-    <PageTitle kicker="GESTÃO DO PARQUE" title="Impressoras" subtitle="Inventário dos equipamentos vinculados aos clientes."
-      action={canWrite && <button className="button primary" type="button" onClick={() => setEditing('new')}><Plus size={17}/> Nova impressora</button>} />
+    <PageTitle kicker="GESTÃO DO PARQUE" title={byCustomer ? 'Impressoras por cliente' : 'Parque completo'}
+      subtitle="Inventário e histórico dos equipamentos vinculados aos clientes."
+      action={<div className="inline">
+        <button type="button" className="button ghost" disabled={!selectedPrinterId}
+          onClick={() => setDetailsPrinterId(selectedPrinterId)}><PrinterIcon size={17}/> Ver detalhes</button>
+        {canWrite && <button className="button primary" type="button" onClick={() => setEditing('new')}>
+          <Plus size={17}/> Adicionar impressora ao parque</button>}
+        {canWrite && <button type="button" className="button ghost" disabled={!selectedPrinterId || deactivate.isPending}
+          onClick={() => {
+            const item = listing.data?.data.find(p => p.id === selectedPrinterId);
+            if (item && item.active) remove(item);
+          }}><Trash2 size={16}/> Inativar impressora</button>}
+      </div>} />
     <section className="data-card">
       {byCustomer && <div className="admin-customer-filter">
         <PagedEntitySelect<Customer> id="park-customer" label="Selecione um cliente"
@@ -486,38 +500,55 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
       {deactivate.error && <ErrorMessage error={deactivate.error}/>}
       {byCustomer && !customerId ? <EmptyState>Selecione o cliente para visualizar o parque atribuído.</EmptyState> :
       listing.isPending ? <LoadingState/> : listing.error ? <ErrorMessage error={listing.error}/> : listing.data.data.length === 0 ? <EmptyState>Nenhuma impressora encontrada para estes filtros.</EmptyState> : <>
-        <div className="table-wrap"><table><thead><tr><th>Impressora</th><th>Cliente</th><th>IP</th><th>Últimos contadores</th><th>Estado de coleta</th><th>Cadastro</th><th className="actions-head">Ações</th></tr></thead>
-          <tbody>{listing.data.data.map((printer) => <tr key={printer.id}>
-            <td><strong>{printer.manufacturer} {printer.model}</strong><small>{printer.serial_number || 'Série não informada'}</small></td>
-            <td>{printer.customer?.name || '—'}</td><td className="mono">{printer.ip_address || '—'}</td>
-            <td>{printer.latest_reading
-              ? <span className="meter-summary">
-                  <strong>Total: {printer.latest_reading.meter_total === null ? '—' : BigInt(printer.latest_reading.meter_total).toLocaleString('pt-BR')}</strong>
-                  <small>P&B: {printer.latest_reading.meter_mono === null ? '—' : BigInt(printer.latest_reading.meter_mono).toLocaleString('pt-BR')} · Cor: {printer.latest_reading.meter_color === null ? '—' : BigInt(printer.latest_reading.meter_color).toLocaleString('pt-BR')}</small>
-                  <small>Digitalizações: {printer.latest_reading.meter_scan === null ? '—' : BigInt(printer.latest_reading.meter_scan).toLocaleString('pt-BR')}</small>
-                  <small>Coletado em: {formatDate(printer.latest_reading.collected_at)}</small>
-                </span>
-              : <span>Sem leituras registradas</span>}</td>
-            <td><span className="state-pill neutral">{printer.status === 'unknown' ? 'Não determinado' : printer.status}</span></td>
-            <td><span className={'state-pill ' + (printer.active ? 'online' : 'neutral')}>{printer.active ? 'Ativo' : 'Inativo'}</span></td>
+        <div className="table-wrap printer-fleet-table"><table><thead><tr>
+          <th aria-label="Selecionar">Sel.</th><th>Situação</th><th>Cor</th><th>Fabricante</th><th>Modelo</th>
+          <th>Número de série</th><th>Tipo de conexão</th><th>Proprietário</th><th>Nº de patrimônio</th>
+          <th>Última comunicação*</th><th>Localização atual</th><th>IP</th><th>Último total</th><th>Ações</th>
+        </tr></thead>
+          <tbody>{listing.data.data.map((printer) => <tr key={printer.id}
+            className={selectedPrinterId === printer.id ? 'selected-printer-row' : ''}>
+            <td><input type="radio" name="printer-selection" checked={selectedPrinterId === printer.id}
+              aria-label={'Selecionar impressora '+printer.manufacturer+' '+printer.model}
+              onChange={() => setSelectedPrinterId(printer.id)}/></td>
+            <td><span className={'fleet-status-dot '+(printer.active ? 'registered' : 'inactive')}
+              title={printer.active ? 'Cadastrada ativa (sem teste de conectividade)' : 'Inativa no cadastro'}>
+              {printer.active ? '●' : '○'}</span>
+              <small>{printer.status === 'unknown' ? 'Coleta indeterminada' : printer.status}</small></td>
+            <td><span className="fleet-color">{printer.color_capability === 'color' ? '◉ ◉ ◉' :
+              printer.color_capability === 'mono' ? '●' : '—'}</span></td>
+            <td>{printer.manufacturer}</td>
+            <td><button type="button" className="fleet-details-link"
+              onClick={() => setDetailsPrinterId(printer.id)}>{printer.model}</button></td>
+            <td className="mono">{printer.serial_number || '—'}</td>
+            <td>{({unknown:'Não informado',network:'Rede',usb:'USB'})[printer.connection_type]}</td>
+            <td>{({unknown:'Não informado',customer:'Cliente',provider:'Prestadora'})[printer.owner_type]}</td>
+            <td className="mono">{printer.asset_number || '—'}</td>
+            <td>{printer.latest_reading?.received_at ? formatDate(printer.latest_reading.received_at) : 'Sem leitura'}</td>
+            <td><strong>{printer.customer?.name || '—'}</strong>
+              <small>{[printer.current_assignment?.location?.name,
+                printer.current_assignment?.department?.name,
+                printer.current_assignment?.cost_center?.code].filter(Boolean).join(' / ') || 'Sem localização cadastrada'}</small></td>
+            <td className="mono">{printer.ip_address || '—'}</td>
+            <td className="mono">{printer.latest_reading?.meter_total === null || !printer.latest_reading ?
+              '—' : BigInt(printer.latest_reading.meter_total).toLocaleString('pt-BR')}</td>
             <td><div className="table-actions">
-              <button className="icon-button" title="Localização e histórico" aria-label={'Localização da impressora ' + printer.id}
+              <button className="icon-button" title="Detalhes da impressora" aria-label={'Ver detalhes da impressora '+printer.id}
+                onClick={() => setDetailsPrinterId(printer.id)}><PrinterIcon size={16}/></button>
+              <button className="icon-button" title="Localização e movimentações" aria-label={'Localização da impressora '+printer.id}
                 onClick={() => setAssignmentPrinter(printer)}><MapPin size={16}/></button>
-              <button className="icon-button" title="Histórico de contadores"
-                aria-label={'Histórico de contadores da impressora ' + printer.id}
+              <button className="icon-button" title="Histórico avançado de contadores"
+                aria-label={'Histórico de contadores da impressora '+printer.id}
                 onClick={() => setHistoryPrinter(printer)}><History size={16}/></button>
-              {canWrite && <>
-                <button className="icon-button" title="Editar impressora" aria-label={'Editar impressora ' + printer.id}
-                  onClick={() => setEditing(printer)}><Pencil size={16}/></button>
-                {printer.active && <button className="icon-button danger-icon" title="Inativar impressora"
-                  aria-label={'Inativar impressora ' + printer.id} disabled={deactivate.isPending}
-                  onClick={() => remove(printer)}><Trash2 size={16}/></button>}
-              </>}
+              {canWrite && <button className="icon-button" title="Editar cadastro" aria-label={'Editar impressora '+printer.id}
+                  onClick={() => setEditing(printer)}><Pencil size={16}/></button>}
             </div></td>
           </tr>)}</tbody></table></div>
         <Pagination page={pagination.page} pages={pagination.pages} total={pagination.total} onChange={setPage}/>
       </>}
     </section>
+    {detailsPrinterId !== null && <PrinterDetailsPanel id={detailsPrinterId} token={token}
+      canWrite={canWrite} close={() => setDetailsPrinterId(null)}
+      move={item => setAssignmentPrinter(item)} />}
     {assignmentPrinter && <PrinterAssignmentPanel key={assignmentPrinter.id} printer={assignmentPrinter} token={token} canWrite={canWrite} onClose={() => setAssignmentPrinter(null)} />}
     {historyPrinter && <PrinterReadingHistoryPanel key={historyPrinter.id} printer={historyPrinter}
       token={token} onClose={() => setHistoryPrinter(null)} />}
