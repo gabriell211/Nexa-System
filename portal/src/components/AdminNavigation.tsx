@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  Activity, AlertTriangle, ArrowRight, Building2, ChevronDown, ClipboardCheck,
+  AlertTriangle, ArrowRight, ChevronDown, ClipboardCheck,
   ClipboardList, Database, FileText, LayoutDashboard, Printer, Settings,
   ShieldAlert, UserRoundCog, Users, Wallet,
 } from 'lucide-react';
@@ -95,8 +95,8 @@ export function AdminNavigation({ role, canStock, canAudit }: {
         </button>
         {isOpen && <div id={'admin-nav-' + group.key} className="admin-nav-children">
           {group.items.map(item => item.href
-            ? <NavLink key={item.label} to={item.href} className={({isActive}) =>
-              'admin-nav-child' + (isActive && (!location.search || item.href?.includes(location.search) || !item.href?.includes('?')) ? ' selected' : '')
+            ? <NavLink key={item.label} to={item.href} className={() =>
+              'admin-nav-child' + ((location.pathname + location.search) === item.href ? ' selected' : '')
             }>{item.label}</NavLink>
             : <span key={item.label} className="admin-nav-child unavailable"
               title={item.title ?? 'Funcionalidade indisponível'}>{item.label}
