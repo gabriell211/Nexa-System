@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Customer-facing ticket operations. Always enforce membership on each request,
@@ -212,7 +212,7 @@ final class ClientTicketController extends Controller
      * Download route shared with backoffice, but client access is rechecked on
      * every request. Always Content-Disposition: attachment + nosniff.
      */
-    public function download(Request $request, int $ticket, int $attachment): BinaryFileResponse
+    public function download(Request $request, int $ticket, int $attachment): StreamedResponse
     {
         $role = $request->attributes->get('nexa_role');
         if ($role === 'customer') {
