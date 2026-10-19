@@ -23,6 +23,7 @@ final class ClientFleetAnalyticsController extends Controller
             || $request->attributes->get('nexa_customer_scope') !== 'assigned') {
             abort(403);
         }
+        if (!app(\\App\\Services\\CustomerAccountPermissions::class)->forRequest($request)['view_reports']) abort(403);
 
         $tenant = $request->attributes->get('nexa_tenant');
         $allowed = DB::table('customer_user_access')
