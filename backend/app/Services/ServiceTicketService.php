@@ -131,6 +131,8 @@ final class ServiceTicketService
         return $ticket->load([
             'customer:id,name','printer:id,manufacturer,model',
             'assignee:id,name','comments'=>fn ($q)=>$q->with('author:id,name')->orderBy('id'),
+            'linkedPrinters:id,manufacturer,model,serial_number,ip_address',
+            'attachments:id,tenant_id,ticket_id,original_name,mime_type,bytes,created_at',
         ]);
     }
 
