@@ -61,8 +61,8 @@ final class PrinterController extends Controller
 
     public function show(Request $request, int $printer): PrinterResource
     {
-        $item = $request->attributes->get('nexa_tenant')->printers()
-            ->with(['customer:id,name', 'currentAssignment.location:id,name', 'latestReading', 'readings' => fn ($query) => $query->orderByDesc('collected_at')->orderByDesc('id')->limit(20)])
+        $item = $this->portfolio->printers($request->attributes->get('nexa_tenant')->printers(), $request)
+            ->with(['customer:id,name', 'currentAssignment.location:id,name', 'currentAssignment.department:id,name', 'currentAssignment.costCenter:id,name,code', 'latestReading', 'readings' => fn ($query) => $query->orderByDesc('collected_at')->orderByDesc('id')->limit(20)])
             ->findOrFail($printer);
 
         return new PrinterResource($item);
