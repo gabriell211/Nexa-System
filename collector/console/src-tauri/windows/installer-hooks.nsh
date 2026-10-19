@@ -4,13 +4,18 @@
 !define NEXA_DEFAULT_CONFIG "${__FILEDIR__}\..\..\..\config.example.json"
 
 !macro NSIS_HOOK_PREINSTALL
+  ; Refuse to install over a service that is running, marked for deletion,
+  ; or cannot be inspected. Never overwrite a customer's existing binding.
   nsExec::ExecToStack '"$SYSDIR\sc.exe" query NexaCollector'
   Pop $0
   Pop $1
-  StrCmp $0 "0" 0 nexa_service_not_installed
-    MessageBox MB_ICONSTOP|MB_OK "O serviço NexaCollector ja existe. Revise a instalacao anterior antes de atualizar; os dados serao preservados."
+  ${If} $0 == "0"
+    MessageBox MB_ICONSTOP|MB_OK "O servico NexaCollector ja existe. Desinstale a versao anterior primeiro. Os dados do cliente serao preservados."
     Abort "Existing NexaCollector Windows service"
-  nexa_service_not_installed:
+  ${ElseIf} $0 != "1060"
+    MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel verificar o servico NexaCollector (codigo $0).$\r$\n$1"
+    Abort "Nexa Collector service state unavailable"
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
@@ -52,12 +57,29 @@
     SetOutPath "$INSTDIR"
   nexa_config_exists:
 
-  ; No secrets in SCM arguments; start after secure client provisioning only.
-  ExecWait '"$SYSDIR\sc.exe" create NexaCollector binPath= "$\"$INSTDIR\nexa-collector-daemon.exe$\" --service" start= demand obj= "NT AUTHORITY\LocalService" DisplayName= "Nexa Collector"' $0
-  StrCmp $0 "0" nexa_service_created
-    MessageBox MB_ICONSTOP|MB_OK "Falha ao registrar o servico NexaCollector."
+  ; Fail closed when SCM rejects the request. Collect the operating system
+  ; error code and sc.exe output so support can distinguish access denied,
+  ; invalid account, incorrect arguments, or an orphaned existing service.
+  ; The command contains no authentication tokens or customer secrets.
+  nsExec::ExecToStack '"$SYSDIR\sc.exe" create NexaCollector type= own binPath= "$\"$INSTDIR\nexa-collector-daemon.exe$\" --service" start= demand obj= "NT AUTHORITY\LocalService" DisplayName= "Nexa Collector"'
+  Pop $0
+  Pop $1
+  ${If} $0 != "0"
+    DetailPrint "SCM create returned exit code $0: $1"
+    MessageBox MB_ICONSTOP|MB_OK "Falha ao registrar NexaCollector (codigo $0).$\r$\n$1$\r$\nDados do cliente preservados. Informe o codigo de erro ao suporte."
     Abort "Nexa Collector registration failure"
-  nexa_service_created:
+  ${EndIf}
+
+  ; Inspect the registration before configuring recovery. On failure,
+  ; remove only the service just created by this same installer.
+  nsExec::ExecToStack '"$SYSDIR\sc.exe" qc NexaCollector'
+  Pop $0
+  Pop $1
+  ${If} $0 != "0"
+    ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $2
+    MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel verificar o servico registrado (codigo $0).$\r$\n$1"
+    Abort "Nexa Collector registration verification failure"
+  ${EndIf}
 
   ExecWait '"$SYSDIR\sc.exe" failure NexaCollector reset= 86400 actions= restart/15000/restart/60000/none/0' $0
   StrCmp $0 "0" nexa_recovery_configured
