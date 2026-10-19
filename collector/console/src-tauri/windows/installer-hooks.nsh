@@ -12,10 +12,14 @@
   ${If} $0 == "0"
     MessageBox MB_ICONSTOP|MB_OK "O servico NexaCollector ja existe. Desinstale a versao anterior primeiro. Os dados do cliente serao preservados." /SD IDOK
     SetErrorLevel 10
+    IfSilent 0 +2
+      Quit
     Abort "Existing NexaCollector Windows service"
   ${ElseIf} $0 != "1060"
     MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel verificar o servico NexaCollector (codigo $0).$\r$\n$1" /SD IDOK
     SetErrorLevel 11
+    IfSilent 0 +2
+      Quit
     Abort "Nexa Collector service state unavailable"
   ${EndIf}
 !macroend
@@ -24,6 +28,8 @@
   IfFileExists "$INSTDIR\nexa-collector-daemon.exe" nexa_daemon_ok 0
     MessageBox MB_ICONSTOP|MB_OK "O executavel do servico nao foi incluido no instalador." /SD IDOK
     SetErrorLevel 12
+    IfSilent 0 +2
+      Quit
     Abort "Missing Nexa Collector daemon"
   nexa_daemon_ok:
 
@@ -41,6 +47,8 @@
   StrCmp $0 "0" +3
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger a pasta do Nexa Collector." /SD IDOK
     SetErrorLevel 13
+    IfSilent 0 +2
+      Quit
     Abort "Nexa Collector root ACL failure"
 
   ; Keep SQLite/WAL/SHM and secrets private, and allow service data writes.
@@ -48,12 +56,16 @@
   StrCmp $0 "0" +3
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger a fila local de medicoes." /SD IDOK
     SetErrorLevel 14
+    IfSilent 0 +2
+      Quit
     Abort "Nexa Collector data ACL failure"
 
   ExecWait '"$SYSDIR\icacls.exe" "$COMMONPROGRAMDATA\NexaCollector\credentials" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-19:(OI)(CI)R"' $0
   StrCmp $0 "0" +3
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger as credenciais do agente." /SD IDOK
     SetErrorLevel 15
+    IfSilent 0 +2
+      Quit
     Abort "Nexa Collector credential ACL failure"
 
   ; Create example config only on clean install; never overwrite binding.
@@ -74,6 +86,8 @@
     DetailPrint "SCM create returned exit code $0: $1"
     MessageBox MB_ICONSTOP|MB_OK "Falha ao registrar NexaCollector (codigo $0).$\r$\n$1$\r$\nDados do cliente preservados. Informe o codigo de erro ao suporte." /SD IDOK
     SetErrorLevel 16
+    IfSilent 0 +2
+      Quit
     Abort "Nexa Collector registration failure"
   ${EndIf}
 
@@ -86,6 +100,8 @@
     ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $2
     MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel verificar o servico registrado (codigo $0).$\r$\n$1" /SD IDOK
     SetErrorLevel 17
+    IfSilent 0 +2
+      Quit
     Abort "Nexa Collector registration verification failure"
   ${EndIf}
 
@@ -94,6 +110,8 @@
     ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $1
     MessageBox MB_ICONSTOP|MB_OK "Falha ao configurar recuperacao do servico." /SD IDOK
     SetErrorLevel 18
+    IfSilent 0 +2
+      Quit
     Abort "Nexa Collector recovery failure"
   nexa_recovery_configured:
 
@@ -102,6 +120,8 @@
     ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $1
     MessageBox MB_ICONSTOP|MB_OK "Falha ao configurar recuperacao do servico." /SD IDOK
     SetErrorLevel 19
+    IfSilent 0 +2
+      Quit
     Abort "Nexa Collector failure flag error"
   nexa_installed:
   DetailPrint "NexaCollector instalado com inicio manual ate vinculacao."
@@ -117,6 +137,8 @@
   ${ElseIf} $0 != "0"
     MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel verificar o servico NexaCollector (codigo $0).$\r$\n$1" /SD IDOK
     SetErrorLevel 20
+    IfSilent 0 +2
+      Quit
     Abort "Nexa Collector uninstall service state unavailable"
   ${EndIf}
   ExecWait '"$SYSDIR\sc.exe" stop NexaCollector' $1
@@ -125,6 +147,8 @@
   StrCmp $1 "0" nexa_uninstall_no_service
     MessageBox MB_ICONSTOP|MB_OK "O servico NexaCollector nao pode ser removido. Feche o agente e tente novamente." /SD IDOK
     SetErrorLevel 21
+    IfSilent 0 +2
+      Quit
     Abort "Nexa Collector service removal failed"
   nexa_uninstall_no_service:
 !macroend
