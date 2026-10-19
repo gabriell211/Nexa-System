@@ -12,6 +12,8 @@ interface Ticket {
   id:number; subject:string; description:string; category:string; priority:Priority; status:Status;
   customer_id:number|null; printer_id:number|null; assigned_user_id:number|null; created_at:string;
   customer?:{id:number;name:string}|null;assignee?:{id:number;name:string}|null;comments?:Comment[];
+  linked_printers?:Array<{id:number;manufacturer:string;model:string;serial_number:string|null;ip_address:string|null}>;
+  attachments?:Array<{id:number;name:string;mime_type:string;size:number}>;
 }
 type Staff = {id:number;name:string};
 const priorities:Record<Priority,string> = {low:'Baixa',normal:'Normal',high:'Alta',critical:'Crítica'};
@@ -130,6 +132,20 @@ function Detail({id,canReopen,onClose,onChanged}:{
         <h3>{data.subject}</h3>
         <p>{data.description}</p>
         <p><strong>{statuses[data.status]}</strong> · {data.customer?.name??'Interno'} · {priorities[data.priority]}</p>
+        {(data.linked_printers??[]).length>0&&<div className="stock-form">
+          <h3>Equipamentos informados pelo cliente</h3>
+          <ul>{data.linked_printers!.map(p=><li key={p.id}>
+            {p.manufacturer} {p.model} — {p.ip_address??'IP não informado'}
+          </li>)}</ul>
+        </div>}
+        {(data.attachments??[]).length>0&&<div className="stock-form">
+          <h3>Fotos e vídeos do cliente</h3>
+          <p>Arquivos armazenados de forma privada; download sujeito às permissões do chamado.</p>
+          <ul>{data.attachments!.map(file=><li key={file.id}>
+            <a href={`/api/v1/browser/tickets/${id}/attachments/${file.id}`}>{file.name}</a>
+            {' '}({(file.size/1024/1024).toFixed(1)} MB)
+          </li>)}</ul>
+        </div>}
         {allowed.length>0&&<form onSubmit={transition} className="stock-form">
           <h3>Atualizar atendimento</h3>
           <div className="stock-form-grid">
