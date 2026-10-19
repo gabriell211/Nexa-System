@@ -52,6 +52,7 @@ use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
 use App\Http\Controllers\Api\V1\MobileTechnicianAuthController;
 use App\Http\Controllers\Api\V1\MobileTechnicianController;
 use App\Http\Controllers\Api\V1\TicketPartRequestReviewController;
+use App\Http\Controllers\Api\V1\TicketSignatureController;
 use Illuminate\Support\Facades\Route;
 
 // Identical resources, separate authentication transports. Web requests receive
@@ -148,6 +149,12 @@ $registerBackoffice = static function (): void {
         Route::post('/stock/replenishment-plans/{plan}/cancel', [StockReplenishmentPlanController::class, 'cancel']);
     });
 
+    Route::middleware('nexa.roles:owner,admin,manager,supervisor,warehouse')->group(static function (): void {
+        Route::get('/tickets/part-requests', [TicketPartRequestReviewController::class, 'index']);
+        Route::post('/tickets/part-requests/{part}/review', [TicketPartRequestReviewController::class, 'review']);
+        Route::get('/tickets/{ticket}/signature/image', [TicketSignatureController::class, 'download']);
+    });
+
     Route::middleware('nexa.roles:owner,admin,manager,supervisor,technician')->group(static function (): void {
         Route::get('/collector-agents', CollectorAgentController::class);
         Route::get('/collector-health-incidents', CollectorHealthIncidentController::class);
@@ -163,11 +170,6 @@ $registerBackoffice = static function (): void {
         Route::post('/tickets/{ticket}/transition', [ServiceTicketController::class, 'transition']);
         Route::post('/tickets/{ticket}/comments', [ServiceTicketController::class, 'comment']);
         Route::get('/tickets/{ticket}/attachments/{attachment}', [ClientTicketController::class, 'download']);
-    });
-
-    Route::middleware('nexa.roles:owner,admin,manager,supervisor,warehouse')->group(static function (): void {
-        Route::get('/tickets/part-requests', [TicketPartRequestReviewController::class, 'index']);
-        Route::post('/tickets/part-requests/{part}/review', [TicketPartRequestReviewController::class, 'review']);
     });
 
     Route::get('/audit-entries', AuditEntryController::class)->middleware('nexa.roles:owner,admin');
