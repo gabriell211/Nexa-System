@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
 import { ActivationPage } from './pages/ActivationPage';
+import { AdminNavigation } from './components/AdminNavigation';
 import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
 import { StaffPage } from './pages/StaffPage';
 import { InventoryPage } from './pages/InventoryPage';
@@ -140,7 +141,7 @@ function Shell({ token, identity, onLogout }: {
     return <main className="blocked">
       <ShieldCheck size={42} aria-hidden="true" />
       <h1>Área administrativa restrita</h1>
-      <p>Seu perfil não possui acesso ao painel interno. O portal do cliente ainda está em desenvolvimento.</p>
+      <p>Seu perfil não possui acesso ao painel interno. Use o portal do cliente, disponível no endereço fornecido pela prestadora.</p>
       <button className="button primary" onClick={() => void onLogout()}>Sair com segurança</button>
     </main>;
   }
@@ -152,31 +153,8 @@ function Shell({ token, identity, onLogout }: {
         <span className="workspace-icon"><Building2 size={20} aria-hidden="true" /></span>
         <div><small>EMPRESA ATUAL</small><strong>{identity.tenant.name}</strong></div>
       </div>
-      <nav aria-label="Navegação principal" className="sidebar-nav">
-        <span className="nav-caption">OPERAÇÃO</span>
-        <NavLink to="/dashboard" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><LayoutDashboard size={19}/> Visão geral</NavLink>
-        <NavLink to="/clientes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Users size={19}/> Clientes</NavLink>
-        <NavLink to="/contratos" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><FileText size={19}/> Contratos</NavLink>
-        <NavLink to="/parque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><PrinterIcon size={19}/> Parque de impressoras</NavLink>
-        {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
-          <NavLink to="/agentes" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
-            <Activity size={19}/> Agentes de coleta
-          </NavLink>}
-        {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
-          <NavLink to="/chamados" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
-            <ClipboardCheck size={19}/> Chamados
-          </NavLink>}
-        {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
-          <NavLink to="/alertas" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
-            <ShieldAlert size={19}/> Alertas
-          </NavLink>}
-        {canStock && <NavLink to="/estoque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Database size={19}/> Estoque</NavLink>}
-        {canStock && <NavLink to="/reposicoes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ArrowRight size={19}/> Remessas</NavLink>}
-        {canStock && <NavLink to="/suprimentos" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ClipboardList size={19}/> Suprimentos</NavLink>}
-        {canAudit && <><span className="nav-caption nav-secondary">ADMINISTRAÇÃO</span>
-          <NavLink to="/auditoria" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ClipboardList size={19}/> Auditoria</NavLink>
-          <NavLink to="/equipe" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><UserRoundCog size={19}/> Equipe e carteiras</NavLink></>}
-      </nav>
+      <AdminNavigation role={identity.role} canStock={canStock} canAudit={canAudit}/>
+
       <div className="sidebar-footer">
         <div className="profile-circle">{identity.user.name.slice(0, 1).toUpperCase()}</div>
         <div className="profile-text"><strong>{identity.user.name}</strong><small>{identity.role}</small></div>
