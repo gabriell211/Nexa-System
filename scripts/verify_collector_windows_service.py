@@ -16,6 +16,22 @@ bundle = json.loads(config)["bundle"]
 assert bundle["active"] and bundle["targets"] == ["nsis"]
 assert bundle["windows"]["nsis"]["installMode"] == "perMachine"
 assert bundle["windows"]["nsis"]["installerHooks"] == "./windows/installer-hooks.nsh"
+nsis = bundle["windows"]["nsis"]
+assert nsis["installerIcon"] == "./icons/icon.ico"
+assert nsis["uninstallerIcon"] == "./icons/icon.ico"
+assert nsis["sidebarImage"] == "./windows/installer-sidebar.bmp"
+assert nsis["headerImage"] == "./windows/installer-header.bmp"
+assert (root / "collector/console/src-tauri/icons/icon.ico").stat().st_size > 1000
+for filename, width, height in [
+    ("installer-sidebar.bmp", 164, 314),
+    ("installer-header.bmp", 150, 57),
+]:
+    bmp = (root / "collector/console/src-tauri/windows" / filename).read_bytes()
+    import struct
+    assert bmp[:2] == b"BM"
+    assert struct.unpack_from("<ii", bmp, 18) == (width, height)
+    assert struct.unpack_from("<H", bmp, 28)[0] == 24
+
 assert bundle["externalBin"] == ["binaries/nexa-collector-daemon"]
 # The installed graphical executable, not only the MSI/NSIS installer,
 # must carry the UAC elevation requirement. Assert the Tauri build hook.
@@ -45,6 +61,10 @@ for required in [
     "!macro NSIS_HOOK_POSTUNINSTALL",
     "sc.exe",
     "create NexaCollector",
+    "nsExec::ExecToStack",
+    "SCM create returned exit code",
+    "qc NexaCollector",
+    "type= own",
     'binPath= "$\\\"$INSTDIR\\nexa-collector-daemon.exe$\\\" --service"',
     "start= demand",
     'obj= "NT AUTHORITY\\LocalService"',
