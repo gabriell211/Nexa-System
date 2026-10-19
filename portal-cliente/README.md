@@ -9,12 +9,12 @@ Ela **não compartilha páginas nem permissões de administração** com `portal
 |---|---|
 | `/` | Painel: situação do parque, indicadores, gráfico de variação observada nos últimos 30 dias e ranking de impressoras |
 | `/impressoras` | Parque próprio com status cadastral, fabricante, modelo, unidade, departamento, centro de custo, endereço IP, série e último total |
-| `/chamados` | Página informativa: consulta de chamados não habilitada nesta etapa (não exibe dados falsos) |
+| `/chamados` | Listagem, abertura, seleção de até cinco impressoras, descrição e fotos/vídeos privados; detalhes e downloads autorizados |
 | `/contadores` | Últimos contadores acumulados total, monocromático, colorido e digitalizações, com data real da coleta |
 | `/localizacoes` | Unidade, departamento e centro de custo dos equipamentos; nenhum rastreamento geográfico |
 | `/minha-conta` | Usuário atual, prestadora e permissão de leitura |
 
-Todas as páginas consultam **exclusivamente** os endpoints browser:
+O frontend de leitura utiliza os endpoints browser, e a abertura de chamado realiza uma operação POST autenticada:
 `/api/v1/browser/client/printers`, `/api/v1/browser/client/summary`, `/api/v1/browser/client/analytics` e
 `/api/v1/browser/auth/{csrf,login,me,logout}`.
 
@@ -91,3 +91,50 @@ ao cliente; não atesta homologação completa do SaaS para produção.
 A referência visual fornecida define **somente a disposição**, não as cores nem a identidade visual: menu lateral com Painel, Impressoras, Chamados, Relatórios (submenu Contadores/Localizações) e Configurações (Minha conta), cards de situação, gráfico grande de 30 dias e ranking por equipamento. A marca e paleta continuam independentes.
 
 O gráfico **não inventa produção diária**: compara somente amostras válidas dentro do mesmo dia UTC para o mesmo equipamento, descartando lacunas, resets e leituras desconhecidas. Dias sem evidência aparecem em branco, não como zero. Ranking é baseado em diferenças **observadas e parciais** de P&B, nunca em faturamento; um parque maior que 20.000 amostras em 30 dias exige relatório dedicado no backend. A situação 'sem leitura registrada' não afirma falha de comunicação.
+
+## Chamados com fotos e vídeos
+
+O botão **Abrir chamado** segue o fluxo da referência visual: tipo de
+ocorrência, botão Adicionar impressora, descrição e Salvar/Cancelar.
+Tipos: Gaveta quebrada, Impressora atolando papel, Impressora fazendo
+muito barulho, Impressora manchando as folhas, Outro e Solicitação de
+toner reserva.
+
+O cliente pode adicionar **até cinco impressoras do mesmo cliente**,
+quatro anexos, no máximo **50 MiB por arquivo** e **100 MiB no conjunto**.
+São permitidos JPEG, PNG, WebP, MP4, MOV e WebM (MIME e extensão
+verificados no backend). São recusados executáveis, anexos acima do
+limite e impressoras de outra carteira. Os arquivos ficam somente no
+disco `local` privado Laravel (`storage/app/private/tickets`), com
+nomes aleatórios. Não é gerada URL pública nem exposto o caminho físico.
+
+Rotas:
+- `GET /api/v1/browser/client/tickets` — lista paginada, somente
+  clientes atribuídos e tenant autenticado;
+- `POST /api/v1/browser/client/tickets` — `multipart/form-data`,
+  com `category`, `description`, `printer_ids[]` e
+  `attachments[]`; exige sessão, CSRF e limite 5 operações/minuto;
+- `GET /api/v1/browser/client/tickets/{ticket}` — metadados e detalhes;
+- `GET /api/v1/browser/client/tickets/{ticket}/attachments/{attachment}` —
+  download privado somente após nova checagem de autorização;
+- `GET /api/v1/browser/tickets/{ticket}/attachments/{attachment}` —
+  download para equipe técnica autenticada e autorizada.
+
+Chamados criados no portal entram na mesma fila `service_tickets` já
+utilizada pela equipe, com `origin=customer_portal`, estado `triage`
+e auditoria. Técnicos visualizam impressoras e anexos no detalhe do
+painel interno. Nenhum cliente pode mudar prioridade, técnico atribuído,
+estado do ticket, comentários internos ou permissões de outras empresas.
+
+**Operação**: o container API configura PHP `upload_max_filesize=52M`
+e `post_max_size=110M`; nginx do portal tem `client_max_body_size 110m`.
+Para executar PHP diretamente sem Docker, configurar os mesmos limites
+de maneira equivalente. Verificar persistência de `storage/app/private`
+em produção: **o volume local do container API precisa de volume
+persistente ou armazenamento privado externo antes do deployment**.
+Implementar antimalware/quarentena e política de retenção de mídia para
+a homologação de produção; a verificação MIME não substitui varredura
+antivírus ou inspeção humana.
+
+Os arquivos fornecidos são evidências do próprio cliente; o portal
+não converte vídeos, não transcreve material e não torna a mídia pública.
