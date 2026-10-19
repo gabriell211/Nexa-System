@@ -34,6 +34,12 @@ export interface Printer {
   model: string;
   serial_number: string | null;
   ip_address: string | null;
+  asset_number: string | null;
+  mac_address: string | null;
+  firmware_version: string | null;
+  owner_type: 'unknown' | 'customer' | 'provider';
+  connection_type: 'unknown' | 'network' | 'usb';
+  color_capability: 'unknown' | 'mono' | 'color';
   status: string;
   active: boolean;
   customer?: { id: number; name: string };
@@ -46,7 +52,11 @@ export interface Printer {
     received_at: string;
   } | null;
   current_assignment?: { id: number; location_id: number; department_id: number | null;
-    cost_center_id: number | null; assigned_at: string; location?: { id: number; name: string } } | null;
+    cost_center_id: number | null; assigned_at: string;
+    location?: { id: number; name: string };
+    department?: { id: number; name: string } | null;
+    cost_center?: { id: number; code: string; name: string } | null;
+  } | null;
   created_at: string;
   updated_at: string;
 }
