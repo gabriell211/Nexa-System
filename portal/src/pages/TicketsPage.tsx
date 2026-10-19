@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { ClipboardCheck, MessageSquarePlus, Plus, RotateCcw } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
 import type { Page, Printer } from '../types';
@@ -191,13 +192,17 @@ function Detail({id,canReopen,onClose,onChanged}:{
 export function TicketsPage({canReopen}:{canReopen:boolean}) {
   const qc=useQueryClient();
   const [selected,setSelected]=useState<number|null>(null);
-  const [status,setStatus]=useState<Status|'all'>('all');
+  const [filterParams, setFilterParams] = useSearchParams();
+  const requested = filterParams.get('status');
+  const status: Status | 'open' | 'all' = requested === 'open' ? 'open'
+    : requested && Object.hasOwn(statuses, requested) ? requested as Status : 'all';
   const [page,setPage]=useState(1);
+  useEffect(()=>setPage(1),[status]);
   const [notice,setNotice]=useState('');
   const results=useQuery({
     queryKey:['tickets',status,page],
     queryFn:()=>api<Page<Ticket>>('/tickets'+queryString({
-      page,per_page:25,...(status==='all'?{}:{status}),
+      page,per_page:25,...(status==='open'?{open_only:true}:status==='all'?{}:{status}),
     }),null),
   });
   async function refresh(){
@@ -214,8 +219,11 @@ export function TicketsPage({canReopen}:{canReopen:boolean}) {
     {notice&&<p role="status" className="notice success">{notice}</p>}
     <section className="data-card"><div className="stock-field">
       <label htmlFor="ticket-filter">Filtrar estado</label>
-      <select id="ticket-filter" value={status} onChange={e=>{setStatus(e.target.value as Status|'all');setPage(1);}}>
-        <option value="all">Todos</option>{(Object.keys(statuses) as Status[]).map(x=>
+      <select id="ticket-filter" value={status} onChange={e=>{
+        const value=e.target.value;
+        setFilterParams(value==='all'?{}:{status:value});setPage(1);
+      }}>
+        <option value="all">Todos</option><option value="open">Ativos (não encerrados)</option>{(Object.keys(statuses) as Status[]).map(x=>
           <option key={x} value={x}>{statuses[x]}</option>)}
       </select></div>
       {results.isPending?<div role="status">Carregando chamados...</div>:results.error?
