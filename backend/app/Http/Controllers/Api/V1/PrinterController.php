@@ -52,10 +52,12 @@ final class PrinterController extends Controller
 
     public function store(PrinterRequest $request): JsonResponse
     {
+        $data = $request->validated();
+        $this->portfolio->assertCustomer($request, (int) $data['customer_id']);
         $printer = $this->printers->create(
             $request->attributes->get('nexa_tenant'),
             $request->user(),
-            $request->validated()
+            $data
         );
 
         return (new PrinterResource($printer->load(['customer:id,name','currentAssignment.location:id,name'])))->response()->setStatusCode(201);
@@ -72,6 +74,10 @@ final class PrinterController extends Controller
 
     public function update(PrinterRequest $request, int $printer): PrinterResource
     {
+        $authorized = $this->portfolio->printers(
+            $request->attributes->get('nexa_tenant')->printers(), $request
+        )->findOrFail($printer);
+        $this->portfolio->assertCustomer($request, (int) $authorized->customer_id);
         $item = $this->printers->update(
             $request->attributes->get('nexa_tenant'),
             $request->user(),
@@ -84,6 +90,10 @@ final class PrinterController extends Controller
 
     public function destroy(Request $request, int $printer): JsonResponse
     {
+        $authorized = $this->portfolio->printers(
+            $request->attributes->get('nexa_tenant')->printers(), $request
+        )->findOrFail($printer);
+        $this->portfolio->assertCustomer($request, (int) $authorized->customer_id);
         $this->printers->deactivate($request->attributes->get('nexa_tenant'), $request->user(), $printer);
 
         return response()->json(null, 204);
