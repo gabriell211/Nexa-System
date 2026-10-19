@@ -6,13 +6,36 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "plugins": ["expo-secure-store"],
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F3F7FD",
+          "image": "./assets/splash.png",
+          "imageWidth": 220,
+          "resizeMode": "contain"
+        }
+      ]
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.nexasystem.tecnico"
     },
     "android": {
-      "package": "com.nexasystem.tecnico"
+      "package": "com.nexasystem.tecnico",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#071B40"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "icon": "./assets/app-icon.png",
+    "backgroundColor": "#F3F7FD",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F3F7FD"
     }
   }
 }

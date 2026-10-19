@@ -1,0 +1,11 @@
+node_modules/
+.expo/
+.env
+.env.local
+dist/
+android/
+ios/
+assets/app-icon.png
+assets/adaptive-icon.png
+assets/splash.png
+assets/brand-mark.png

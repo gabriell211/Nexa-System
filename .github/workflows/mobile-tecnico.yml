@@ -29,5 +29,7 @@ jobs:
           node-version: '22'
       - name: Install packages
         run: npm install --no-audit --no-fund
+      - name: Verificar ícones e splash da marca
+        run: npm run brand:check
       - name: Verify TypeScript
         run: npm run typecheck

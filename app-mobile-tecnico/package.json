@@ -7,7 +7,10 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/prepare-brand-assets.mjs",
+    "brand:generate": "node scripts/prepare-brand-assets.mjs",
+    "brand:check": "node scripts/verify-brand-assets.mjs"
   },
   "dependencies": {
     "expo": "~54.0.0",
@@ -16,10 +19,12 @@
     "react-native": "0.81.4",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-svg": "15.12.1",
-    "react-native-view-shot": "4.0.3"
+    "react-native-view-shot": "4.0.3",
+    "expo-splash-screen": "~31.0.10"
   },
   "devDependencies": {
     "@types/react": "~19.1.10",
-    "typescript": "~5.9.2"
+    "typescript": "~5.9.2",
+    "sharp": "^0.34.4"
   }
 }

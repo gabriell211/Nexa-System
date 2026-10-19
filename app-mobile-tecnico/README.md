@@ -12,6 +12,17 @@ Módulo Expo/React Native + TypeScript para técnicos de campo. **Implementaçã
 6. Após a manutenção, registra o serviço executado e coleta o nome e a assinatura desenhada na tela pelo responsável do cliente, com aceite explícito.
 7. A API valida o PNG, salva a evidência em armazenamento privado, calcula SHA-256, registra usuário, data, IP e dispositivo, e resolve o chamado na mesma transação. O encerramento administrativo permanece separado.
 
+## Identidade visual
+
+O ícone com o monograma N de circuitos azuis foi extraído da logo aprovada pelo projeto. O arquivo versionado é `assets/brand-mark.webp`. No `npm install`, o script `scripts/prepare-brand-assets.mjs` gera:
+
+- `assets/brand-mark.png` para a interface React Native.
+- `assets/app-icon.png` para o aplicativo instalado.
+- `assets/adaptive-icon.png` para o ícone adaptativo Android.
+- `assets/splash.png` para a tela inicial.
+
+Os PNGs são derivados, não precisam ser versionados; todos podem ser recriados com `npm run brand:generate` e validados por `npm run brand:check`. A paleta corporativa fica centralizada em `src/brand/theme.ts`, e o componente visual da marca em `src/brand/BrandIdentity.tsx`.
+
 ### Desenvolvimento local
 
 Requer Node LTS e Expo SDK 54.
