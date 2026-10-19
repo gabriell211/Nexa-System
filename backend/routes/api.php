@@ -157,6 +157,9 @@ $registerBackoffice = static function (): void {
         Route::get('/tickets/{ticket}/signature/image', [TicketSignatureController::class, 'download']);
     });
 
+    Route::post('/tickets/{ticket}/assign', [ServiceTicketController::class, 'assign'])
+        ->middleware('nexa.roles:owner,admin,manager,supervisor');
+
     Route::middleware('nexa.roles:owner,admin,manager,supervisor,technician')->group(static function (): void {
         Route::get('/collector-agents', CollectorAgentController::class);
         Route::get('/collector-health-incidents', CollectorHealthIncidentController::class);
