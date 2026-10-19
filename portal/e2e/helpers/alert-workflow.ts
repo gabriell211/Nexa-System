@@ -16,17 +16,17 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
     await expect(page.getByText(customer,{exact:true})).toBeVisible();
 
     await page.goto('/parque');
-    await page.getByRole('button',{name:'Nova impressora'}).click();
+    await page.getByRole('button',{name:'Adicionar impressora ao parque'}).click();
     const dialog=page.getByRole('dialog');
     await dialog.getByLabel('Buscar cliente da impressora').fill(customer);
     await dialog.locator('#printer-customer').selectOption({label:customer});
     await dialog.locator('#printer-brand').fill('Kyocera');
     await dialog.locator('#printer-model').fill(model);
     await dialog.getByRole('button',{name:'Salvar impressora'}).click();
-    await expect(page.getByText('Kyocera '+model,{exact:true})).toBeVisible();
-    await expect(page.getByRole('row',{name:new RegExp('Kyocera '+model)})
-      .getByText('Sem leituras registradas')).toBeVisible();
-    await page.getByRole('row',{name:new RegExp('Kyocera '+model)})
+    await expect(page.getByRole('row').filter({hasText:model}).getByRole('button',{name:model})).toBeVisible();
+    await expect(page.getByRole('row').filter({hasText:model})
+      .getByText('Sem leitura',{exact:true})).toBeVisible();
+    await page.getByRole('row').filter({hasText:model})
       .getByRole('button',{name:/Histórico de contadores da impressora/}).click();
     const history=page.getByRole('dialog',{name:/Contadores — Kyocera/});
     await expect(history.getByText('Nenhuma leitura encontrada para o período.')).toBeVisible();
@@ -52,7 +52,7 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
 
     await page.goto('/parque');
     await page.getByLabel('Pesquisar impressoras').fill(model);
-    const printer=page.getByRole('row',{name:new RegExp('Kyocera '+model)});
+    const printer=page.getByRole('row').filter({hasText:model});
     await printer.getByRole('button',{name:/Localização da impressora/}).click();
     const assignment=page.getByRole('dialog');
     await assignment.getByLabel('Buscar unidade da impressora').fill(unit);
