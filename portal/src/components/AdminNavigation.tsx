@@ -47,23 +47,23 @@ export function AdminNavigation({ role, canStock, canAudit }: {
   const canOperate = scopes.includes(role);
   const canCreatePrinters = ['owner','admin','manager'].includes(role);
   const printersGroup: Group = {
-    ...operational[0],
-    items: operational[0].items.map(item => item.label === 'Novas impressoras' && !canCreatePrinters
+    ...operational[0]!,
+    items: operational[0]!.items.map(item => item.label === 'Novas impressoras' && !canCreatePrinters
       ? {label: item.label, title: 'Cadastro de impressoras exige perfil administrativo'} : item),
   };
   const reportsGroup: Group = {
-    ...operational[4],
-    items: operational[4].items.filter(item => canOperate || item.label !== 'Chamados'),
+    ...operational[4]!,
+    items: operational[4]!.items.filter(item => canOperate || item.label !== 'Chamados'),
   };
   const groups: Group[] = [
     printersGroup,
-    operational[1],
-    ...(canOperate ? [operational[2]] : []),
+    operational[1]!,
+    ...(canOperate ? [operational[2]!] : []),
     ...(canStock ? [{ key: 'supplies', title: 'Suprimentos', icon: ClipboardList, items: [
       { label: 'Catálogo e fornecedores', href: '/suprimentos' },
       { label: 'Níveis dos suprimentos', title: 'Sem leitura padronizada de consumíveis homologada para o parque' },
     ] }] : []),
-    ...(canOperate ? [operational[3]] : []),
+    ...(canOperate ? [operational[3]!] : []),
     reportsGroup,
     { key: 'settings', title: 'Configurações', icon: Settings, items: [
       ...(canAudit ? [{ label: 'Contas de usuários', href: '/equipe' }] : []),
