@@ -128,9 +128,11 @@ final class ServiceTicketService
             if ($old==='closed' && !in_array($request->attributes->get('nexa_role'),['owner','admin','manager','supervisor'],true)) {
                 abort(403,'Reabertura de chamado exige supervisão.');
             }
-            if ($old === 'closed' && $ticket->signature()->exists()) {
+            if ($ticket->signature()->exists()
+                && (($old === 'closed' && $new === 'triage')
+                    || ($old === 'resolved' && $new === 'in_progress'))) {
                 throw ValidationException::withMessages([
-                    'status' => 'Atendimento já assinado e encerrado. Abra um novo chamado para preservar o aceite original.',
+                    'status' => 'Atendimento já assinado. Abra um novo chamado para preservar o aceite original.',
                 ]);
             }
             if (array_key_exists('assigned_user_id',$data)) {
