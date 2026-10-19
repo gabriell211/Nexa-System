@@ -133,4 +133,3 @@
   ; Preserve existing encrypted queue, config, client binding and credentials.
   DetailPrint "Dados do Nexa Collector preservados em ProgramData."
 !macroend
-
