@@ -118,9 +118,7 @@ final class ClientFleetAnalyticsController extends Controller
                 $days[$day]['devices_with_evidence']++;
             }
         }
-        uksort($ranking, static fn (int|string $a, int|string $b): int =>
-            bccomp($ranking[$b], $ranking[$a], 0)
-        );
+        uasort($ranking, static fn (string $a, string $b): int => bccomp($b, $a, 0));
         $ids = array_slice(array_keys($ranking), 0, 5);
         $names = DB::table('printers')
             ->where('tenant_id', $tenant->id)
