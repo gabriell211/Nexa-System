@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Safety and packaging assertions; cannot substitute a real SCM field test."""
 from pathlib import Path
+from xml.etree import ElementTree
 
 root = Path(__file__).resolve().parents[1]
 runtime = (root / "collector/daemon/src/windows_service_runtime.rs").read_text(encoding="utf-8")
@@ -16,6 +17,26 @@ assert bundle["active"] and bundle["targets"] == ["nsis"]
 assert bundle["windows"]["nsis"]["installMode"] == "perMachine"
 assert bundle["windows"]["nsis"]["installerHooks"] == "./windows/installer-hooks.nsh"
 assert bundle["externalBin"] == ["binaries/nexa-collector-daemon"]
+# The installed graphical executable, not only the MSI/NSIS installer,
+# must carry the UAC elevation requirement. Assert the Tauri build hook.
+manifest_file = root / "collector/console/src-tauri/windows/admin.manifest"
+manifest_xml = ElementTree.parse(manifest_file)
+required_level = manifest_xml.findall(
+    ".//{urn:schemas-microsoft-com:asm.v3}requestedExecutionLevel"
+)
+assert len(required_level) == 1
+assert required_level[0].get("level") == "requireAdministrator"
+assert required_level[0].get("uiAccess") == "false"
+common_controls = manifest_xml.findall(
+    ".//{urn:schemas-microsoft-com:asm.v1}assemblyIdentity"
+)
+assert any(item.get("name") == "Microsoft.Windows.Common-Controls"
+           and item.get("version") == "6.0.0.0" for item in common_controls)
+build = (root / "collector/console/src-tauri/build.rs").read_text(encoding="utf-8")
+assert 'include_str!("windows/admin.manifest")' in build
+assert 'tauri_build::WindowsAttributes::new().app_manifest(' in build
+assert '#[cfg(windows)]' in build and '#[cfg(not(windows))]' in build
+
 installer = (root / "collector/console/src-tauri/windows/installer-hooks.nsh").read_text(encoding="utf-8")
 for required in [
     "!macro NSIS_HOOK_PREINSTALL",
@@ -35,12 +56,18 @@ for required in [
     "S-1-5-18",
     "S-1-5-32-544",
     "/inheritance:r",
+    "$COMMONPROGRAMDATA",
     "config.json",
     "File /oname=config.json",
     "IfFileExists",
     "Abort",
 ]:
     assert required.lower() in installer.lower(), f"Missing NSIS installer control: {required}"
+# Only the actual NSIS known folder is accepted, not the literal unrecognized
+# $COMMONAPPDATA path that caused the customer installation to fail.
+assert "$COMMONAPPDATA" not in "\\n".join(
+    line for line in installer.splitlines() if not line.lstrip().startswith(";")
+)
 for forbidden in ["powershell.exe", "Start-Service", "sc.exe start NexaCollector", "start= auto", "RMDir /r", "Delete $COMMONAPPDATA"]:
     assert forbidden.lower() not in installer.lower(), f"Unsafe installer action: {forbidden}"
 assert "NSIS_HOOK_PREUNINSTALL" in installer
@@ -79,4 +106,4 @@ assert 'recovery_guard.circuit_open(Utc::now())' in daemon
 assert 'pub mod recovery_guard;' in (root / 'collector/core/src/lib.rs').read_text()
 assert "macos_launchd_mode: bool," in daemon
 assert 'windows-service = "=0.8.1"' in manifest
-print("Nexa NSIS Windows service packaging static checks passed (not a real install test)")
+print("Nexa NSIS Windows ACL and admin-only executable manifest checks passed (not a real install test)")
