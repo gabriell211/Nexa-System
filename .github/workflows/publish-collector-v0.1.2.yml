@@ -1,0 +1,112 @@
+name: Publish Nexa Collector v0.1.2
+
+on:
+  workflow_run:
+    workflows: ["Nexa validation"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: nexa-collector-v0.1.2-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Release v0.1.2 verified installer packages
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_branch == 'main'
+          runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: v0.1.2
+      SOURCE_RUN: ${{ github.event.workflow_run.id }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Checkout verified main
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Verify source and approved workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jq -r .version collector/console/src-tauri/tauri.conf.json)" = "0.1.2"
+          grep -Fxq 'version = "0.1.2"' collector/Cargo.toml
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN")"
+          test "$(jq -r .name <<<"$run")" = "Nexa validation"
+          test "$(jq -r .conclusion <<<"$run")" = success
+          test "$(jq -r .event <<<"$run")" = push
+          test "$(jq -r .head_branch <<<"$run")" = main
+          test "$(jq -r .head_sha <<<"$run")" = "$SOURCE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$SOURCE_SHA"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag already exists. Not replacing a published release."
+            exit 1
+          fi
+
+      - name: Download five native installer packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p incoming/{windows,linux,intel,arm} release
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-windows-setup-unsigned -D incoming/windows
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-linux-x64-deb-rpm-unsigned -D incoming/linux
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-macos-x86_64-pkg-unsigned -D incoming/intel
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-macos-arm64-pkg-unsigned -D incoming/arm
+          stage_one() {
+            local folder="$1" pattern="$2" dest="$3" count=0 file='' match
+            while IFS= read -r -d '' match; do
+              count=$((count + 1))
+              file="$match"
+            done < <(find "$folder" -type f -name "$pattern" -print0)
+            if test "$count" -ne 1; then
+              echo "::error::Expected one package matching $pattern in $folder, got $count"
+              exit 1
+            fi
+            cp -- "$file" "release/$dest"
+            test "$(stat -c%s "release/$dest")" -gt 102400
+          }
+          stage_one incoming/windows '*-setup.exe' 'Nexa.Collector_0.1.2_x64-setup.exe'
+          stage_one incoming/linux '*.deb' 'Nexa-Collector-0.1.2-linux-x64.deb'
+          stage_one incoming/linux '*.rpm' 'Nexa-Collector-0.1.2-linux-x64.rpm'
+          stage_one incoming/intel '*.pkg' 'NexaCollector-0.1.2-x86_64-unsigned.pkg'
+          stage_one incoming/arm '*.pkg' 'NexaCollector-0.1.2-arm64-unsigned.pkg'
+          (cd release && sha256sum -- *.exe *.deb *.rpm *.pkg > SHA256SUMS.txt)
+          test "$(wc -l < release/SHA256SUMS.txt)" -eq 5
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat > RELEASE_NOTES.md <<'NOTES'
+          ## Nexa Collector v0.1.2 — instalador Windows com diagnóstico do serviço e identidade visual
+
+          **Windows x64:** o instalador usa ProgramData protegido, agora exibe o código e a mensagem do Windows se o registro do serviço falhar, e tem ícone Nexa e imagens próprias de apresentação. O executável continua exigindo UAC. O CI agora executa instalação real em Windows com inspeção de serviço LocalService, permissões e desinstalação.
+
+          **Linux/macOS:** pacotes Linux x64 DEB/RPM, macOS Intel e Apple Silicon com Console Tauri e daemon Rust.
+
+          **Atenção:** prévia técnica não assinada e ainda não homologada fisicamente. O serviço Windows permanece na conta isolada LocalService, nunca com privilégios de administrador. A ativação não é automática: é necessário um ID e token únicos gerados no portal Nexa e configuração administrativa. O assistente gráfico de vinculação ainda não está disponível; a chave do cliente continua exigindo provisionamento administrativo. Não desative SmartScreen/Gatekeeper nem compartilhe segredos em logs ou tickets.
+
+          **Origem validada:** commit SOURCE_SHA_PLACEHOLDER, execução de CI RUN_PLACEHOLDER. Os cinco pacotes acompanham SHA256SUMS.txt.
+          NOTES
+          sed -i "s/SOURCE_SHA_PLACEHOLDER/$SOURCE_SHA/g; s/RUN_PLACEHOLDER/$SOURCE_RUN/g" RELEASE_NOTES.md
+
+      - name: Publish verified prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" --title "Nexa Collector v0.1.2 — Windows UAC e instalação corrigida" \
+            --notes-file RELEASE_NOTES.md --prerelease
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          test "$(jq -r .draft <<<"$release")" = false
+          test "$(jq -r .prerelease <<<"$release")" = true
+          test "$(jq -r .target_commitish <<<"$release")" = "$SOURCE_SHA"
+          test "$(jq -r '.assets | length' <<<"$release")" -eq 6
