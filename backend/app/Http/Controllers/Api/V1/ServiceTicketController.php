@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Requests\ServiceTicketAssignmentRequest;
 use App\Http\Requests\ServiceTicketRequest;
 use App\Http\Requests\ServiceTicketTransitionRequest;
 use App\Http\Requests\ServiceTicketCommentRequest;
@@ -61,6 +62,13 @@ final class ServiceTicketController extends Controller
     {
         $record=$this->tickets->create($request,$request->validated());
         return (new ServiceTicketResource($record))->response()->setStatusCode(201);
+    }
+
+    public function assign(ServiceTicketAssignmentRequest $request, int $ticket): ServiceTicketResource
+    {
+        return new ServiceTicketResource(
+            $this->tickets->assign($request, $ticket, $request->validated())
+        );
     }
 
     public function transition(ServiceTicketTransitionRequest $request,int $ticket): ServiceTicketResource

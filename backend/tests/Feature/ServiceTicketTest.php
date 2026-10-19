@@ -105,7 +105,7 @@ final class ServiceTicketTest extends TestCase
     public function test_transitions_require_assignee_and_prevent_close_before_resolution(): void
     {
         extract($this->fixture());
-        $id=$this->create($token,$customer->id,$printer->id)->assertCreated()->json('data.id');
+        $id=$this->create($token,null,null)->assertCreated()->json('data.id');
         $this->withToken($token)->postJson("/api/v1/tickets/{$id}/transition",[
             'status'=>'in_progress','reason'=>'Atendimento iniciado por técnico',
         ])->assertUnprocessable();
@@ -196,7 +196,7 @@ final class ServiceTicketTest extends TestCase
     public function test_technician_cannot_reopen_closed_ticket_but_supervisor_can(): void
     {
         extract($this->fixture());
-        $id=$this->create($token,$customer->id,$printer->id,$tech->id)->assertCreated()->json('data.id');
+        $id=$this->create($token,null,null,$tech->id)->assertCreated()->json('data.id');
         foreach (['in_progress','resolved','closed'] as $status) {
             $this->withToken($token)->postJson("/api/v1/tickets/{$id}/transition",[
                 'status'=>$status,'reason'=>'Passagem legítima de estado',

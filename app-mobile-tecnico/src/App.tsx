@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, Pressable,
+  ActivityIndicator, Alert, AppState, FlatList, KeyboardAvoidingView, Platform, Pressable,
   ScrollView, StatusBar, StyleSheet, Switch, Text, TextInput, View,
   type GestureResponderEvent,
 } from 'react-native';
@@ -72,10 +72,15 @@ export default function App(): React.JSX.Element {
   useEffect(()=>{
     if (!authenticated) return;
     let alive=true;
-    api.tickets().then(result=>{if(alive){
+    const reload=()=>api.tickets().then(result=>{if(alive){
       setList(result.data);setTicketPage(1);setLastTicketPage(result.meta?.last_page??1);
     }}).catch(e=>{if(alive)setError(String(e instanceof Error ? e.message:e))});
-    return ()=>{alive=false};
+    void reload();
+    // A dispatch may happen while the technician has the app in background.
+    const subscription=AppState.addEventListener('change',state=>{
+      if(state==='active')void reload();
+    });
+    return ()=>{alive=false;subscription.remove()};
   },[authenticated]);
 
   async function run(work:()=>Promise<void>):Promise<void> {
@@ -206,7 +211,7 @@ export default function App(): React.JSX.Element {
       <View style={{flex:1}}>
         <Text style={styles.eyebrow}>PAINEL DO TÉCNICO</Text>
         <Text style={styles.title}>Meus chamados</Text>
-        <Text style={styles.subtitle}>Atendimentos atribuídos à sua conta</Text>
+        <Text style={styles.subtitle}>Atendimentos atribuídos à sua conta. Atualização ao voltar ao aplicativo.</Text>
       </View>
       <View style={styles.countBubble}>
         <Text style={styles.countNumber}>{list.length}</Text>

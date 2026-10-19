@@ -107,6 +107,8 @@ function Detail({id,canReopen,onClose,onChanged}:{
   const [status,setStatus]=useState<Status|null>(null);
   const [assignee,setAssignee]=useState('');
   const [reason,setReason]=useState('');
+  const [dispatchTech,setDispatchTech]=useState('');
+  const [dispatchReason,setDispatchReason]=useState('');
   const [message,setMessage]=useState('');
   const [internal,setInternal]=useState(true);
   const ticket=useQuery({
@@ -129,6 +131,18 @@ function Detail({id,canReopen,onClose,onChanged}:{
       await qc.invalidateQueries({queryKey:['ticket-detail',id]});await onChanged();
     },
   });
+  const assignment=useMutation({
+    mutationFn:()=>api<{data:Ticket}>('/tickets/'+id+'/assign',null,{
+      method:'POST',body:JSON.stringify({
+        assigned_user_id:Number(dispatchTech),reason:dispatchReason.trim(),
+      }),
+    }),
+    onSuccess:async()=>{
+      setDispatchReason('');setDispatchTech('');
+      await qc.invalidateQueries({queryKey:['ticket-detail',id]});
+      await onChanged();
+    },
+  });
   const comment=useMutation({
     mutationFn:()=>api('/tickets/'+id+'/comments',null,{
       method:'POST',body:JSON.stringify({body:message.trim(),internal}),
@@ -136,7 +150,13 @@ function Detail({id,canReopen,onClose,onChanged}:{
     onSuccess:async()=>{setMessage('');await qc.invalidateQueries({queryKey:['ticket-detail',id]});},
   });
   const data=ticket.data?.data;
-  const allowed=data?options[data.status].filter(x=>x!=='triage'||canReopen):[];
+  const allowed=data?options[data.status].filter(next=>{
+    if((next==='triage'||next==='closed')&&!canReopen)return false;
+    if(data.customer_id!==null&&!data.signature&&(next==='resolved'||next==='closed'))return false;
+    if(data.signature&&next==='in_progress')return false;
+    if(data.signature&&next==='triage')return false;
+    return true;
+  }):[];
   function transition(e:FormEvent<HTMLFormElement>){e.preventDefault();mutation.mutate();}
   function sendComment(e:FormEvent<HTMLFormElement>){e.preventDefault();comment.mutate();}
   return <div className="modal-overlay">
@@ -147,7 +167,8 @@ function Detail({id,canReopen,onClose,onChanged}:{
         <p className="notice error" role="alert">{readableError(ticket.error)}</p>:data&&<>
         <h3>{data.subject}</h3>
         <p>{data.description}</p>
-        <p><strong>{statuses[data.status]}</strong> · {data.customer?.name??'Interno'} · {priorities[data.priority]}</p>
+        <p><strong>{statuses[data.status]}</strong> · {data.customer?.name??'Interno'} · {priorities[data.priority]}
+          · Técnico: {data.assignee?.name??'Não designado'}</p>
         {(data.linked_printers??[]).length>0&&<div className="stock-form">
           <h3>Equipamentos informados pelo cliente</h3>
           <ul>{data.linked_printers!.map(p=><li key={p.id}>
@@ -177,6 +198,32 @@ function Detail({id,canReopen,onClose,onChanged}:{
             {part.quantity}x {part.item?.name??'Item'} — {part.status}
           </li>)}</ul>
         </div>}
+        {canReopen&&['triage','unassigned','pending'].includes(data.status)&&
+          <form className="stock-form" onSubmit={event=>{event.preventDefault();assignment.mutate();}}>
+            <h3>Encaminhar para o técnico</h3>
+            <p>O chamado ficará pendente e aparecerá no aplicativo do profissional escolhido.</p>
+            <div className="stock-form-grid">
+              <div className="stock-field"><label htmlFor="ticket-dispatch-tech">Técnico</label>
+                <select id="ticket-dispatch-tech" required value={dispatchTech} onChange={e=>setDispatchTech(e.target.value)}>
+                  <option value="">Selecione um técnico ativo</option>
+                  {(staff.data?.data??[]).filter(person=>person.role==='technician').map(person=>
+                    <option key={person.id} value={person.id}>{person.name}</option>)}
+                </select></div>
+              <div className="stock-field"><label htmlFor="ticket-dispatch-reason">Justificativa da designação</label>
+                <input id="ticket-dispatch-reason" value={dispatchReason} required minLength={5} maxLength={500}
+                  onChange={e=>setDispatchReason(e.target.value)} placeholder="Ex.: visita técnica agendada"/></div>
+            </div>
+            {assignment.error&&<p role="alert" className="notice error">{readableError(assignment.error)}</p>}
+            <button className="button primary" type="submit" disabled={assignment.isPending||!dispatchTech||dispatchReason.trim().length<5}>
+              Designar técnico
+            </button>
+          </form>}
+        {data.customer_id!==null&&!data.signature&&<p className="notice">
+          A conclusão requer assinatura do cliente no Nexa Técnico. Após o aceite, o administrativo poderá encerrar.
+        </p>}
+        {data.signature&&data.status==='resolved'&&<p className="notice success">
+          Aceite registrado. O chamado pode ser encerrado pela administração.
+        </p>}
         {allowed.length>0&&<form onSubmit={transition} className="stock-form">
           <h3>Atualizar atendimento</h3>
           <div className="stock-form-grid">
@@ -185,11 +232,12 @@ function Detail({id,canReopen,onClose,onChanged}:{
                 <option value="">Selecionar</option>
                 {allowed.map(x=><option key={x} value={x}>{statuses[x]}</option>)}
               </select></div>
-            <div className="stock-field"><label htmlFor="ticket-assignee">Responsável</label>
+            {canReopen&&<div className="stock-field"><label htmlFor="ticket-assignee">Responsável</label>
               <select id="ticket-assignee" value={assignee} onChange={e=>setAssignee(e.target.value)}>
                 <option value="">Manter atual</option>
-                {(staff.data?.data??[]).map(user=><option key={user.id} value={user.id}>{user.name}</option>)}
-              </select></div>
+                {(staff.data?.data??[]).filter(user=>user.role==='technician')
+                  .map(user=><option key={user.id} value={user.id}>{user.name}</option>)}
+              </select></div>}
             <div className="stock-field"><label htmlFor="ticket-reason">Motivo</label>
               <input id="ticket-reason" required minLength={5} maxLength={500}
                 value={reason} onChange={e=>setReason(e.target.value)}/></div>
@@ -260,10 +308,10 @@ export function TicketsPage({canReopen}:{canReopen:boolean}) {
         <p role="alert" className="notice error">{readableError(results.error)}</p>:
         results.data.data.length===0?<p>Nenhum chamado encontrado.</p>:
         <div className="table-wrap"><table><thead><tr>
-          <th>Número</th><th>Assunto</th><th>Cliente</th><th>Prioridade</th><th>Estado</th><th>Ação</th>
+          <th>Número</th><th>Assunto</th><th>Cliente</th><th>Técnico</th><th>Prioridade</th><th>Estado</th><th>Ação</th>
         </tr></thead><tbody>{results.data.data.map(t=><tr key={t.id}>
           <td>#{t.id}</td><td><strong>{t.subject}</strong></td><td>{t.customer?.name??'Interno'}</td>
-          <td>{priorities[t.priority]}</td><td>{statuses[t.status]}</td>
+          <td>{t.assignee?.name??'Não designado'}</td><td>{priorities[t.priority]}</td><td>{statuses[t.status]}</td>
           <td><button type="button" className="button ghost" onClick={()=>setSelected(t.id)}>Detalhes</button></td>
         </tr>)}</tbody></table></div>}
       {results.data&&<div className="pagination"><span>Página {current} de {last}</span>

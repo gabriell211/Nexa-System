@@ -20,7 +20,7 @@ final class ServiceTicketOperatorController extends Controller
         ]);
         $tenant=$request->attributes->get('nexa_tenant');
         $query=$tenant->users()->where('users.active',true)
-            ->wherePivotIn('role',['owner','admin','manager','supervisor','technician'])
+            ->wherePivotIn('role',['technician'])
             ->select('users.id','users.name');
         if (!$this->portfolio->hasFullAccess($request)) {
             $query->where('users.id',$request->user()->id);

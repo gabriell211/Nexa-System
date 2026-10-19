@@ -67,7 +67,7 @@ final class ClientTicketController extends Controller
     private function output(ServiceTicket $ticket): array
     {
         $ticket->loadMissing(['linkedPrinters:id,tenant_id,customer_id,manufacturer,model,serial_number,ip_address',
-            'attachments:id,tenant_id,ticket_id,original_name,mime_type,bytes,created_at']);
+            'attachments:id,tenant_id,ticket_id,original_name,mime_type,bytes,created_at','signature']);
         return [
             'id' => $ticket->id,
             'subject' => $ticket->subject,
@@ -77,6 +77,11 @@ final class ClientTicketController extends Controller
             'status' => $ticket->status,
             'created_at' => $ticket->created_at?->toIso8601String(),
             'updated_at' => $ticket->updated_at?->toIso8601String(),
+            'signature' => $ticket->signature ? [
+                'signer_name' => $ticket->signature->signer_name,
+                'service_summary' => $ticket->signature->service_summary,
+                'signed_at' => $ticket->signature->signed_at?->toIso8601String(),
+            ] : null,
             'printers' => $ticket->linkedPrinters->filter(static fn ($printer): bool =>
                 (int) $printer->tenant_id === (int) $ticket->tenant_id &&
                 (int) $printer->customer_id === (int) $ticket->customer_id
@@ -110,7 +115,7 @@ final class ClientTicketController extends Controller
             ->when(!app(\App\Services\CustomerAccountPermissions::class)->forRequest($request)['view_other_tickets'],
                 fn ($query) => $query->where('opened_by_user_id', $request->user()->id))
             ->with(['linkedPrinters:id,tenant_id,customer_id,manufacturer,model,serial_number,ip_address',
-                'attachments:id,tenant_id,ticket_id,original_name,mime_type,bytes,created_at'])
+                'attachments:id,tenant_id,ticket_id,original_name,mime_type,bytes,created_at','signature'])
             ->orderByDesc('id')->paginate($data['per_page'] ?? 20);
         return response()->json([
             'data' => $result->getCollection()->map(fn ($ticket): array => $this->output($ticket)),

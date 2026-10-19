@@ -72,4 +72,5 @@ export interface ClientTicket {
     serial_number: string | null; ip_address: string | null;
   }>;
   attachments: Array<{ id: number; name: string; mime_type: string; size: number }>;
+  signature: { signer_name: string; service_summary: string; signed_at: string | null } | null;
 }
