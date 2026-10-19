@@ -7,14 +7,15 @@ Ela **não compartilha páginas nem permissões de administração** com `portal
 
 | Caminho | Função |
 |---|---|
-| `/` | Visão geral: total de equipamentos, ativos no cadastro, equipamentos com leituras e clientes vinculados |
+| `/` | Painel: situação do parque, indicadores, gráfico de variação observada nos últimos 30 dias e ranking de impressoras |
 | `/impressoras` | Parque próprio com status cadastral, fabricante, modelo, unidade, departamento, centro de custo, endereço IP, série e último total |
+| `/chamados` | Página informativa: consulta de chamados não habilitada nesta etapa (não exibe dados falsos) |
 | `/contadores` | Últimos contadores acumulados total, monocromático, colorido e digitalizações, com data real da coleta |
 | `/localizacoes` | Unidade, departamento e centro de custo dos equipamentos; nenhum rastreamento geográfico |
 | `/minha-conta` | Usuário atual, prestadora e permissão de leitura |
 
 Todas as páginas consultam **exclusivamente** os endpoints browser:
-`/api/v1/browser/client/printers`, `/api/v1/browser/client/summary` e
+`/api/v1/browser/client/printers`, `/api/v1/browser/client/summary`, `/api/v1/browser/client/analytics` e
 `/api/v1/browser/auth/{csrf,login,me,logout}`.
 
 O backend:
@@ -84,3 +85,9 @@ valida também a imagem Docker e o nginx.
 
 Nexa é um sistema em desenvolvimento. Este PR entrega a consulta do parque
 ao cliente; não atesta homologação completa do SaaS para produção.
+
+## Organização do painel
+
+A referência visual fornecida define **somente a disposição**, não as cores nem a identidade visual: menu lateral com Painel, Impressoras, Chamados, Relatórios (submenu Contadores/Localizações) e Configurações (Minha conta), cards de situação, gráfico grande de 30 dias e ranking por equipamento. A marca e paleta continuam independentes.
+
+O gráfico **não inventa produção diária**: compara somente amostras válidas dentro do mesmo dia UTC para o mesmo equipamento, descartando lacunas, resets e leituras desconhecidas. Dias sem evidência aparecem em branco, não como zero. Ranking é baseado em diferenças **observadas e parciais** de P&B, nunca em faturamento; um parque maior que 20.000 amostras em 30 dias exige relatório dedicado no backend. A situação 'sem leitura registrada' não afirma falha de comunicação.
