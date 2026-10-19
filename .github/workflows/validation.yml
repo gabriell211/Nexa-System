@@ -235,6 +235,34 @@ jobs:
       - name: Typecheck and bundle
         run: npm run build
 
+  customer-portal:
+    name: Customer portal TypeScript build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal-cliente
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: portal-cliente/package-lock.json
+      - name: Install isolated customer portal dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck and build customer-only pages
+        run: npm run build
+
+  customer-portal-image:
+    name: Customer portal container and nginx checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build standalone customer portal container
+        run: docker build -t nexa-portal-cliente:test ./portal-cliente
+      - name: Verify nginx customer frontend
+        run: docker run --rm --add-host api:127.0.0.1 nexa-portal-cliente:test nginx -t
+
   collector-console-ui:
     name: Collector console TypeScript build
     runs-on: ubuntu-latest
