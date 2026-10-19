@@ -3,6 +3,13 @@
 ; Embedded in the native NSIS installer. No PowerShell required.
 !define NEXA_DEFAULT_CONFIG "${__FILEDIR__}\..\..\..\config.example.json"
 
+; Record only the failure stage for unattended installer diagnostics.
+!macro NEXA_DIAGNOSTIC CODE
+  FileOpen $9 "$TEMP\NexaCollector-installer-error.txt" w
+  FileWrite $9 "${CODE}$\r$\n"
+  FileClose $9
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
   ; Refuse to install over a service that is running, marked for deletion,
   ; or cannot be inspected. Never overwrite a customer's existing binding.
@@ -12,12 +19,14 @@
   ${If} $0 == "0"
     MessageBox MB_ICONSTOP|MB_OK "O servico NexaCollector ja existe. Desinstale a versao anterior primeiro. Os dados do cliente serao preservados." /SD IDOK
     SetErrorLevel 10
+    !insertmacro NEXA_DIAGNOSTIC 10
     IfSilent 0 +2
       Quit
     Abort "Existing NexaCollector Windows service"
   ${ElseIf} $0 != "1060"
     MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel verificar o servico NexaCollector (codigo $0).$\r$\n$1" /SD IDOK
     SetErrorLevel 11
+    !insertmacro NEXA_DIAGNOSTIC 11
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector service state unavailable"
@@ -28,6 +37,7 @@
   IfFileExists "$INSTDIR\nexa-collector-daemon.exe" nexa_daemon_ok 0
     MessageBox MB_ICONSTOP|MB_OK "O executavel do servico nao foi incluido no instalador." /SD IDOK
     SetErrorLevel 12
+    !insertmacro NEXA_DIAGNOSTIC 12
     IfSilent 0 +2
       Quit
     Abort "Missing Nexa Collector daemon"
@@ -47,6 +57,7 @@
   StrCmp $0 "0" +3
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger a pasta do Nexa Collector." /SD IDOK
     SetErrorLevel 13
+    !insertmacro NEXA_DIAGNOSTIC 13
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector root ACL failure"
@@ -56,6 +67,7 @@
   StrCmp $0 "0" +3
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger a fila local de medicoes." /SD IDOK
     SetErrorLevel 14
+    !insertmacro NEXA_DIAGNOSTIC 14
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector data ACL failure"
@@ -64,6 +76,7 @@
   StrCmp $0 "0" +3
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger as credenciais do agente." /SD IDOK
     SetErrorLevel 15
+    !insertmacro NEXA_DIAGNOSTIC 15
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector credential ACL failure"
@@ -86,6 +99,7 @@
     DetailPrint "SCM create returned exit code $0: $1"
     MessageBox MB_ICONSTOP|MB_OK "Falha ao registrar NexaCollector (codigo $0).$\r$\n$1$\r$\nDados do cliente preservados. Informe o codigo de erro ao suporte." /SD IDOK
     SetErrorLevel 16
+    !insertmacro NEXA_DIAGNOSTIC 16
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector registration failure"
@@ -100,6 +114,7 @@
     ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $2
     MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel verificar o servico registrado (codigo $0).$\r$\n$1" /SD IDOK
     SetErrorLevel 17
+    !insertmacro NEXA_DIAGNOSTIC 17
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector registration verification failure"
@@ -110,6 +125,7 @@
     ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $1
     MessageBox MB_ICONSTOP|MB_OK "Falha ao configurar recuperacao do servico." /SD IDOK
     SetErrorLevel 18
+    !insertmacro NEXA_DIAGNOSTIC 18
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector recovery failure"
@@ -120,6 +136,7 @@
     ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $1
     MessageBox MB_ICONSTOP|MB_OK "Falha ao configurar recuperacao do servico." /SD IDOK
     SetErrorLevel 19
+    !insertmacro NEXA_DIAGNOSTIC 19
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector failure flag error"
@@ -137,6 +154,7 @@
   ${ElseIf} $0 != "0"
     MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel verificar o servico NexaCollector (codigo $0).$\r$\n$1" /SD IDOK
     SetErrorLevel 20
+    !insertmacro NEXA_DIAGNOSTIC 20
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector uninstall service state unavailable"
@@ -147,6 +165,7 @@
   StrCmp $1 "0" nexa_uninstall_no_service
     MessageBox MB_ICONSTOP|MB_OK "O servico NexaCollector nao pode ser removido. Feche o agente e tente novamente." /SD IDOK
     SetErrorLevel 21
+    !insertmacro NEXA_DIAGNOSTIC 21
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector service removal failed"
