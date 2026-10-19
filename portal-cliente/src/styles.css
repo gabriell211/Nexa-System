@@ -74,3 +74,44 @@
 .tickets-info p{color:#738399;max-width:620px}
 @media(max-width:1050px){.client-layout{grid-template-columns:210px minmax(0,1fr)}.fleet-status-panel{gap:13px}.fleet-health-group{gap:13px;justify-content:flex-start}}
 @media(max-width:740px){.client-layout{display:block}.customer-sidebar{min-height:0;padding:12px 0 0}.customer-sidebar .brand{padding:0 15px 12px}.customer-sidebar .client-navigation{display:flex;flex-direction:row;overflow-x:auto;align-items:flex-start;gap:0;padding:0 8px}.customer-sidebar .nav-link{white-space:nowrap;padding:10px 9px;border-left:0;border-bottom:3px solid transparent;font-size:.78rem}.customer-sidebar .nav-link.active{border-bottom-color:#3269ba;border-left:0}.customer-sidebar .nav-group-button{font-size:.78rem}.customer-sidebar .nav-submenu{position:absolute;z-index:5;box-shadow:0 7px 17px #153b641b;background:#fff}.customer-sidebar .nav-submenu .nav-link{padding-left:12px}.client-layout .content{padding:15px}.reference-page-title{margin-bottom:12px}.fleet-status-panel{padding:15px}.fleet-health-group{justify-content:flex-start}.health-indicator{min-width:125px}.health-symbol{width:43px;height:43px}.report-heading{align-items:flex-start}}
+
+
+/* Customer ticket list, photo/video attachments and accessible creation dialog. */
+.client-tickets-panel .ticket-toolbar{padding:15px 17px;display:flex;justify-content:flex-start;gap:12px}
+.ticket-overlay{position:fixed;inset:0;background:#101928b0;z-index:100;display:flex;align-items:center;justify-content:center;padding:24px}
+.ticket-dialog{display:flex;flex-direction:column;background:#fff;border-radius:11px;box-shadow:0 22px 80px #09142a4a;width:min(100%,790px);max-height:min(94vh,900px);overflow:hidden;color:#243951}
+.ticket-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:18px;background:#e5ebf5;border-bottom:1px solid #d8e1ed;padding:15px 20px}
+.ticket-dialog-header h2{font-size:1.25rem;font-weight:750;color:#244f99}
+.icon-button{display:inline-flex;align-items:center;justify-content:center;background:transparent;border:0;color:#476484;padding:6px;border-radius:7px}
+.icon-button:hover{background:#e7edf5}
+.ticket-form{padding:23px 25px;display:grid;grid-template-columns:137px minmax(0,1fr);gap:12px 15px;align-items:start;overflow:auto}
+.ticket-form>label:not(.ticket-file-upload){font-size:.86rem;font-weight:650;color:#425672;text-align:right;padding-top:11px}
+.ticket-form>label span{color:#a62f38}
+.ticket-form>select,.ticket-form>textarea{min-width:0;width:100%;background:#fff;color:#26425f;border:1px solid #cad5e5;border-radius:6px;padding:10px 12px}
+.ticket-form>textarea{resize:vertical;min-height:108px;line-height:1.45}
+.ticket-picker{min-width:0;display:grid;gap:9px}
+.ticket-picker-search{display:flex;align-items:center;gap:9px;border:1px solid #d5dfeb;padding:8px 10px;border-radius:6px;color:#7a8ca2}
+.ticket-picker-search input{border:0;width:100%;min-width:0;outline:0}
+.ticket-picker-action{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.ticket-picker-action select{min-width:160px;max-width:100%;flex:1;border:1px solid #ccd8e8;border-radius:6px;background:#fff;color:#203d61;padding:10px}
+.ticket-picker-action .button{white-space:nowrap}
+.ticket-chosen table{min-width:460px;font-size:.8rem}
+.ticket-chosen th,.ticket-chosen td{padding:8px 10px}
+.ticket-file-upload{grid-column:2;display:flex;align-items:center;gap:10px;border:1px dashed #90add1;background:#f8fbff;border-radius:9px;padding:16px;flex-wrap:wrap;color:#506988;font-size:.83rem}
+.ticket-file-upload input{width:100%;max-width:100%;font-size:.83rem}
+.ticket-file-hint{grid-column:2;color:#697d92;font-size:.75rem;line-height:1.5}
+.ticket-attachments-list{grid-column:2;list-style:none;padding:0;margin:0;display:grid;gap:5px}
+.ticket-attachments-list li{display:flex;align-items:center;gap:10px;border:1px solid #e5eaf1;background:#fbfcfe;border-radius:6px;padding:8px 11px;font-size:.8rem}
+.ticket-attachments-list li span{overflow-wrap:anywhere;flex:1}
+.ticket-attachments-list li a{color:#1f59aa;text-decoration:underline;overflow-wrap:anywhere;flex:1}
+.ticket-attachments-list li button{margin-left:auto}
+.ticket-form>.error{grid-column:2;margin:0}
+.ticket-form-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:9px;padding:16px 0 0;border-top:1px solid #e9eef4}
+.ticket-detail-content{overflow-y:auto;display:grid;gap:10px;padding:25px}
+.ticket-detail-content h3{margin-top:12px;font-size:1rem}
+.ticket-detail-content p{font-size:.88rem}
+.ticket-detail-content .ticket-description{white-space:pre-wrap;background:#f5f7fa;padding:12px;border-radius:7px}
+.ticket-detail-content .ticket-attachments-list{grid-column:1}
+.ticket-dialog>.ticket-form-actions{padding:15px 24px}
+.ticket-form .button:disabled{opacity:.55;cursor:not-allowed}
+@media(max-width:690px){.ticket-overlay{padding:8px}.ticket-dialog{max-height:98vh}.ticket-dialog-header{padding:12px 14px}.ticket-form{display:block;padding:16px}.ticket-form>label:not(.ticket-file-upload){display:block;text-align:left;padding:0;margin:13px 0 7px}.ticket-form>select,.ticket-form>textarea{width:100%}.ticket-file-upload{margin-top:6px}.ticket-file-hint{display:block;margin:6px 0 12px}.ticket-form .error{margin:12px 0}.ticket-form-actions{margin-top:14px}.ticket-picker-action{align-items:stretch}}
