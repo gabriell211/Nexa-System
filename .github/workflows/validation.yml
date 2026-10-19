@@ -582,6 +582,18 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $diagnostic = Join-Path $env:TEMP 'NexaCollector-installer-error.txt'
+          Remove-Item -LiteralPath $diagnostic -ErrorAction SilentlyContinue
+          function Show-InstallerDiagnostics {
+            if (Test-Path -LiteralPath $diagnostic) {
+              Write-Host "NSIS failure stage: $((Get-Content -Raw -LiteralPath $diagnostic).Trim())"
+            } else {
+              Write-Host 'No Nexa NSIS hook failure stage was recorded.'
+            }
+            $programData = Join-Path $env:ProgramData 'NexaCollector'
+            Write-Host "ProgramData directory exists: $(Test-Path -LiteralPath $programData)"
+            Write-Host "Daemon installed: $(Test-Path -LiteralPath (Join-Path $env:ProgramFiles 'Nexa Collector\nexa-collector-daemon.exe'))"
+          }
           $exe = @(Get-ChildItem 'collector/target/release/bundle/nsis' -Filter '*-setup.exe' -File)
           if ($exe.Count -ne 1) { throw "Expected one NSIS installer, got $($exe.Count)" }
           $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -593,11 +605,15 @@ jobs:
           # the installer process itself and bound execution to two minutes.
           $result = Start-Process -FilePath $exe[0].FullName -ArgumentList '/S' -PassThru
           if (-not $result.WaitForExit(120000)) {
+            Show-InstallerDiagnostics
             & "$env:WINDIR\System32\sc.exe" qc NexaCollector
             Stop-Process -Id $result.Id -Force -ErrorAction SilentlyContinue
             throw 'NSIS installer timed out: possible modal SCM error dialog; inspect user screenshot'
           }
-          if ($result.ExitCode -ne 0) { throw "Installer failed with exit code $($result.ExitCode)" }
+          if ($result.ExitCode -ne 0) {
+            Show-InstallerDiagnostics
+            throw "Installer failed with exit code $($result.ExitCode)"
+          }
           $installed = Get-CimInstance Win32_Service -Filter "Name = 'NexaCollector'"
           if ($null -eq $installed) { throw 'NexaCollector service was not registered by NSIS' }
           if ($installed.StartName -notmatch 'LocalService|LOCAL SERVICE') {
