@@ -19,7 +19,7 @@ interface Ticket {
   signature?:{signer_name:string;service_summary:string;signed_at:string;sha256:string}|null;
   part_requests?:Array<{id:number;quantity:number;status:string;item:{name:string;sku:string}|null}>;
 }
-type Staff = {id:number;name:string};
+type Staff = {id:number;name:string;role?:string};
 const priorities:Record<Priority,string> = {low:'Baixa',normal:'Normal',high:'Alta',critical:'Crítica'};
 const statuses:Record<Status,string> = {
   triage:'Triagem',unassigned:'Sem responsável',pending:'Pendente',
@@ -87,7 +87,8 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
       <div className="stock-field"><label htmlFor="ticket-new-assignee">Técnico responsável</label>
         <select id="ticket-new-assignee" value={assignee} onChange={e=>setAssignee(e.target.value)}>
           <option value="">Atribuir depois</option>
-          {(staff.data?.data??[]).map(user=><option key={user.id} value={user.id}>{user.name}</option>)}
+          {(staff.data?.data??[]).filter(user=>user.role==='technician')
+            .map(user=><option key={user.id} value={user.id}>{user.name}</option>)}
         </select></div>
     </div>
     <div className="stock-field"><label htmlFor="ticket-description">Descrição</label>

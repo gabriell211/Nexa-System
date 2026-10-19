@@ -1,0 +1,33 @@
+name: Nexa Técnico Mobile Validation
+
+on:
+  push:
+    paths:
+      - 'app-mobile-tecnico/**'
+      - '.github/workflows/mobile-tecnico.yml'
+  pull_request:
+    paths:
+      - 'app-mobile-tecnico/**'
+      - '.github/workflows/mobile-tecnico.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  mobile-typecheck:
+    name: Expo TypeScript check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app-mobile-tecnico
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install packages
+        run: npm install --no-audit --no-fund
+      - name: Verify TypeScript
+        run: npm run typecheck
