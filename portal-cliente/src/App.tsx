@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
-import { Activity, Building2, LayoutDashboard, LogOut, MapPin, Printer, UserRound } from 'lucide-react';
+import { Activity, Building2, ChevronDown, ClipboardList, FileText, LayoutDashboard, LogOut, MapPin, Printer, Settings, UserRound } from 'lucide-react';
 import { ApiError, api, readableError, resetCsrf } from './api';
 import type { ClientIdentity, Credentials } from './types';
 import { OverviewPage } from './pages/OverviewPage';
@@ -9,6 +9,7 @@ import { PrintersPage } from './pages/PrintersPage';
 import { CountersPage } from './pages/CountersPage';
 import { LocationsPage } from './pages/LocationsPage';
 import { AccountPage } from './pages/AccountPage';
+import { TicketsPage } from './pages/TicketsPage';
 
 function Login({ onLogin }: { onLogin: (values: Credentials) => Promise<void> }) {
   const [credentials, setCredentials] = useState<Credentials>({ email: '', password: '', tenant: '' });
@@ -51,26 +52,44 @@ function Login({ onLogin }: { onLogin: (values: Credentials) => Promise<void> })
   </main>;
 }
 
-const links = [
-  { to: '/', label: 'Visão geral', icon: LayoutDashboard },
-  { to: '/impressoras', label: 'Minhas impressoras', icon: Printer },
-  { to: '/contadores', label: 'Contadores', icon: Activity },
-  { to: '/localizacoes', label: 'Localizações', icon: MapPin },
-  { to: '/minha-conta', label: 'Minha conta', icon: UserRound },
-];
-
 function Shell({ identity, onLogout }: { identity: ClientIdentity; onLogout: () => Promise<void> }) {
-  return <div className="layout">
-    <aside className="sidebar">
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const nav = (to: string, label: string, Icon: typeof LayoutDashboard) =>
+    <NavLink end={to === '/'} to={to} className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
+      <Icon size={18} aria-hidden="true"/>{label}
+    </NavLink>;
+
+  return <div className="layout client-layout">
+    <aside className="sidebar customer-sidebar">
       <Link className="brand" to="/"><span className="brand-icon">N</span><span>NEXA <strong>CLIENTE</strong></span></Link>
-      <div className="sidebar-company"><Building2 size={19}/><span><small>PORTAL DE ACESSO</small><strong>{identity.tenant.name}</strong></span></div>
-      <nav aria-label="Navegação do cliente">{links.map(({ to, label, icon: Icon }) =>
-        <NavLink key={to} end={to === '/'} to={to}
-          className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
-          <Icon size={19} aria-hidden="true"/>{label}
-        </NavLink>)}</nav>
+      <div className="sidebar-company"><Building2 size={18}/><span><small>EMPRESA VINCULADA</small><strong>{identity.tenant.name}</strong></span></div>
+      <nav aria-label="Navegação do cliente" className="client-navigation">
+        {nav('/', 'Painel', LayoutDashboard)}
+        {nav('/impressoras', 'Impressoras', Printer)}
+        {nav('/chamados', 'Chamados', ClipboardList)}
+        <div className="nav-group">
+          <button type="button" className="nav-link nav-group-button" aria-expanded={reportsOpen}
+            aria-controls="customer-reports-links" onClick={() => setReportsOpen(v => !v)}>
+            <FileText size={18} aria-hidden="true"/> Relatórios <ChevronDown className={reportsOpen ? 'expanded' : ''} size={16}/>
+          </button>
+          {reportsOpen && <div id="customer-reports-links" className="nav-submenu">
+            {nav('/contadores', 'Contadores', Activity)}
+            {nav('/localizacoes', 'Localizações', MapPin)}
+          </div>}
+        </div>
+        <div className="nav-group">
+          <button type="button" className="nav-link nav-group-button" aria-expanded={settingsOpen}
+            aria-controls="customer-settings-links" onClick={() => setSettingsOpen(v => !v)}>
+            <Settings size={18} aria-hidden="true"/> Configurações <ChevronDown className={settingsOpen ? 'expanded' : ''} size={16}/>
+          </button>
+          {settingsOpen && <div id="customer-settings-links" className="nav-submenu">
+            {nav('/minha-conta', 'Minha conta', UserRound)}
+          </div>}
+        </div>
+      </nav>
       <div className="sidebar-user"><div className="avatar">{identity.user.name.charAt(0).toUpperCase()}</div>
-        <span><strong>{identity.user.name}</strong><small>Consulta autorizada</small></span></div>
+        <span><strong>{identity.user.name}</strong><small>Cliente — somente leitura</small></span></div>
     </aside>
     <div className="workspace">
       <header className="topbar"><span>Portal do cliente <span className="crumb">/</span> {identity.tenant.name}</span>
@@ -78,6 +97,7 @@ function Shell({ identity, onLogout }: { identity: ClientIdentity; onLogout: () 
       <main className="content"><Routes>
         <Route path="/" element={<OverviewPage/>}/>
         <Route path="/impressoras" element={<PrintersPage/>}/>
+        <Route path="/chamados" element={<TicketsPage/>}/>
         <Route path="/contadores" element={<CountersPage/>}/>
         <Route path="/localizacoes" element={<LocationsPage/>}/>
         <Route path="/minha-conta" element={<AccountPage identity={identity}/>}/>
