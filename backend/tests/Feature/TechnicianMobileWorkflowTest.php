@@ -239,6 +239,12 @@ final class TechnicianMobileWorkflowTest extends TestCase
         $this->assertDatabaseCount('service_ticket_signatures',1);
 
         Auth::forgetGuards();
+        $this->withToken($mobileToken)->getJson('/api/v1/mobile/tickets')
+            ->assertOk()->assertJsonCount(0,'data');
+
+        // A web customer session is distinct from the technician's native
+        // app context; Sanctum prioritizes web sessions during test requests.
+        Auth::forgetGuards();
         $this->postJson('/api/v1/browser/auth/login',[
             'email'=>$client->email,'password'=>'strong-password-123',
             'tenant'=>$tenant->slug,
@@ -246,9 +252,5 @@ final class TechnicianMobileWorkflowTest extends TestCase
         $this->getJson('/api/v1/browser/client/tickets/'.$ticket->id)
             ->assertOk()->assertJsonPath('data.status','closed')
             ->assertJsonPath('data.signature.signer_name','Responsável pelo equipamento');
-
-        Auth::forgetGuards();
-        $this->withToken($mobileToken)->getJson('/api/v1/mobile/tickets')
-            ->assertOk()->assertJsonCount(0,'data');
     }
 }
