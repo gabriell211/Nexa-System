@@ -4,6 +4,7 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-rou
 import { Activity, Building2, ChevronDown, ClipboardList, FileText, LayoutDashboard, LogOut, MapPin, Printer, Settings, UserRound } from 'lucide-react';
 import { ApiError, api, readableError, resetCsrf } from './api';
 import type { ClientIdentity, Credentials } from './types';
+import { ActivationPage } from './pages/ActivationPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { PrintersPage } from './pages/PrintersPage';
 import { CountersPage } from './pages/CountersPage';
@@ -146,6 +147,8 @@ export function App() {
       setLogoutError('Não foi possível encerrar a sessão: ' + readableError(error));
     }
   }
+
+  if (window.location.pathname === '/ativar') return <ActivationPage />;
 
   if (me.isPending) return <main className="boot-state" role="status">Carregando portal do cliente...</main>;
   if (me.error) return <main className="blocked"><p className="error" role="alert">{readableError(me.error)}</p>
