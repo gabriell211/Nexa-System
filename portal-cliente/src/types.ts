@@ -53,3 +53,20 @@ export interface ClientAnalytics {
   not_billing_approved: boolean;
   coverage: string;
 }
+
+export type TicketType = 'gaveta_quebrada' | 'painel_atolado' | 'barulho' | 'manchas' | 'toner_reserva' | 'outro';
+export interface ClientTicket {
+  id: number;
+  subject: string;
+  description: string;
+  category: TicketType;
+  status: string;
+  priority: string;
+  created_at: string | null;
+  updated_at: string | null;
+  printers: Array<{
+    id: number; manufacturer: string; model: string;
+    serial_number: string | null; ip_address: string | null;
+  }>;
+  attachments: Array<{ id: number; name: string; mime_type: string; size: number }>;
+}
