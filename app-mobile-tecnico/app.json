@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Nexa Técnico",
+    "slug": "nexa-tecnico",
+    "scheme": "nexa-tecnico",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-secure-store"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.nexasystem.tecnico"
+    },
+    "android": {
+      "package": "com.nexasystem.tecnico"
+    }
+  }
+}
