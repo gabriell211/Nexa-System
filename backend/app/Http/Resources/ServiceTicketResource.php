@@ -31,6 +31,20 @@ final class ServiceTicketResource extends JsonResource
                     'mime_type'=>$file->mime_type,
                     'size'=>(int)$file->bytes,
                 ])),
+            'signature'=>$this->whenLoaded('signature', fn () => $this->signature ? [
+                'signer_name'=>$this->signature->signer_name,
+                'service_summary'=>$this->signature->service_summary,
+                'sha256'=>$this->signature->sha256,
+                'signed_at'=>$this->signature->signed_at,
+            ] : null),
+            'part_requests'=>$this->whenLoaded('partRequests', fn () =>
+                $this->partRequests->map(static fn ($part): array => [
+                    'id'=>$part->id,'stock_item_id'=>$part->stock_item_id,
+                    'quantity'=>$part->quantity,'reason'=>$part->reason,
+                    'status'=>$part->status,'created_at'=>$part->created_at,
+                    'item'=>$part->relationLoaded('stockItem')
+                        ? $part->stockItem?->only(['id','sku','name']) : null,
+                ])),
             'comments'=>$this->whenLoaded('comments', fn () => $this->comments->map(
                 static fn ($comment): array => [
                     'id'=>$comment->id,'body'=>$comment->body,'internal'=>(bool)$comment->internal,

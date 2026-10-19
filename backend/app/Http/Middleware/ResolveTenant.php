@@ -20,6 +20,10 @@ final class ResolveTenant
         }
 
         $abilities = $user->currentAccessToken()->abilities;
+        if (in_array('mobile:technician', $abilities, true)
+            && !$request->is('api/v1/mobile/*')) {
+            abort(403, 'Este token só pode acessar a API mobile.');
+        }
         $tenantAbilities = array_values(array_filter(
             $abilities,
             static fn (string $ability): bool => str_starts_with($ability, 'tenant:')
