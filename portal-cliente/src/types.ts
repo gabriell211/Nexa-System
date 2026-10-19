@@ -42,3 +42,14 @@ export interface Reading extends Meter {
   id: number;
   received_at: string | null;
 }
+
+export interface ClientAnalytics {
+  period: { start: string; end: string; timezone: string };
+  days: Array<{ date: string; mono: string | null; total: string | null; devices_with_evidence: number }>;
+  top_printers: Array<{
+    id: number; name: string; ip_address: string | null; mono_observed_delta: string;
+  }>;
+  method: 'observed_same_day_differences_only';
+  not_billing_approved: boolean;
+  coverage: string;
+}
