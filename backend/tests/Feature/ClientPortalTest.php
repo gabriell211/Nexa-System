@@ -129,6 +129,58 @@ final class ClientPortalTest extends TestCase
             ->assertJsonPath('printers', 0)->assertJsonPath('assigned_customers', 0);
     }
 
+
+    public function test_daily_graph_and_ranking_use_only_actual_same_day_readings_of_assigned_printers(): void
+    {
+        $tenant = Tenant::query()->create(['name' => 'Provider', 'slug' => 'provider']);
+        $one = $tenant->customers()->create(['name' => 'Alpha']);
+        $two = $tenant->customers()->create(['name' => 'Beta']);
+        $mine = $tenant->printers()->create([
+            'customer_id' => $one->id, 'manufacturer' => 'HP', 'model' => 'Local',
+        ]);
+        $hidden = $tenant->printers()->create([
+            'customer_id' => $two->id, 'manufacturer' => 'Xerox', 'model' => 'Private',
+        ]);
+        $yesterday = now('UTC')->subDay()->format('Y-m-d');
+        $today = now('UTC')->format('Y-m-d');
+        $samples = [
+            [$mine->id, $yesterday.' 10:00:00', '100', '450'],
+            [$mine->id, $yesterday.' 11:00:00', '125', '490'],
+            [$hidden->id, $yesterday.' 10:00:00', '500', '500'],
+            [$hidden->id, $yesterday.' 11:00:00', '999', '999'],
+            // Counter reset inside a day MUST NOT produce a fake positive delta.
+            [$mine->id, $today.' 00:00:00', '300', '900'],
+            [$mine->id, $today.' 00:01:00', '200', '800'],
+        ];
+        foreach ($samples as [$id, $date, $mono, $total]) {
+            DB::table('printer_readings')->insert([
+                'tenant_id' => $tenant->id, 'printer_id' => $id,
+                'sample_id' => (string) Str::uuid(),
+                'meter_mono' => $mono, 'meter_total' => $total,
+                'meter_color' => null, 'meter_scan' => null,
+                'collected_at' => $date, 'received_at' => $date,
+            ]);
+        }
+        $client = $this->member($tenant);
+        $this->grant($client, $tenant, $one->id);
+        $this->login($client, $tenant);
+        $this->getJson('/api/v1/browser/client/analytics')->assertOk()
+            ->assertJsonCount(30, 'days')
+            ->assertJsonPath('days.28.mono', '25')
+            ->assertJsonPath('days.28.total', '40')
+            ->assertJsonPath('days.29.mono', null)
+            ->assertJsonPath('days.29.total', null)
+            ->assertJsonPath('top_printers.0.id', $mine->id)
+            ->assertJsonPath('top_printers.0.mono_observed_delta', '25')
+            ->assertJsonCount(1, 'top_printers')
+            ->assertJsonPath('not_billing_approved', true);
+        DB::table('customer_user_access')->where('user_id', $client->id)->delete();
+        $this->getJson('/api/v1/browser/client/analytics')->assertOk()
+            ->assertJsonCount(0, 'top_printers')
+            ->assertJsonPath('days.28.mono', null);
+    }
+
+
     public function test_unauthenticated_and_internal_roles_cannot_query_customer_endpoint(): void
     {
         $this->getJson('/api/v1/browser/client/printers')->assertUnauthorized();
