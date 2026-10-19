@@ -16,6 +16,8 @@ services:
   api:
     build: ./backend
     restart: unless-stopped
+    volumes:
+      - customer-ticket-media:/app/storage/app/private
     ports:
       - "127.0.0.1:8080:8080"
     env_file: ./backend/.env
@@ -62,3 +64,4 @@ services:
 
 volumes:
   postgres-data:
+  customer-ticket-media:
