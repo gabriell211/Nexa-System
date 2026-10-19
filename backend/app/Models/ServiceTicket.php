@@ -27,4 +27,9 @@ final class ServiceTicket extends Model
     public function assignee(): BelongsTo { return $this->belongsTo(User::class, 'assigned_user_id'); }
     public function opener(): BelongsTo { return $this->belongsTo(User::class, 'opened_by_user_id'); }
     public function comments(): HasMany { return $this->hasMany(ServiceTicketComment::class, 'ticket_id'); }
+    public function attachments(): HasMany { return $this->hasMany(ServiceTicketAttachment::class, 'ticket_id'); }
+    public function linkedPrinters(): \Illuminate\Database\Eloquent\Relations\BelongsToMany
+    {
+        return $this->belongsToMany(Printer::class, 'service_ticket_printers', 'ticket_id', 'printer_id');
+    }
 }

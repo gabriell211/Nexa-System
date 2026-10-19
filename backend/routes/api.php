@@ -17,6 +17,9 @@ use App\Http\Controllers\Api\V1\CustomerDepartmentController;
 use App\Http\Controllers\Api\V1\CustomerLocationController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\PrinterController;
+use App\Http\Controllers\Api\V1\ClientPrinterController;
+use App\Http\Controllers\Api\V1\ClientFleetSummaryController;
+use App\Http\Controllers\Api\V1\ClientFleetAnalyticsController;
 use App\Http\Controllers\Api\V1\PrinterReadingHistoryController;
 use App\Http\Controllers\Api\V1\PrinterProductionPreviewController;
 use App\Http\Controllers\Api\V1\PrinterAssignmentController;
@@ -41,6 +44,7 @@ use App\Http\Controllers\Api\V1\StockPurchaseReceiptMatchController;
 use App\Http\Controllers\Api\V1\StockSupplierReturnController;
 use App\Http\Controllers\Api\V1\StockSupplierReplacementController;
 use App\Http\Controllers\Api\V1\ServiceTicketController;
+use App\Http\Controllers\Api\V1\ClientTicketController;
 use App\Http\Controllers\Api\V1\PrinterAlertController;
 use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
 use Illuminate\Support\Facades\Route;
@@ -153,6 +157,7 @@ $registerBackoffice = static function (): void {
         Route::post('/tickets', [ServiceTicketController::class, 'store']);
         Route::post('/tickets/{ticket}/transition', [ServiceTicketController::class, 'transition']);
         Route::post('/tickets/{ticket}/comments', [ServiceTicketController::class, 'comment']);
+        Route::get('/tickets/{ticket}/attachments/{attachment}', [ClientTicketController::class, 'download']);
     });
 
     Route::get('/audit-entries', AuditEntryController::class)->middleware('nexa.roles:owner,admin');
@@ -190,6 +195,20 @@ Route::prefix('v1')->group(function () use ($registerBackoffice): void {
                 static function () use ($registerBackoffice): void {
                     Route::get('/auth/me', [AuthController::class, 'me']);
                     Route::post('/auth/logout', [BrowserAuthController::class, 'logout']);
+                    // Read-only customer portal; never expose the backoffice to this role.
+                    Route::get('/client/printers', ClientPrinterController::class)
+                        ->middleware('nexa.roles:customer');
+                    Route::get('/client/summary', ClientFleetSummaryController::class)
+                        ->middleware('nexa.roles:customer');
+                    Route::get('/client/analytics', ClientFleetAnalyticsController::class)
+                        ->middleware('nexa.roles:customer');
+                    Route::middleware('nexa.roles:customer')->group(static function (): void {
+                        Route::get('/client/tickets', [ClientTicketController::class, 'index']);
+                        Route::post('/client/tickets', [ClientTicketController::class, 'store'])
+                            ->middleware('throttle:5,1,client-tickets:');
+                        Route::get('/client/tickets/{ticket}', [ClientTicketController::class, 'show']);
+                        Route::get('/client/tickets/{ticket}/attachments/{attachment}', [ClientTicketController::class, 'download']);
+                    });
                     $registerBackoffice();
                 }
             );

@@ -16,6 +16,8 @@ services:
   api:
     build: ./backend
     restart: unless-stopped
+    volumes:
+      - customer-ticket-media:/app/storage/app/private
     ports:
       - "127.0.0.1:8080:8080"
     env_file: ./backend/.env
@@ -51,5 +53,15 @@ services:
       api:
         condition: service_healthy
 
+  portal-cliente:
+    build: ./portal-cliente
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8082:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   postgres-data:
+  customer-ticket-media:

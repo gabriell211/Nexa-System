@@ -1,6 +1,7 @@
 FROM php:8.4-cli-alpine
 RUN apk add --no-cache postgresql-dev sqlite-dev libzip-dev oniguruma-dev icu-dev unzip git \
     && docker-php-ext-install pdo_pgsql pdo_sqlite bcmath pcntl intl mbstring zip
+RUN printf 'upload_max_filesize=52M\npost_max_size=110M\nmax_file_uploads=8\n' > /usr/local/etc/php/conf.d/customer-ticket-media.ini
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 COPY composer.json composer.lock ./
