@@ -1,10 +1,8 @@
 import { useDeferredValue, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import {
-  Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList, ClipboardCheck,
-  Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon, ShieldAlert,
-  Search, ShieldCheck, Trash2, Users, X, MapPin, History, UserRoundCog, FileText, KeyRound,
+  Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, Database, LogOut, Pencil, Plus, Printer as PrinterIcon, Search, ShieldCheck, Trash2, Users, X, MapPin, History, KeyRound
 } from 'lucide-react';
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
 import { ActivationPage } from './pages/ActivationPage';
