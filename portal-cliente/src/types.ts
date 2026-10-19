@@ -3,6 +3,7 @@ export interface ClientIdentity {
   tenant: { id: number; name: string; slug?: string };
   role: string;
   customer_scope: 'all' | 'assigned';
+  customer_permissions?: { view_reports: boolean; view_other_tickets: boolean };
 }
 export interface Credentials { email: string; password: string; tenant: string }
 export interface Page<T> {
