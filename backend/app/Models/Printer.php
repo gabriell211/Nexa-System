@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 final class Printer extends Model
 {
-    protected $fillable = ['customer_id', 'manufacturer', 'model', 'serial_number', 'ip_address', 'status', 'active'];
+    protected $fillable = ['customer_id', 'manufacturer', 'model', 'serial_number', 'ip_address', 'status', 'active', 'asset_number', 'mac_address', 'firmware_version', 'owner_type', 'connection_type', 'color_capability'];
     protected function casts(): array { return ['active' => 'boolean']; }
     public function customer(): BelongsTo { return $this->belongsTo(Customer::class); }
     public function tenant(): BelongsTo { return $this->belongsTo(Tenant::class); }
