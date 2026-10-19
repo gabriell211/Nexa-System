@@ -559,6 +559,43 @@ jobs:
       - name: Bundle unsigned NSIS Setup.exe with Tauri 2
         working-directory: collector/console
         run: npm run tauri build -- --bundles nsis
+      - name: Confirm admin UAC manifest embedded in Windows executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $executables = @(Get-ChildItem -Path 'collector/target/release' -Filter 'nexa-collector-console.exe' -File)
+          if ($executables.Count -ne 1) { throw "Expected one Nexa Collector console executable, found $($executables.Count)" }
+          $toolRoot = "${env:ProgramFiles(x86)}\\Windows Kits\\10\\bin"
+          $tools = @(Get-ChildItem -Path $toolRoot -Filter 'mt.exe' -Recurse -File |
+            Where-Object { $_.FullName -match '\\\\x64\\\\mt\\.exe
+        with:
+          name: nexa-collector-windows-setup-unsigned
+          path: collector/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  collector:
+    name: Rust collector core tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: collector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test collector core and daemon
+        run: cargo test --locked -p nexa-collector-core -p nexa-collector-daemon
+ } | Sort-Object FullName)
+          if ($tools.Count -eq 0) { throw 'Windows SDK manifest inspector mt.exe not found' }
+          $manifestPath = Join-Path $env:RUNNER_TEMP 'collector-embedded.manifest'
+          & $tools[-1].FullName '-nologo' "-inputresource:$($executables[0].FullName);#1" "-out:$manifestPath"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read UAC manifest from the built executable' }
+          [xml]$manifest = Get-Content -Raw -LiteralPath $manifestPath
+          $requested = $manifest.SelectSingleNode("//*[local-name()='requestedExecutionLevel']")
+          if ($null -eq $requested -or $requested.GetAttribute('level') -ne 'requireAdministrator') {
+            throw 'The release executable does not require Windows administrator privileges'
+          }
+          if ($requested.GetAttribute('uiAccess') -ne 'false') { throw 'Unexpected Windows UIAccess' }
       - name: Upload Windows installer for review
         uses: actions/upload-artifact@v4
         with:
