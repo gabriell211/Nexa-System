@@ -51,6 +51,44 @@ final class ServiceTicketService
         });
     }
 
+    /**
+     * Dispatch is deliberately independent of lifecycle transitions: the
+     * administrator can assign an incoming customer ticket without starting it.
+     */
+    public function assign(Request $request, int $id, array $data): ServiceTicket
+    {
+        if (!in_array($request->attributes->get('nexa_role'), ['owner','admin','manager','supervisor'], true)) {
+            abort(403, 'Somente a coordenação pode atribuir chamados.');
+        }
+        $tenant = $request->attributes->get('nexa_tenant');
+        $actor = $request->user();
+        return DB::transaction(function () use ($request, $tenant, $actor, $id, $data): ServiceTicket {
+            $ticket = ServiceTicket::query()->where('tenant_id', $tenant->id)
+                ->lockForUpdate()->findOrFail($id);
+            $this->assertVisible($request, $ticket);
+            if (!in_array($ticket->status, ['triage', 'unassigned', 'pending'], true)) {
+                throw ValidationException::withMessages([
+                    'status' => 'Reatribuição de atendimento iniciado ou finalizado exige novo fluxo de triagem.',
+                ]);
+            }
+            $technicianId = (int) $data['assigned_user_id'];
+            $this->validateAssignee($tenant, $technicianId);
+            if ((int) $ticket->assigned_user_id === $technicianId && $ticket->status === 'pending') {
+                return $this->detail($ticket);
+            }
+            $before = $ticket->only(['status', 'assigned_user_id']);
+            $ticket->assigned_user_id = $technicianId;
+            $ticket->status = 'pending';
+            $ticket->save();
+            $this->audit->write($tenant, $actor, 'ticket.assigned', $ticket, $before, [
+                'status' => $ticket->status,
+                'assigned_user_id' => $ticket->assigned_user_id,
+                'reason' => $data['reason'],
+            ]);
+            return $this->detail($ticket);
+        }, 3);
+    }
+
     public function transition(Request $request,int $id,array $data): ServiceTicket
     {
         $tenant=$request->attributes->get('nexa_tenant');
@@ -77,8 +115,23 @@ final class ServiceTicketService
                     'status'=>'Transição de estado não permitida.',
                 ]);
             }
+            if ($new === 'closed' && !in_array($request->attributes->get('nexa_role'),
+                ['owner','admin','manager','supervisor'], true)) {
+                abort(403, 'O encerramento exige validação administrativa.');
+            }
+            if ($ticket->customer_id !== null && in_array($new, ['resolved','closed'], true)
+                && !$ticket->signature()->exists()) {
+                throw ValidationException::withMessages([
+                    'signature' => 'O cliente precisa assinar o atendimento no aplicativo técnico antes da conclusão.',
+                ]);
+            }
             if ($old==='closed' && !in_array($request->attributes->get('nexa_role'),['owner','admin','manager','supervisor'],true)) {
                 abort(403,'Reabertura de chamado exige supervisão.');
+            }
+            if ($old === 'closed' && $ticket->signature()->exists()) {
+                throw ValidationException::withMessages([
+                    'status' => 'Atendimento já assinado e encerrado. Abra um novo chamado para preservar o aceite original.',
+                ]);
             }
             if (array_key_exists('assigned_user_id',$data)) {
                 $this->validateAssignee($tenant,$data['assigned_user_id']===null?null:(int)$data['assigned_user_id']);
@@ -179,9 +232,9 @@ final class ServiceTicketService
     private function validateAssignee(Tenant $tenant,?int $assigneeId): void
     {
         if ($assigneeId!==null && !$tenant->users()->whereKey($assigneeId)
-            ->where('users.active',true)->wherePivotIn('role',['owner','admin','manager','supervisor','technician'])
+            ->where('users.active',true)->wherePivotIn('role',['technician'])
             ->exists()) {
-            throw ValidationException::withMessages(['assigned_user_id'=>'Responsável não pertence à equipe de atendimento.']);
+            throw ValidationException::withMessages(['assigned_user_id'=>'Responsável deve ser um técnico ativo desta empresa.']);
         }
     }
 }
