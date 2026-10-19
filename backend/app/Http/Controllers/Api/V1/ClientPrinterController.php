@@ -57,7 +57,7 @@ final class ClientPrinterController extends Controller
                     $match->whereRaw('LOWER(manufacturer) LIKE ?', [$like])
                         ->orWhereRaw('LOWER(model) LIKE ?', [$like])
                         ->orWhereRaw('LOWER(serial_number) LIKE ?', [$like])
-                        ->orWhereRaw('LOWER(ip_address) LIKE ?', [$like]);
+                        ->orWhereRaw('LOWER(CAST(ip_address AS TEXT)) LIKE ?', [$like]);
                 });
             })
             ->orderBy('printers.id', 'desc')
