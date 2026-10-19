@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Link2, Plus, ShieldAlert, X } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
 import type { Page, Printer } from '../types';
@@ -185,8 +186,12 @@ function AlertDetail({id,onClose,onChanged}:{id:number;onClose:()=>void;onChange
 
 export function AlertsPage() {
   const qc=useQueryClient();
-  const [status,setStatus]=useState<Status|'all'>('all');
+  const [filterParams, setFilterParams] = useSearchParams();
+  const requested = filterParams.get('status');
+  const status: Status | 'all' = requested && Object.hasOwn(statusLabels, requested)
+    ? requested as Status : 'all';
   const [page,setPage]=useState(1);
+  useEffect(()=>setPage(1),[status]);
   const [selected,setSelected]=useState<number|null>(null);
   const [notice,setNotice]=useState('');
   const listing=useQuery({
@@ -211,7 +216,7 @@ export function AlertsPage() {
       <div className="table-tools">
         <div className="stock-field"><label htmlFor="alert-filter">Filtrar por estado</label>
           <select id="alert-filter" value={status} onChange={e=>{
-            setStatus(e.target.value as Status|'all');setPage(1);
+            const next = e.target.value;setFilterParams(next==='all'?{}:{status:next});setPage(1);
           }}>
             <option value="all">Todos</option>
             {(Object.keys(statusLabels) as Status[]).map(item=>
