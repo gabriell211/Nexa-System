@@ -21,6 +21,8 @@ final class ClientPrinterResource extends JsonResource
             'model' => $this->model,
             'serial_number' => $this->serial_number,
             'ip_address' => $this->ip_address,
+            'asset_number' => $this->asset_number,
+            'owner_type' => $this->owner_type,
             'status' => $this->status,
             'active' => (bool) $this->active,
             'location' => $assignment?->location?->name,
