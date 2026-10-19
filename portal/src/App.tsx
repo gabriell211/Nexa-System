@@ -7,6 +7,7 @@ import {
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
 import { ActivationPage } from './pages/ActivationPage';
 import { AdminNavigation } from './components/AdminNavigation';
+import { BrandLogo } from './components/BrandLogo';
 import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
 import { StaffPage } from './pages/StaffPage';
 import { InventoryPage } from './pages/InventoryPage';
@@ -87,7 +88,7 @@ function Login({ onLogin }: { onLogin: (values: Credentials) => Promise<void> })
 
   return <main className="auth-page">
     <div className="auth-panel">
-      <div className="brand-badge"><span className="brand-mark">N</span><span>NEXA <strong>SYSTEM</strong></span></div>
+      <BrandLogo variant="login"/>
       <div className="auth-heading">
         <span className="eyebrow">PLATAFORMA DE GESTÃO MPS</span>
         <h1>Acesse sua operação.</h1>
@@ -147,7 +148,7 @@ function Shell({ token, identity, onLogout }: {
 
   return <div className="app-shell">
     <aside className="sidebar" aria-label="Menu lateral">
-      <div className="brand-badge sidebar-brand"><span className="brand-mark">N</span><span>NEXA <strong>SYSTEM</strong></span></div>
+      <BrandLogo variant="sidebar"/>
       <div className="workspace">
         <span className="workspace-icon"><Building2 size={20} aria-hidden="true" /></span>
         <div><small>EMPRESA ATUAL</small><strong>{identity.tenant.name}</strong></div>
@@ -162,7 +163,7 @@ function Shell({ token, identity, onLogout }: {
     </aside>
     <div className="content-area">
       <header className="topbar">
-        <span className="topbar-breadcrumb">Nexa <span>/</span> Painel administrativo</span>
+        <div className="topbar-identity"><BrandLogo variant="topbar"/><span className="topbar-breadcrumb"><span>/</span> {identity.role === "technician" ? "Área técnica" : "Painel administrativo"}</span></div>
         <div className="topbar-actions">
           <span className="system-status"><span className="status-dot" /> Dados da API</span>
           <button type="button" className="button ghost topbar-logout" onClick={() => void onLogout()} aria-label="Encerrar sessão" title="Encerrar sessão">
@@ -467,19 +468,20 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
     if (window.confirm('Inativar ' + item.manufacturer + ' ' + item.model + '? O histórico será preservado.')) deactivate.mutate(item.id);
   }
   const pagination = pageInfo(listing.data);
+  // Paginação e filtros podem remover a impressora selecionada da página atual.
+  const selectedPrinter = listing.data?.data.find(item => item.id === selectedPrinterId);
 
   return <>
     <PageTitle kicker="GESTÃO DO PARQUE" title={byCustomer ? 'Impressoras por cliente' : 'Parque completo'}
       subtitle="Inventário e histórico dos equipamentos vinculados aos clientes."
       action={<div className="inline">
-        <button type="button" className="button ghost" disabled={!selectedPrinterId}
-          onClick={() => setDetailsPrinterId(selectedPrinterId)}><PrinterIcon size={17}/> Ver detalhes</button>
+        <button type="button" className="button ghost" disabled={!selectedPrinter}
+          onClick={() => { if (selectedPrinter) setDetailsPrinterId(selectedPrinter.id); }}><PrinterIcon size={17}/> Ver detalhes</button>
         {canWrite && <button className="button primary" type="button" onClick={() => setEditing('new')}>
           <Plus size={17}/> Adicionar impressora ao parque</button>}
-        {canWrite && <button type="button" className="button ghost" disabled={!selectedPrinterId || deactivate.isPending}
+        {canWrite && <button type="button" className="button ghost" disabled={!selectedPrinter || !selectedPrinter.active || deactivate.isPending}
           onClick={() => {
-            const item = listing.data?.data.find(p => p.id === selectedPrinterId);
-            if (item && item.active) remove(item);
+            if (selectedPrinter?.active) remove(selectedPrinter);
           }}><Trash2 size={16}/> Inativar impressora</button>}
       </div>} />
     <section className="data-card">
@@ -487,14 +489,14 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
         <PagedEntitySelect<Customer> id="park-customer" label="Selecione um cliente"
           searchLabel="Pesquisar cliente" placeholder="Buscar cliente..."
           emptyLabel="Selecione o cliente para visualizar suas impressoras"
-          value={customerId} onChange={id => {setCustomerId(id);setPage(1);}}
+          value={customerId} onChange={id => {setCustomerId(id);setSelectedPrinterId(null);setPage(1);}}
           queryKey={['park-filter-customers']} endpoint="/customers"
           filters={{active_only:true}} optionLabel={item=>item.name}/>
       </div>}
       <div className="table-tools"><label className="search-field"><Search size={18} aria-hidden="true"/>
         <input type="search" aria-label="Pesquisar impressoras" value={search} maxLength={100}
-          placeholder="Fabricante, modelo ou série..." onChange={(event) => { setSearch(event.target.value); setPage(1); }}/></label>
-        <label className="check-row"><input type="checkbox" checked={activeOnly} onChange={(event) => {setActiveOnly(event.target.checked);setPage(1);}}/> Somente ativas</label>
+          placeholder="Fabricante, modelo ou série..." onChange={(event) => { setSearch(event.target.value); setSelectedPrinterId(null); setPage(1); }}/></label>
+        <label className="check-row"><input type="checkbox" checked={activeOnly} onChange={(event) => {setActiveOnly(event.target.checked);setSelectedPrinterId(null);setPage(1);}}/> Somente ativas</label>
       </div>
       {notice && <p role="status" className="notice success">{notice}</p>}
       {deactivate.error && <ErrorMessage error={deactivate.error}/>}
@@ -543,7 +545,7 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
                   onClick={() => setEditing(printer)}><Pencil size={16}/></button>}
             </div></td>
           </tr>)}</tbody></table></div>
-        <Pagination page={pagination.page} pages={pagination.pages} total={pagination.total} onChange={setPage}/>
+        <Pagination page={pagination.page} pages={pagination.pages} total={pagination.total} onChange={value => {setSelectedPrinterId(null);setPage(value);}}/>
       </>}
     </section>
     {detailsPrinterId !== null && <PrinterDetailsPanel id={detailsPrinterId} token={token}

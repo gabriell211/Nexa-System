@@ -50,6 +50,10 @@ use App\Http\Controllers\Api\V1\ServiceTicketController;
 use App\Http\Controllers\Api\V1\ClientTicketController;
 use App\Http\Controllers\Api\V1\PrinterAlertController;
 use App\Http\Controllers\Api\V1\ServiceTicketOperatorController;
+use App\Http\Controllers\Api\V1\MobileTechnicianAuthController;
+use App\Http\Controllers\Api\V1\MobileTechnicianController;
+use App\Http\Controllers\Api\V1\TicketPartRequestReviewController;
+use App\Http\Controllers\Api\V1\TicketSignatureController;
 use Illuminate\Support\Facades\Route;
 
 // Identical resources, separate authentication transports. Web requests receive
@@ -147,6 +151,12 @@ $registerBackoffice = static function (): void {
         Route::post('/stock/replenishment-plans/{plan}/cancel', [StockReplenishmentPlanController::class, 'cancel']);
     });
 
+    Route::middleware('nexa.roles:owner,admin,manager,supervisor,warehouse')->group(static function (): void {
+        Route::get('/tickets/part-requests', [TicketPartRequestReviewController::class, 'index']);
+        Route::post('/tickets/part-requests/{part}/review', [TicketPartRequestReviewController::class, 'review']);
+        Route::get('/tickets/{ticket}/signature/image', [TicketSignatureController::class, 'download']);
+    });
+
     Route::middleware('nexa.roles:owner,admin,manager,supervisor,technician')->group(static function (): void {
         Route::get('/collector-agents', CollectorAgentController::class);
         Route::get('/collector-health-incidents', CollectorHealthIncidentController::class);
@@ -182,6 +192,21 @@ Route::prefix('v1')->group(function () use ($registerBackoffice): void {
 
     // Transitional non-browser API. Issuing new bearer credentials is disabled
     // by default; existing explicitly issued tokens remain scoped to a tenant.
+    Route::post('/mobile/auth/login', [MobileTechnicianAuthController::class, 'login'])
+        ->middleware('throttle:5,1,mobile-login:');
+    Route::prefix('mobile')->middleware([
+        'nexa.bearer', 'auth:sanctum', 'nexa.tenant', 'nexa.mobile-technician',
+    ])->group(static function (): void {
+        Route::get('/auth/me', [MobileTechnicianAuthController::class, 'me']);
+        Route::post('/auth/logout', [MobileTechnicianAuthController::class, 'logout']);
+        Route::get('/tickets', [MobileTechnicianController::class, 'tickets']);
+        Route::get('/tickets/{ticket}', [MobileTechnicianController::class, 'show']);
+        Route::post('/tickets/{ticket}/start', [MobileTechnicianController::class, 'start']);
+        Route::get('/stock-items', [MobileTechnicianController::class, 'stockItems']);
+        Route::post('/tickets/{ticket}/part-requests', [MobileTechnicianController::class, 'requestPart']);
+        Route::post('/tickets/{ticket}/signature', [MobileTechnicianController::class, 'sign']);
+    });
+
     Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:5,1,legacy-login:');
     Route::name('machine.')->middleware(['nexa.bearer', 'auth:sanctum', 'nexa.tenant', 'nexa.portfolio'])->group(
         static function () use ($registerBackoffice): void {

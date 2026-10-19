@@ -27,7 +27,10 @@ final class ServiceTicketOperatorController extends Controller
         }
         $operators=$query->orderBy('users.name')->paginate($data['per_page']??25);
         return response()->json($operators->through(
-            static fn ($user): array => $user->only(['id','name'])
+            static fn ($user): array => [
+                ...$user->only(['id','name']),
+                'role'=>$user->pivot->role,
+            ]
         ));
     }
 }

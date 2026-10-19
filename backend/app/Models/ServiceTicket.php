@@ -22,6 +22,11 @@ final class ServiceTicket extends Model
             'closed_at'=>'immutable_datetime',
         ];
     }
+    public function partRequests(): HasMany { return $this->hasMany(ServiceTicketPartRequest::class, 'ticket_id'); }
+    public function signature(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(ServiceTicketSignature::class, 'ticket_id');
+    }
     public function customer(): BelongsTo { return $this->belongsTo(Customer::class); }
     public function printer(): BelongsTo { return $this->belongsTo(Printer::class); }
     public function assignee(): BelongsTo { return $this->belongsTo(User::class, 'assigned_user_id'); }

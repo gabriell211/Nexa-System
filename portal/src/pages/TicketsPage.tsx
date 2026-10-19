@@ -5,6 +5,7 @@ import { ClipboardCheck, MessageSquarePlus, Plus, RotateCcw } from 'lucide-react
 import { api, queryString, readableError } from '../api';
 import type { Page, Printer } from '../types';
 import { PagedEntitySelect } from '../components/PagedEntitySelect';
+import { PartRequestsPanel } from './PartRequestsPanel';
 
 type Status = 'triage'|'unassigned'|'pending'|'in_progress'|'resolved'|'closed';
 type Priority = 'low'|'normal'|'high'|'critical';
@@ -15,8 +16,10 @@ interface Ticket {
   customer?:{id:number;name:string}|null;assignee?:{id:number;name:string}|null;comments?:Comment[];
   linked_printers?:Array<{id:number;manufacturer:string;model:string;serial_number:string|null;ip_address:string|null}>;
   attachments?:Array<{id:number;name:string;mime_type:string;size:number}>;
+  signature?:{signer_name:string;service_summary:string;signed_at:string;sha256:string}|null;
+  part_requests?:Array<{id:number;quantity:number;status:string;item:{name:string;sku:string}|null}>;
 }
-type Staff = {id:number;name:string};
+type Staff = {id:number;name:string;role?:string};
 const priorities:Record<Priority,string> = {low:'Baixa',normal:'Normal',high:'Alta',critical:'Crítica'};
 const statuses:Record<Status,string> = {
   triage:'Triagem',unassigned:'Sem responsável',pending:'Pendente',
@@ -35,16 +38,22 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
   const [description,setDescription]=useState('');
   const [category,setCategory]=useState('suporte');
   const [priority,setPriority]=useState<Priority>('normal');
+  const [assignee,setAssignee]=useState('');
+  const staff=useQuery({
+    queryKey:['ticket-staff'],
+    queryFn:()=>api<Page<Staff>>('/tickets/operators'+queryString({per_page:100}),null),
+  });
   const create=useMutation({
     mutationFn:()=>api<{data:Ticket}>('/tickets',null,{
       method:'POST',body:JSON.stringify({
         customer_id:customer ? Number(customer) : null,
         printer_id:printer ? Number(printer) : null,subject:subject.trim(),description:description.trim(),
         category:category.trim(),priority,
+        ...(assignee?{assigned_user_id:Number(assignee)}:{}),
       }),
     }),
     onSuccess:async()=>{
-      setSubject('');setDescription('');await onSuccess();
+      setSubject('');setDescription('');setAssignee('');await onSuccess();
     },
   });
   function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();create.mutate();}
@@ -75,6 +84,12 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
       <div className="stock-field"><label htmlFor="ticket-subject">Assunto</label>
         <input id="ticket-subject" minLength={4} maxLength={180} required
           value={subject} onChange={e=>setSubject(e.target.value)}/></div>
+      <div className="stock-field"><label htmlFor="ticket-new-assignee">Técnico responsável</label>
+        <select id="ticket-new-assignee" value={assignee} onChange={e=>setAssignee(e.target.value)}>
+          <option value="">Atribuir depois</option>
+          {(staff.data?.data??[]).filter(user=>user.role==='technician')
+            .map(user=><option key={user.id} value={user.id}>{user.name}</option>)}
+        </select></div>
     </div>
     <div className="stock-field"><label htmlFor="ticket-description">Descrição</label>
       <textarea id="ticket-description" required minLength={5} maxLength={12000}
@@ -145,6 +160,21 @@ function Detail({id,canReopen,onClose,onChanged}:{
           <ul>{data.attachments!.map(file=><li key={file.id}>
             <a href={`/api/v1/browser/tickets/${id}/attachments/${file.id}`}>{file.name}</a>
             {' '}({(file.size/1024/1024).toFixed(1)} MB)
+          </li>)}</ul>
+        </div>}
+        {data.signature&&<div className="stock-form">
+          <h3>Confirmação do cliente</h3>
+          <p><strong>Assinado por:</strong> {data.signature.signer_name}</p>
+          <p><strong>Serviço:</strong> {data.signature.service_summary}</p>
+          <p><strong>Data:</strong> {new Date(data.signature.signed_at).toLocaleString('pt-BR')}</p>
+          <p><a href={`/api/v1/browser/tickets/${id}/signature/image`}>
+            Baixar assinatura registrada (PNG)
+          </a></p>
+        </div>}
+        {(data.part_requests??[]).length>0&&<div className="stock-form">
+          <h3>Peças solicitadas</h3>
+          <ul>{data.part_requests!.map(part=><li key={part.id}>
+            {part.quantity}x {part.item?.name??'Item'} — {part.status}
           </li>)}</ul>
         </div>}
         {allowed.length>0&&<form onSubmit={transition} className="stock-form">
@@ -242,6 +272,7 @@ export function TicketsPage({canReopen}:{canReopen:boolean}) {
           <button className="button ghost" disabled={current>=last} onClick={()=>setPage(current+1)}>Próxima</button>
         </div></div>}
     </section>
+    {canReopen&&<PartRequestsPanel/>}
     <CreateTicket onSuccess={refresh}/>
     {selected!==null&&<Detail id={selected} canReopen={canReopen}
       onClose={()=>setSelected(null)} onChanged={refresh}/>}

@@ -19,7 +19,7 @@ final class ServiceTicketResource extends JsonResource
             'first_responded_at'=>$this->first_responded_at,'resolved_at'=>$this->resolved_at,
             'closed_at'=>$this->closed_at,
             'customer'=>$this->whenLoaded('customer', fn () => $this->customer?->only(['id','name'])),
-            'printer'=>$this->whenLoaded('printer', fn () => $this->printer?->only(['id','manufacturer','model'])),
+            'printer'=>$this->whenLoaded('printer', fn () => $this->printer?->only(['id','manufacturer','model','serial_number','ip_address'])),
             'assignee'=>$this->whenLoaded('assignee', fn () => $this->assignee?->only(['id','name'])),
             'linked_printers'=>$this->whenLoaded('linkedPrinters', fn () =>
                 $this->linkedPrinters->map(static fn ($printer) =>
@@ -30,6 +30,20 @@ final class ServiceTicketResource extends JsonResource
                     'name'=>$file->original_name,
                     'mime_type'=>$file->mime_type,
                     'size'=>(int)$file->bytes,
+                ])),
+            'signature'=>$this->whenLoaded('signature', fn () => $this->signature ? [
+                'signer_name'=>$this->signature->signer_name,
+                'service_summary'=>$this->signature->service_summary,
+                'sha256'=>$this->signature->sha256,
+                'signed_at'=>$this->signature->signed_at,
+            ] : null),
+            'part_requests'=>$this->whenLoaded('partRequests', fn () =>
+                $this->partRequests->map(static fn ($part): array => [
+                    'id'=>$part->id,'stock_item_id'=>$part->stock_item_id,
+                    'quantity'=>$part->quantity,'reason'=>$part->reason,
+                    'status'=>$part->status,'created_at'=>$part->created_at,
+                    'item'=>$part->relationLoaded('stockItem')
+                        ? $part->stockItem?->only(['id','sku','name']) : null,
                 ])),
             'comments'=>$this->whenLoaded('comments', fn () => $this->comments->map(
                 static fn ($comment): array => [

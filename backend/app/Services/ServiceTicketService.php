@@ -31,6 +31,10 @@ final class ServiceTicketService
     {
         $tenant=$request->attributes->get('nexa_tenant');
         $actor=$request->user();
+        if ($request->attributes->get('nexa_role') === 'technician'
+            && isset($data['assigned_user_id'])) {
+            abort(403,'A atribuição de responsáveis é exclusiva da equipe administrativa.');
+        }
         return DB::transaction(function () use ($request,$tenant,$actor,$data): ServiceTicket {
             $this->validateLinks($request,$tenant,$data);
             $ticket=ServiceTicket::query()->create([
@@ -57,6 +61,17 @@ final class ServiceTicketService
             $this->assertVisible($request,$ticket);
             $old=$ticket->status;
             $new=$data['status'];
+            if ($request->attributes->get('nexa_role') === 'technician') {
+                if ((int)$ticket->assigned_user_id !== (int)$actor->id) abort(404);
+                if (array_key_exists('assigned_user_id',$data)) {
+                    abort(403,'Apenas a administração pode trocar o responsável.');
+                }
+                if ($new === 'resolved' && !$ticket->signature()->exists()) {
+                    throw ValidationException::withMessages([
+                        'signature'=>'A assinatura eletrônica do cliente é obrigatória para conclusão pelo técnico.',
+                    ]);
+                }
+            }
             if (!in_array($new,self::TRANSITIONS[$old]??[],true)) {
                 throw ValidationException::withMessages([
                     'status'=>'Transição de estado não permitida.',
@@ -133,6 +148,8 @@ final class ServiceTicketService
             'assignee:id,name','comments'=>fn ($q)=>$q->with('author:id,name')->orderBy('id'),
             'linkedPrinters:id,manufacturer,model,serial_number,ip_address',
             'attachments:id,tenant_id,ticket_id,original_name,mime_type,bytes,created_at',
+            'signature',
+            'partRequests.stockItem:id,sku,name',
         ]);
     }
 

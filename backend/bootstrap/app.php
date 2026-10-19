@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 use App\Http\Middleware\RequireTenantRole;
+use App\Http\Middleware\RequireMobileTechnician;
 use App\Http\Middleware\RequireMachineBearer;
 use App\Http\Middleware\EnsureCustomerPortfolio;
 use App\Http\Middleware\ResolveBrowserTenant;
@@ -23,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'nexa.bearer' => RequireMachineBearer::class,
             'nexa.portfolio' => EnsureCustomerPortfolio::class,
             'nexa.roles' => RequireTenantRole::class,
+            'nexa.mobile-technician' => RequireMobileTechnician::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
