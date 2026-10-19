@@ -1,6 +1,6 @@
 import { useDeferredValue, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, ChevronRight, Search, ShieldCheck, UserRoundCog, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Copy, Plus, Search, ShieldCheck, UserRoundCog, X } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
 import type { Customer, Page } from '../types';
 
@@ -63,7 +63,7 @@ function PortfolioForm({ initial, token, onSaved, onClose }: {
 
   return <form className="editor-form" onSubmit={submit}>
     <div className="portfolio-options">
-      <label className="check-row"><input type="radio" name="scope" checked={scope === 'all'} onChange={() => setScope('all')}/> Todas as empresas clientes</label>
+      <label className="check-row"><input type="radio" name="scope" checked={scope === 'all'} disabled={initial.role === 'customer'} onChange={() => setScope('all')}/> Todas as empresas clientes</label>
       <label className="check-row"><input type="radio" name="scope" checked={scope === 'assigned'} onChange={() => setScope('assigned')}/> Somente clientes selecionados</label>
     </div>
     {scope === 'assigned' && <>
@@ -113,10 +113,138 @@ function PortfolioDialog({ member, token, onClose, onSaved }: {
   </section></div>;
 }
 
+
+interface CreatedInvite {
+  user: {id: number; name: string; email: string; active: boolean};
+  role: string;
+  invitation: { token: string; tenant: string; expires_at: string };
+  note: string;
+}
+
+function InviteAccountDialog({ token, onClose, onCreated }: {
+  token: string | null; onClose: () => void; onCreated: () => Promise<void>;
+}) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [type, setType] = useState<'customer' | 'collaborator'>('customer');
+  const [search, setSearch] = useState('');
+  const delayed = useDeferredValue(search);
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [reports, setReports] = useState(true);
+  const [otherTickets, setOtherTickets] = useState(false);
+  const [created, setCreated] = useState<CreatedInvite | null>(null);
+  const [copyError, setCopyError] = useState('');
+  const clients = useQuery({
+    queryKey: ['account-invite-customers', delayed, page],
+    queryFn: () => api<Page<Customer>>('/customers' + queryString({
+      q: delayed, page, per_page: 25, active_only: true,
+    }), token),
+  });
+  const save = useMutation({
+    mutationFn: () => api<CreatedInvite>('/accounts', token, {
+      method: 'POST',
+      body: JSON.stringify({
+        name: name.trim(), email: email.trim(),
+        account_type: type, customer_ids: selected,
+        ...(type === 'customer' ? {view_reports: reports, view_other_tickets: otherTickets} : {}),
+      }),
+    }),
+    onSuccess: async result => { setCreated(result); await onCreated(); },
+  });
+  const invitationLink = created
+    ? window.location.origin + '/ativar#' + new URLSearchParams({
+      tenant: created.invitation.tenant, token: created.invitation.token,
+    }).toString()
+    : '';
+
+  function toggleClient(id: number, checked: boolean) {
+    setSelected(current => checked ? current.includes(id) ? current : [...current, id]
+      : current.filter(value => value !== id));
+  }
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (selected.length === 0) return;
+    save.mutate();
+  }
+
+  return <div className="modal-overlay">
+    <section className="modal account-invite-modal" role="dialog" aria-modal="true" aria-labelledby="invite-title">
+      <div className="modal-header"><div><span className="eyebrow">CONTAS DE ACESSO</span>
+        <h2 id="invite-title">{created ? 'Convite criado' : 'Adicionar conta'}</h2>
+        <p className="modal-subtitle">Defina o tipo, a carteira de clientes e o acesso inicial.</p></div>
+        <button className="icon-button" type="button" onClick={onClose} aria-label="Fechar"><X size={20}/></button>
+      </div>
+      {created ? <div className="editor-form">
+        <p role="status" className="notice success">Conta de {created.user.name} registrada, ainda desativada. Copie o convite abaixo e envie por um canal seguro.</p>
+        <label htmlFor="invitation-link">Link individual de ativação (24 horas, uso único)</label>
+        <input id="invitation-link" readOnly value={invitationLink}
+          onFocus={e => e.target.select()} aria-label="Link de ativação"/>
+        <button className="button primary" type="button" onClick={() => {
+          setCopyError('');
+          void navigator.clipboard.writeText(invitationLink)
+            .catch(() => setCopyError('Não foi possível copiar automaticamente. Selecione e copie o campo.'));
+        }}><Copy size={16}/> Copiar convite</button>
+        {copyError && <p role="alert" className="notice error">{copyError}</p>}
+        <p className="portfolio-info">Nenhuma mensagem foi enviada automaticamente. O usuário escolherá uma senha forte no link de ativação.</p>
+        <div className="modal-actions"><button className="button ghost" onClick={onClose}>Concluir</button></div>
+      </div> : <form className="editor-form" onSubmit={submit}>
+        <label htmlFor="invite-name">Nome</label>
+        <input id="invite-name" required minLength={2} maxLength={180} autoComplete="name" value={name}
+          onChange={e => setName(e.target.value)} placeholder="Nome completo"/>
+        <label htmlFor="invite-email">E-mail</label>
+        <input id="invite-email" type="email" required maxLength={255} autoComplete="email"
+          value={email} onChange={e => setEmail(e.target.value)}/>
+        <div className="portfolio-options" role="group" aria-label="Tipo de conta">
+          <label className="check-row"><input type="radio" name="account_type" checked={type === 'customer'}
+            onChange={() => setType('customer')}/> Conta de cliente</label>
+          <label className="check-row"><input type="radio" name="account_type" checked={type === 'collaborator'}
+            onChange={() => setType('collaborator')}/> Conta de colaborador</label>
+        </div>
+        <p className="portfolio-info">{type === 'customer'
+          ? 'Cliente: somente portal do cliente, com acesso apenas às empresas selecionadas.'
+          : 'Colaborador: papel de técnico, sujeito às permissões internas e restrito à carteira selecionada.'}</p>
+        <label htmlFor="invite-search">Clientes autorizados ({selected.length})</label>
+        <label className="search-field"><Search size={17}/>
+          <input id="invite-search" value={search} placeholder="Pesquisar cliente ou unidade"
+            onChange={e => {setSearch(e.target.value);setPage(1);}}/>
+        </label>
+        <div className="portfolio-customer-list">
+          {clients.isPending ? <p role="status">Buscando clientes...</p> : clients.error ?
+            <p role="alert" className="notice error">{readableError(clients.error)}</p> :
+            <>{clients.data.data.map(client => <label className="portfolio-customer" key={client.id}>
+              <input type="checkbox" checked={selected.includes(client.id)}
+                disabled={!selected.includes(client.id) && selected.length >= 200}
+                onChange={e => toggleClient(client.id, e.target.checked)}/>
+              <span>{client.name}<small>#{client.id}</small></span>
+            </label>)}<Paging data={clients.data} onChange={setPage}/></>}
+        </div>
+        {type === 'customer' && <fieldset className="account-permissions">
+          <legend>Permissões do cliente</legend>
+          <label className="check-row"><input type="checkbox" checked={reports} onChange={e => setReports(e.target.checked)}/>
+            Visualizar contadores, gráficos e relatórios de páginas</label>
+          <label className="check-row"><input type="checkbox" checked={otherTickets}
+            onChange={e => setOtherTickets(e.target.checked)}/>
+            Visualizar chamados abertos por outros usuários dos clientes autorizados</label>
+          <p className="portfolio-info">Outras permissões e notificações exigem endpoints e regras próprios; não são habilitadas por este cadastro.</p>
+        </fieldset>}
+        {save.error && <p role="alert" className="notice error">{readableError(save.error)}</p>}
+        <div className="modal-actions">
+          <button className="button ghost" type="button" onClick={onClose}>Cancelar</button>
+          <button className="button primary" type="submit" disabled={save.isPending || selected.length === 0}>
+            <Plus size={16}/> {save.isPending ? 'Criando...' : 'Criar e gerar convite'}
+          </button>
+        </div>
+      </form>}
+    </section>
+  </div>;
+}
+
 export function StaffPage({ token }: { token: string | null }) {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Member | null>(null);
+  const [inviting, setInviting] = useState(false);
   const [notice, setNotice] = useState('');
   const members = useQuery({
     queryKey: ['staff', page],
@@ -124,9 +252,11 @@ export function StaffPage({ token }: { token: string | null }) {
   });
   return <div>
     <div className="page-heading"><div><span className="eyebrow">GOVERNANÇA DE ACESSO</span>
-      <h1>Equipe e carteiras</h1>
-      <p>Defina quais clientes cada operador pode consultar ou administrar. Todas as mudanças são auditadas.</p>
-    </div></div>
+      <h1>Contas de acesso</h1>
+      <p>Convide clientes e colaboradores, atribua carteiras e consulte as permissões auditadas.</p>
+    </div><button className="button primary" type="button" onClick={() => setInviting(true)}>
+      <Plus size={17}/> Adicionar conta
+    </button></div>
     <section className="data-card">
       {notice && <p role="status" className="notice success">{notice}</p>}
       {members.isPending ? <div className="loading">Carregando operadores...</div> :
@@ -141,6 +271,8 @@ export function StaffPage({ token }: { token: string | null }) {
             <button className="button ghost" onClick={() => setEditing(member)}><UserRoundCog size={16}/> Configurar</button>}</td>
         </tr>)}</tbody></table></div><Paging data={members.data} onChange={setPage}/></>}
     </section>
+    {inviting && <InviteAccountDialog token={token} onClose={() => setInviting(false)}
+      onCreated={async () => {await qc.invalidateQueries({queryKey: ['staff']});}}/>}
     {editing && <PortfolioDialog key={editing.id} member={editing} token={token} onClose={() => setEditing(null)}
       onSaved={async () => {
         await qc.invalidateQueries({queryKey: ['staff']});

@@ -4,6 +4,7 @@ import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-rou
 import { Activity, Building2, ChevronDown, ClipboardList, FileText, LayoutDashboard, LogOut, MapPin, Printer, Settings, UserRound } from 'lucide-react';
 import { ApiError, api, readableError, resetCsrf } from './api';
 import type { ClientIdentity, Credentials } from './types';
+import { ActivationPage } from './pages/ActivationPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { PrintersPage } from './pages/PrintersPage';
 import { CountersPage } from './pages/CountersPage';
@@ -55,6 +56,7 @@ function Login({ onLogin }: { onLogin: (values: Credentials) => Promise<void> })
 function Shell({ identity, onLogout }: { identity: ClientIdentity; onLogout: () => Promise<void> }) {
   const [reportsOpen, setReportsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const canViewReports = identity.customer_permissions?.view_reports ?? true;
   const nav = (to: string, label: string, Icon: typeof LayoutDashboard) =>
     <NavLink end={to === '/'} to={to} className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}>
       <Icon size={18} aria-hidden="true"/>{label}
@@ -74,7 +76,7 @@ function Shell({ identity, onLogout }: { identity: ClientIdentity; onLogout: () 
             <FileText size={18} aria-hidden="true"/> Relatórios <ChevronDown className={reportsOpen ? 'expanded' : ''} size={16}/>
           </button>
           {reportsOpen && <div id="customer-reports-links" className="nav-submenu">
-            {nav('/contadores', 'Contadores', Activity)}
+            {canViewReports && nav('/contadores', 'Contadores', Activity)}
             {nav('/localizacoes', 'Localizações', MapPin)}
           </div>}
         </div>
@@ -95,10 +97,10 @@ function Shell({ identity, onLogout }: { identity: ClientIdentity; onLogout: () 
       <header className="topbar"><span>Portal do cliente <span className="crumb">/</span> {identity.tenant.name}</span>
         <button className="button ghost" onClick={() => void onLogout()}><LogOut size={17}/> Sair</button></header>
       <main className="content"><Routes>
-        <Route path="/" element={<OverviewPage/>}/>
+        <Route path="/" element={<OverviewPage canViewReports={canViewReports}/>}/>
         <Route path="/impressoras" element={<PrintersPage/>}/>
         <Route path="/chamados" element={<TicketsPage/>}/>
-        <Route path="/contadores" element={<CountersPage/>}/>
+        {canViewReports && <Route path="/contadores" element={<CountersPage/>}/>}
         <Route path="/localizacoes" element={<LocationsPage/>}/>
         <Route path="/minha-conta" element={<AccountPage identity={identity}/>}/>
         <Route path="*" element={<Navigate to="/" replace/>}/>
@@ -146,6 +148,8 @@ export function App() {
       setLogoutError('Não foi possível encerrar a sessão: ' + readableError(error));
     }
   }
+
+  if (window.location.pathname === '/ativar') return <ActivationPage />;
 
   if (me.isPending) return <main className="boot-state" role="status">Carregando portal do cliente...</main>;
   if (me.error) return <main className="blocked"><p className="error" role="alert">{readableError(me.error)}</p>

@@ -59,6 +59,8 @@ final class ClientTicketController extends Controller
         return ServiceTicket::query()
             ->where('tenant_id', $request->attributes->get('nexa_tenant')->id)
             ->whereIn('customer_id', $this->permitted($request))
+            ->when(!app(\App\Services\CustomerAccountPermissions::class)->forRequest($request)['view_other_tickets'],
+                fn ($query) => $query->where('opened_by_user_id', $request->user()->id))
             ->findOrFail($ticket);
     }
 
@@ -105,6 +107,8 @@ final class ClientTicketController extends Controller
         $result = ServiceTicket::query()
             ->where('tenant_id', $tenant->id)
             ->whereIn('customer_id', $this->permitted($request))
+            ->when(!app(\App\Services\CustomerAccountPermissions::class)->forRequest($request)['view_other_tickets'],
+                fn ($query) => $query->where('opened_by_user_id', $request->user()->id))
             ->with(['linkedPrinters:id,tenant_id,customer_id,manufacturer,model,serial_number,ip_address',
                 'attachments:id,tenant_id,ticket_id,original_name,mime_type,bytes,created_at'])
             ->orderByDesc('id')->paginate($data['per_page'] ?? 20);

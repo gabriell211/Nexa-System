@@ -6,7 +6,7 @@ import { DailyMeterChart } from '../components/DailyMeterChart';
 import { dateTime, label, meter } from '../helpers';
 import type { ClientAnalytics, FleetPrinter, FleetSummary, Page } from '../types';
 
-export function OverviewPage() {
+export function OverviewPage({ canViewReports = true }: { canViewReports?: boolean }) {
   const summary = useQuery({
     queryKey: ['customer-summary'],
     queryFn: () => api<FleetSummary>('/client/summary', null),
@@ -14,6 +14,7 @@ export function OverviewPage() {
   const analytics = useQuery({
     queryKey: ['customer-analytics', 'last30days'],
     queryFn: () => api<ClientAnalytics>('/client/analytics', null),
+    enabled: canViewReports,
   });
   const recent = useQuery({
     queryKey: ['customer-preview'],
@@ -43,7 +44,8 @@ export function OverviewPage() {
       <p className="summary-note">Estes estados não representam um teste de rede em tempo real.</p>
     </section>
 
-    {analytics.isPending ? <section className="report-panel"><p role="status" className="loading-chart">Carregando histórico real dos últimos 30 dias...</p></section>
+    {!canViewReports ? <section className="report-panel"><p className="chart-empty">Seu perfil não possui permissão para visualizar gráficos de páginas.</p></section>
+      : analytics.isPending ? <section className="report-panel"><p role="status" className="loading-chart">Carregando histórico real dos últimos 30 dias...</p></section>
       : analytics.error ? <section className="report-panel"><h2>Produção observada</h2>
         <p role="alert" className="error">{readableError(analytics.error)}</p></section>
       : analytics.data && <DailyMeterChart analytics={analytics.data} />}
@@ -51,8 +53,9 @@ export function OverviewPage() {
     <section className="report-panel">
       <div className="report-heading"><div><h2>Impressoras com maior variação P&B (últimos 30 dias)</h2>
         <p>Ranking calculado somente onde há diferenças válidas entre leituras no mesmo dia.</p></div>
-        <Link to="/contadores" className="inline-link">Consultar contadores</Link></div>
-      {!analytics.data ? <div className="chart-empty">Aguardando leituras disponíveis.</div>
+        {canViewReports && <Link to="/contadores" className="inline-link">Consultar contadores</Link>}</div>
+      {!canViewReports ? <div className="chart-empty">Relatório não autorizado para esta conta.</div>
+        : !analytics.data ? <div className="chart-empty">Aguardando leituras disponíveis.</div>
         : analytics.data.top_printers.length === 0
           ? <div className="chart-empty">Sem medições suficientes para compor o ranking.</div>
           : <div className="ranking-table table-scroller"><table><thead><tr><th>#</th><th>Impressora</th><th>Endereço IP</th><th>Variação P&B observada</th></tr></thead>
@@ -71,7 +74,7 @@ export function OverviewPage() {
           <tbody>{recent.data.data.map(p => <tr key={p.id}><td><strong>{p.manufacturer} {p.model}</strong>
             <small>{label(p.serial_number)}</small></td>
             <td>{label(p.location)}</td><td className="mono">{label(p.ip_address)}</td>
-            <td className="mono">{meter(p.latest_reading?.meter_total)}</td>
+            <td className="mono">{canViewReports ? meter(p.latest_reading?.meter_total) : 'Restrito'}</td>
             <td>{dateTime(p.latest_reading?.collected_at)}</td></tr>)}</tbody></table></div>}
     </section>
     <p className="footnote">Indicadores e contadores são baseados exclusivamente no parque vinculado ao seu acesso.

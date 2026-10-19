@@ -21,6 +21,9 @@ final class StaffPortfolioService
                 ->first();
 
             if (!$member) abort(404);
+            if ($member->role === 'customer' && $scope === 'all') {
+                abort(422, 'Contas de clientes exigem carteiras atribuídas explicitamente.');
+            }
             if (in_array($member->role, ['owner', 'admin'], true)) {
                 abort(403, 'Escopo dos administradores não é restringível.');
             }

@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 final class BrowserAuthController extends Controller
@@ -48,6 +49,13 @@ final class BrowserAuthController extends Controller
             'tenant' => $tenant->only(['id', 'name', 'slug']),
             'role' => $membership->pivot->role,
             'customer_scope' => $membership->pivot->customer_scope,
+            'customer_permissions' => $membership->pivot->role === 'customer' ?
+                (function () use ($tenant, $user): array {
+                    $prefs = DB::table('customer_account_settings')
+                        ->where('tenant_id', $tenant->id)->where('user_id', $user->id)->first();
+                    return ['view_reports' => $prefs === null ? true : (bool) $prefs->view_reports,
+                        'view_other_tickets' => $prefs === null ? true : (bool) $prefs->view_other_tickets];
+                })() : ['view_reports' => false, 'view_other_tickets' => false],
         ])->header('Cache-Control', 'no-store, private');
     }
 

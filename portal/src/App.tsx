@@ -1,12 +1,12 @@
-import { useDeferredValue, useState, type FormEvent, type ReactNode } from 'react';
+import { useDeferredValue, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Link, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import {
-  Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList, ClipboardCheck,
-  Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon, ShieldAlert,
-  Search, ShieldCheck, Trash2, Users, X, MapPin, History, UserRoundCog, FileText, KeyRound,
+  Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, Database, LogOut, Pencil, Plus, Printer as PrinterIcon, Search, ShieldCheck, Trash2, Users, X, MapPin, History, KeyRound
 } from 'lucide-react';
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
+import { ActivationPage } from './pages/ActivationPage';
+import { AdminNavigation } from './components/AdminNavigation';
 import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
 import { StaffPage } from './pages/StaffPage';
 import { InventoryPage } from './pages/InventoryPage';
@@ -139,7 +139,7 @@ function Shell({ token, identity, onLogout }: {
     return <main className="blocked">
       <ShieldCheck size={42} aria-hidden="true" />
       <h1>Área administrativa restrita</h1>
-      <p>Seu perfil não possui acesso ao painel interno. O portal do cliente ainda está em desenvolvimento.</p>
+      <p>Seu perfil não possui acesso ao painel interno. Use o portal do cliente, disponível no endereço fornecido pela prestadora.</p>
       <button className="button primary" onClick={() => void onLogout()}>Sair com segurança</button>
     </main>;
   }
@@ -151,31 +151,8 @@ function Shell({ token, identity, onLogout }: {
         <span className="workspace-icon"><Building2 size={20} aria-hidden="true" /></span>
         <div><small>EMPRESA ATUAL</small><strong>{identity.tenant.name}</strong></div>
       </div>
-      <nav aria-label="Navegação principal" className="sidebar-nav">
-        <span className="nav-caption">OPERAÇÃO</span>
-        <NavLink to="/dashboard" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><LayoutDashboard size={19}/> Visão geral</NavLink>
-        <NavLink to="/clientes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Users size={19}/> Clientes</NavLink>
-        <NavLink to="/contratos" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><FileText size={19}/> Contratos</NavLink>
-        <NavLink to="/parque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><PrinterIcon size={19}/> Parque de impressoras</NavLink>
-        {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
-          <NavLink to="/agentes" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
-            <Activity size={19}/> Agentes de coleta
-          </NavLink>}
-        {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
-          <NavLink to="/chamados" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
-            <ClipboardCheck size={19}/> Chamados
-          </NavLink>}
-        {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
-          <NavLink to="/alertas" className={({isActive})=>'nav-link'+(isActive?' active':'')}>
-            <ShieldAlert size={19}/> Alertas
-          </NavLink>}
-        {canStock && <NavLink to="/estoque" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><Database size={19}/> Estoque</NavLink>}
-        {canStock && <NavLink to="/reposicoes" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ArrowRight size={19}/> Remessas</NavLink>}
-        {canStock && <NavLink to="/suprimentos" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ClipboardList size={19}/> Suprimentos</NavLink>}
-        {canAudit && <><span className="nav-caption nav-secondary">ADMINISTRAÇÃO</span>
-          <NavLink to="/auditoria" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><ClipboardList size={19}/> Auditoria</NavLink>
-          <NavLink to="/equipe" className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}><UserRoundCog size={19}/> Equipe e carteiras</NavLink></>}
-      </nav>
+      <AdminNavigation role={identity.role} canStock={canStock} canAudit={canAudit}/>
+
       <div className="sidebar-footer">
         <div className="profile-circle">{identity.user.name.slice(0, 1).toUpperCase()}</div>
         <div className="profile-text"><strong>{identity.user.name}</strong><small>{identity.role}</small></div>
@@ -428,6 +405,10 @@ function PrinterDialog({ printer, onClose, onSave, pending }: {
 
 function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boolean }) {
   const qc = useQueryClient();
+  const [routeParams, setRouteParams] = useSearchParams();
+  const byCustomer = routeParams.get('view') === 'customer';
+  const [customerId, setCustomerId] = useState('');
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const delayed = useDeferredValue(search);
@@ -437,9 +418,20 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
   const [historyPrinter, setHistoryPrinter] = useState<Printer | null>(null);
   const [notice, setNotice] = useState('');
 
+  useEffect(() => {
+    if (routeParams.get('new') === '1' && canWrite) {
+      setEditing('new');
+      const next = new URLSearchParams(routeParams);
+      next.delete('new');
+      setRouteParams(next, {replace: true});
+    }
+  }, [routeParams, setRouteParams, canWrite]);
+
   const listing = useQuery({
-    queryKey: ['printers', page, delayed, activeOnly],
-    queryFn: () => api<Page<Printer>>('/printers' + queryString({ page, q: delayed, active_only: activeOnly }), token),
+    queryKey: ['printers', page, delayed, activeOnly, byCustomer, customerId],
+    enabled: !byCustomer || customerId !== '',
+    queryFn: () => api<Page<Printer>>('/printers' + queryString({ page, q: delayed, active_only: activeOnly,
+      ...(byCustomer && customerId ? { customer_id: Number(customerId) } : {}) }), token),
     placeholderData: keepPreviousData,
   });
 
@@ -477,6 +469,14 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
     <PageTitle kicker="GESTÃO DO PARQUE" title="Impressoras" subtitle="Inventário dos equipamentos vinculados aos clientes."
       action={canWrite && <button className="button primary" type="button" onClick={() => setEditing('new')}><Plus size={17}/> Nova impressora</button>} />
     <section className="data-card">
+      {byCustomer && <div className="admin-customer-filter">
+        <PagedEntitySelect<Customer> id="park-customer" label="Selecione um cliente"
+          searchLabel="Pesquisar cliente" placeholder="Buscar cliente..."
+          emptyLabel="Selecione o cliente para visualizar suas impressoras"
+          value={customerId} onChange={id => {setCustomerId(id);setPage(1);}}
+          queryKey={['park-filter-customers']} endpoint="/customers"
+          filters={{active_only:true}} optionLabel={item=>item.name}/>
+      </div>}
       <div className="table-tools"><label className="search-field"><Search size={18} aria-hidden="true"/>
         <input type="search" aria-label="Pesquisar impressoras" value={search} maxLength={100}
           placeholder="Fabricante, modelo ou série..." onChange={(event) => { setSearch(event.target.value); setPage(1); }}/></label>
@@ -484,7 +484,8 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
       </div>
       {notice && <p role="status" className="notice success">{notice}</p>}
       {deactivate.error && <ErrorMessage error={deactivate.error}/>}
-      {listing.isPending ? <LoadingState/> : listing.error ? <ErrorMessage error={listing.error}/> : listing.data.data.length === 0 ? <EmptyState>Nenhuma impressora encontrada para estes filtros.</EmptyState> : <>
+      {byCustomer && !customerId ? <EmptyState>Selecione o cliente para visualizar o parque atribuído.</EmptyState> :
+      listing.isPending ? <LoadingState/> : listing.error ? <ErrorMessage error={listing.error}/> : listing.data.data.length === 0 ? <EmptyState>Nenhuma impressora encontrada para estes filtros.</EmptyState> : <>
         <div className="table-wrap"><table><thead><tr><th>Impressora</th><th>Cliente</th><th>IP</th><th>Últimos contadores</th><th>Estado de coleta</th><th>Cadastro</th><th className="actions-head">Ações</th></tr></thead>
           <tbody>{listing.data.data.map((printer) => <tr key={printer.id}>
             <td><strong>{printer.manufacturer} {printer.model}</strong><small>{printer.serial_number || 'Série não informada'}</small></td>
@@ -594,6 +595,8 @@ export function App() {
       setLogoutError('Não foi possível encerrar a sessão no servidor: ' + readableError(error));
     }
   }
+
+  if (window.location.pathname === '/ativar') return <ActivationPage />;
 
   if (identity.isPending) return <div className="boot-state"><LoadingState /></div>;
   if (identity.error) return <main className="blocked">

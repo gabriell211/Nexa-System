@@ -301,3 +301,29 @@ td.mono { font-family: ui-monospace, monospace; }
 @media (max-width: 600px) {
   .collector-credential-row { grid-template-columns: minmax(0, 1fr); }
 }
+
+
+/* Grouped administrative navigation: functional links remain permission-scoped. */
+.sidebar{min-height:0}
+.admin-nav{overflow-y:auto;overflow-x:hidden;min-height:0;flex:1;padding-right:3px;scrollbar-width:thin;scrollbar-color:#6382ae67 transparent}
+.admin-nav-section{display:grid;gap:3px}
+.admin-nav-toggle{width:100%;border:0;text-align:left;background:transparent;font:inherit;cursor:pointer}
+.admin-nav-toggle.parent-active{background:#2e6fd921;color:#e7f1ff}
+.admin-nav-toggle .nav-chevron{margin-left:auto;transition:transform .17s}
+.admin-nav-toggle .nav-chevron.expanded{transform:rotate(180deg)}
+.admin-nav-children{display:grid;gap:2px;margin:0 0 5px 16px;border-left:1px solid #50688555}
+.admin-nav-child{display:grid;gap:2px;padding:9px 9px 9px 16px;color:#c0d1e7;font-size:12px;font-weight:550;line-height:1.4;border-radius:6px}
+.admin-nav-child:hover,.admin-nav-child.selected{background:#2e6fd930;color:#fff}
+.admin-nav-child.unavailable{color:#7890ae;cursor:not-allowed}
+.admin-nav-child.unavailable small{font-size:9px;letter-spacing:.025em;color:#7286a1}
+.admin-nav .nav-caption.nav-secondary{margin-top:14px;margin-bottom:4px}
+.sidebar-footer{flex-shrink:0}
+.account-invite-modal{max-width:760px;max-height:94vh;overflow-y:auto}
+.account-invite-modal .editor-form{display:grid;gap:10px}
+.account-invite-modal .portfolio-customer-list{max-height:220px;overflow-y:auto}
+.account-invite-modal .account-permissions{display:grid;gap:9px;border:1px solid #dbe5f2;padding:15px;border-radius:10px}
+.account-invite-modal .account-permissions legend{font-size:12px;font-weight:800;color:#31567c;padding:0 7px}
+.account-invite-modal .portfolio-info{color:#70829a;font-size:12px;line-height:1.6}
+.account-invite-modal .portfolio-options{display:flex;flex-wrap:wrap;gap:14px}
+.account-invite-modal .portfolio-options .check-row,.account-invite-modal .account-permissions .check-row{display:flex;align-items:center;gap:8px;font-weight:600}
+@media(max-width:720px){.sidebar{height:auto;max-height:70vh}.admin-nav{min-height:80px}.account-invite-modal{max-height:95vh}}
