@@ -24,6 +24,8 @@ use App\Http\Controllers\Api\V1\PrinterReadingHistoryController;
 use App\Http\Controllers\Api\V1\PrinterProductionPreviewController;
 use App\Http\Controllers\Api\V1\PrinterAssignmentController;
 use App\Http\Controllers\Api\V1\StaffPortfolioController;
+use App\Http\Controllers\Api\V1\AccountProvisioningController;
+use App\Http\Controllers\Api\V1\AccountActivationController;
 use App\Http\Controllers\Api\V1\StockItemController;
 use App\Http\Controllers\Api\V1\StockLocationController;
 use App\Http\Controllers\Api\V1\StockBalanceController;
@@ -165,6 +167,7 @@ $registerBackoffice = static function (): void {
         Route::post('/customers/{customer}/collector-credentials', CustomerCollectorCredentialController::class)
             ->middleware('throttle:5,1');
         Route::get('/staff', [StaffPortfolioController::class, 'index']);
+        Route::post('/accounts', [AccountProvisioningController::class, 'store'])->middleware('throttle:10,1,account-invites:');
         Route::get('/staff/{user}/portfolio', [StaffPortfolioController::class, 'show']);
         Route::put('/staff/{user}/portfolio', [StaffPortfolioController::class, 'update']);
     });
@@ -190,6 +193,7 @@ Route::prefix('v1')->group(function () use ($registerBackoffice): void {
         static function () use ($registerBackoffice): void {
             Route::get('/auth/csrf', [BrowserAuthController::class, 'csrf'])->middleware('throttle:120,1,browser-csrf:');
             Route::post('/auth/login', [BrowserAuthController::class, 'login'])->middleware('throttle:5,1,browser-login:');
+            Route::post('/auth/activate', AccountActivationController::class)->middleware('throttle:5,1,browser-activate:');
 
             Route::middleware(['auth:web', 'nexa.browser-tenant', 'nexa.portfolio'])->group(
                 static function () use ($registerBackoffice): void {
