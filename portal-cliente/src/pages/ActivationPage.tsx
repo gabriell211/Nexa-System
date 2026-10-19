@@ -43,24 +43,24 @@ export function ActivationPage() {
     finally { setSaving(false); }
   }
 
-  return <main className="auth-page">
-    <section className="auth-panel">
+  return <main className="login-screen">
+    <section className="login-card">
       <div className="brand">NEXA <strong>CLIENTE</strong></div>
-      <div className="auth-heading"><span className="eyebrow">ATIVAÇÃO SEGURA</span>
+      <div className="activation-heading"><span className="eyebrow">ATIVAÇÃO SEGURA</span>
         <h1>Ative sua conta</h1>
         <p>Escolha uma senha para o acesso que sua prestadora liberou.</p>
       </div>
-      {result ? <div className="notice success" role="status"><p>{result}</p>
+      {result ? <div className="activation-success" role="status"><p>{result}</p>
         <p>Cliente: acesse o portal do cliente fornecido pela prestadora. Colaborador: acesse o painel administrativo.</p>
         <a className="button primary" href="/">Ir para o início</a>
-      </div> : <form className="auth-form" onSubmit={e => void submit(e)}>
+      </div> : <form className="login-form" onSubmit={e => void submit(e)}>
         <label htmlFor="new-password">Nova senha</label>
         <input id="new-password" type="password" autoComplete="new-password"
           minLength={12} required value={password} onChange={e => setPassword(e.target.value)}/>
         <label htmlFor="confirm-password">Confirmar senha</label>
         <input id="confirm-password" type="password" autoComplete="new-password"
           minLength={12} required value={confirmation} onChange={e => setConfirmation(e.target.value)}/>
-        <p className="auth-caption">Use pelo menos 12 caracteres, letras maiúsculas, minúsculas e números.
+        <p className="ticket-file-hint">Use pelo menos 12 caracteres, letras maiúsculas, minúsculas e números.
           O convite expira em 24 horas e pode ser usado uma única vez.</p>
         {error && <p role="alert" className="notice error">{error}</p>}
         <button className="button primary" type="submit" disabled={saving}>
@@ -68,7 +68,7 @@ export function ActivationPage() {
         </button>
       </form>}
     </section>
-    <aside className="auth-visual" aria-hidden="true"><div className="visual-content">
+    <aside className="login-art" aria-hidden="true"><div className="login-art-content">
       <h2>O acesso certo para cada cliente.</h2>
       <p>Senhas pessoais, carteiras explícitas e permissões verificadas pelo servidor.</p>
     </div></aside>
