@@ -59,6 +59,8 @@ assert message_boxes and all(" /SD IDOK" in line for line in message_boxes), "Si
 error_levels = [line.strip() for line in installer.splitlines() if line.lstrip().startswith("SetErrorLevel ")]
 assert len(error_levels) == len(message_boxes) == len(set(error_levels)), "Each NSIS failure needs its own exit code"
 assert installer.count("IfSilent 0 +2\n      Quit\n    Abort ") == len(message_boxes), "Silent failures must preserve their exit codes"
+assert installer.count("!insertmacro NEXA_DIAGNOSTIC ") == len(message_boxes)
+assert 'FileWrite $9 "${CODE}$\\r$\\n"' in installer
 for required in [
     "!macro NSIS_HOOK_PREINSTALL",
     "!macro NSIS_HOOK_POSTINSTALL",
