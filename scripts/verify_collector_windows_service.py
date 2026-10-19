@@ -54,6 +54,10 @@ assert 'tauri_build::WindowsAttributes::new().app_manifest(' in build
 assert '#[cfg(windows)]' in build and '#[cfg(not(windows))]' in build
 
 installer = (root / "collector/console/src-tauri/windows/installer-hooks.nsh").read_text(encoding="utf-8")
+message_boxes = [line for line in installer.splitlines() if line.lstrip().startswith("MessageBox ")]
+assert message_boxes and all(" /SD IDOK" in line for line in message_boxes), "Silent install must never wait for a dialog"
+error_levels = [line.strip() for line in installer.splitlines() if line.lstrip().startswith("SetErrorLevel ")]
+assert len(error_levels) == len(message_boxes) == len(set(error_levels)), "Each NSIS failure needs its own exit code"
 for required in [
     "!macro NSIS_HOOK_PREINSTALL",
     "!macro NSIS_HOOK_POSTINSTALL",
@@ -92,6 +96,10 @@ for forbidden in ["powershell.exe", "Start-Service", "sc.exe start NexaCollector
     assert forbidden.lower() not in installer.lower(), f"Unsafe installer action: {forbidden}"
 assert "NSIS_HOOK_PREUNINSTALL" in installer
 assert "sc.exe\" delete NexaCollector" in installer
+preuninstall = installer.split("!macro NSIS_HOOK_PREUNINSTALL", 1)[1].split("!macroend", 1)[0]
+assert '${If} $0 == "1060"' in preuninstall
+assert '${ElseIf} $0 != "0"' in preuninstall
+assert 'Abort "Nexa Collector uninstall service state unavailable"' in preuninstall
 assert " --service" in installer
 assert "define_windows_service!" in runtime
 assert "service_control_handler::register" in runtime
@@ -127,3 +135,4 @@ assert 'pub mod recovery_guard;' in (root / 'collector/core/src/lib.rs').read_te
 assert "macos_launchd_mode: bool," in daemon
 assert 'windows-service = "=0.8.1"' in manifest
 print("Nexa NSIS Windows ACL and admin-only executable manifest checks passed (not a real install test)")
+
