@@ -173,6 +173,12 @@ function TicketDetails({ ticket, close }: { ticket: ClientTicket; close: () => v
         <h3>Descrição</h3><p className="ticket-description">{ticket.description}</p>
         <h3>Impressoras</h3>
         <ul>{ticket.printers.map(p => <li key={p.id}>{p.manufacturer} {p.model} — {label(p.ip_address)}</li>)}</ul>
+        {ticket.signature && <section>
+          <h3>Confirmação do serviço</h3>
+          <p><strong>Assinado por:</strong> {ticket.signature.signer_name}</p>
+          <p><strong>Serviço realizado:</strong> {ticket.signature.service_summary}</p>
+          <p><strong>Data do aceite:</strong> {dateTime(ticket.signature.signed_at)}</p>
+        </section>}
         <h3>Fotos e vídeos anexados</h3>
         {ticket.attachments.length === 0 ? <p>Nenhum anexo.</p>
           : <ul className="ticket-attachments-list">{ticket.attachments.map(file =>
