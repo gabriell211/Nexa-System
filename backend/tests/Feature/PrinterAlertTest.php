@@ -145,9 +145,11 @@ final class PrinterAlertTest extends TestCase
         extract($this->setupData());
         $id=$this->open($token,$printer->id)->assertCreated()->json('data.id');
         $ticket=$this->ticket($token,$customer->id,$printer->id);
-        $this->withToken($token)->postJson("/api/v1/tickets/{$ticket}/transition",[
-            'status'=>'resolved','reason'=>'Incidente já solucionado',
-        ])->assertOk();
+        // Model a historically resolved ticket: normal customer resolution
+        // now requires a signed service acceptance via the field application.
+        \App\Models\ServiceTicket::query()->whereKey($ticket)->update([
+            'status'=>'resolved','resolved_at'=>now(),
+        ]);
         $this->withToken($token)->postJson("/api/v1/alerts/{$id}/link-ticket",[
             'ticket_id'=>$ticket,
         ])->assertUnprocessable();
