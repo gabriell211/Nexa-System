@@ -364,3 +364,42 @@ td.mono { font-family: ui-monospace, monospace; }
   .brand-identity--login .brand-identity-icon { width: 55px; height: 55px; }
   .brand-identity--login .brand-identity-name { font-size: 22px; }
 }
+
+/* Fleet overview / details: screenshot-guided information architecture, Nexa theme. */
+.printer-fleet-table{max-width:100%;overflow-x:auto}
+.printer-fleet-table table{min-width:1500px;border-collapse:collapse}
+.printer-fleet-table th{font-size:11px;font-weight:800;white-space:nowrap}
+.printer-fleet-table td{font-size:12px;vertical-align:middle}
+.printer-fleet-table td small{display:block;color:#788aa1;margin-top:4px}
+.printer-fleet-table td:nth-child(11){min-width:170px;max-width:255px}
+.printer-fleet-table input[type="radio"]{accent-color:#0869D9;width:16px;height:16px}
+.printer-fleet-table .selected-printer-row{background:#eaf2ff}
+.fleet-status-dot{font-size:21px;font-weight:700;line-height:1}
+.fleet-status-dot.registered{color:#189b5e}
+.fleet-status-dot.inactive{color:#9ba9bb}
+.fleet-color{letter-spacing:-4px;color:#0869D9;font-size:15px;white-space:nowrap;padding-right:5px}
+.fleet-details-link{border:0;padding:0;text-align:left;background:transparent;cursor:pointer;font:inherit;font-weight:700;color:#074EA7;text-decoration:underline;text-underline-offset:3px}
+.fleet-details-link:hover{color:#071B40}
+.printer-details-modal{width:min(920px,calc(100vw - 30px));max-width:920px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.printer-details-modal .modal-header{flex-shrink:0}
+.printer-tabs{display:flex;flex-wrap:wrap;gap:4px;padding:14px 20px 0;background:#fff;border-bottom:1px solid #dfe7f1}
+.printer-tab{border:1px solid #dde6f0;border-bottom:0;border-radius:7px 7px 0 0;background:#F3F7FD;color:#5d7493;cursor:pointer;font-weight:700;font-size:12px;padding:11px 16px}
+.printer-tab.selected{background:white;color:#074EA7;border-color:#adc4e7;box-shadow:inset 0 3px #0869D9}
+.printer-tab:focus-visible{outline:2px solid #0869D9;outline-offset:-2px}
+.printer-details-content{padding:20px;overflow-y:auto;min-height:170px}
+.printer-details-list{display:grid;grid-template-columns:minmax(150px,33%) 1fr;gap:13px 17px;margin:0;padding:7px 8px}
+.printer-details-list dt{text-align:right;color:#637991;font-size:12px;font-weight:650}
+.printer-details-list dd{margin:0;font-size:13px;color:#23405f;overflow-wrap:anywhere}
+.printer-details-list dd strong{color:#164b93}
+.printer-details-content .modal-actions{padding-top:14px;margin-top:19px;border-top:1px solid #e6edf5;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:9px}
+.printer-metadata-form{padding:0}
+.printer-details-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px}
+.printer-details-grid>div{display:grid;gap:5px}
+.printer-details-grid label{font-size:12px;font-weight:700;color:#486382}
+.printer-details-grid input,.printer-details-grid select{width:100%;background:white;border:1px solid #d1dbe9;border-radius:7px;color:#23405f;padding:10px;min-width:0}
+.printer-details-content .table-wrap{overflow-x:auto}
+.printer-details-content table{min-width:650px}
+.printer-details-content td{font-size:12px}
+.printer-details-content td svg{vertical-align:middle}
+.printer-details-content .stock-footnote{display:flex;align-items:center;gap:7px;line-height:1.6;margin:8px 0 14px}
+@media(max-width:620px){.printer-details-modal{width:100%;max-height:97vh}.printer-tabs{padding:10px 9px 0}.printer-tab{padding:9px 8px;font-size:11px}.printer-details-content{padding:12px}.printer-details-grid{grid-template-columns:1fr}.printer-details-list{grid-template-columns:minmax(90px,40%) 1fr;gap:11px}.printer-details-list dt{font-size:11px}.printer-details-list dd{font-size:12px}}

@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\V1\CustomerDepartmentController;
 use App\Http\Controllers\Api\V1\CustomerLocationController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\PrinterController;
+use App\Http\Controllers\Api\V1\PrinterActionHistoryController;
 use App\Http\Controllers\Api\V1\ClientPrinterController;
 use App\Http\Controllers\Api\V1\ClientFleetSummaryController;
 use App\Http\Controllers\Api\V1\ClientFleetAnalyticsController;
@@ -65,6 +66,7 @@ $registerBackoffice = static function (): void {
         Route::get('/contracts/{contract}/cycle', [CustomerContractController::class, 'cycle']);
         Route::apiResource('printers', PrinterController::class)->only(['index', 'show']);
         Route::get('/printers/{printer}/readings', PrinterReadingHistoryController::class);
+        Route::get('/printers/{printer}/actions', PrinterActionHistoryController::class);
         Route::get('/printers/{printer}/production-preview', PrinterProductionPreviewController::class);
         Route::get('/printers/{printer}/assignments', [PrinterAssignmentController::class, 'index']);
         Route::apiResource('customers.locations', CustomerLocationController::class)->only(['index', 'show']);

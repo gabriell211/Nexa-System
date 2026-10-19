@@ -11,7 +11,7 @@ use Illuminate\Validation\ValidationException;
 
 final class PrinterService
 {
-    private const FIELDS = ['customer_id', 'manufacturer', 'model', 'serial_number', 'ip_address', 'status', 'active'];
+    private const FIELDS = ['customer_id', 'manufacturer', 'model', 'serial_number', 'ip_address', 'status', 'active', 'asset_number', 'mac_address', 'firmware_version', 'owner_type', 'connection_type', 'color_capability'];
 
     public function __construct(private readonly AuditWriter $audit) {}
 

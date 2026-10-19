@@ -25,6 +25,8 @@ export interface FleetPrinter {
   model: string;
   serial_number: string | null;
   ip_address: string | null;
+  asset_number: string | null;
+  owner_type: 'unknown' | 'customer' | 'provider';
   status: string;
   active: boolean;
   location: string | null;
