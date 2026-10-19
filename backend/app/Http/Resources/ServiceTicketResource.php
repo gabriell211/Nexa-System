@@ -21,6 +21,16 @@ final class ServiceTicketResource extends JsonResource
             'customer'=>$this->whenLoaded('customer', fn () => $this->customer?->only(['id','name'])),
             'printer'=>$this->whenLoaded('printer', fn () => $this->printer?->only(['id','manufacturer','model'])),
             'assignee'=>$this->whenLoaded('assignee', fn () => $this->assignee?->only(['id','name'])),
+            'linked_printers'=>$this->whenLoaded('linkedPrinters', fn () =>
+                $this->linkedPrinters->map(static fn ($printer) =>
+                    $printer->only(['id','manufacturer','model','serial_number','ip_address']))),
+            'attachments'=>$this->whenLoaded('attachments', fn () =>
+                $this->attachments->map(static fn ($file): array => [
+                    'id'=>$file->id,
+                    'name'=>$file->original_name,
+                    'mime_type'=>$file->mime_type,
+                    'size'=>(int)$file->bytes,
+                ])),
             'comments'=>$this->whenLoaded('comments', fn () => $this->comments->map(
                 static fn ($comment): array => [
                     'id'=>$comment->id,'body'=>$comment->body,'internal'=>(bool)$comment->internal,
