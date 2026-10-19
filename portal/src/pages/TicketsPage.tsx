@@ -209,7 +209,7 @@ function Detail({id,canReopen,onClose,onChanged}:{
                   {(staff.data?.data??[]).filter(person=>person.role==='technician').map(person=>
                     <option key={person.id} value={person.id}>{person.name}</option>)}
                 </select></div>
-              <div className="stock-field"><label htmlFor="ticket-dispatch-reason">Motivo da atribuição</label>
+              <div className="stock-field"><label htmlFor="ticket-dispatch-reason">Justificativa da designação</label>
                 <input id="ticket-dispatch-reason" value={dispatchReason} required minLength={5} maxLength={500}
                   onChange={e=>setDispatchReason(e.target.value)} placeholder="Ex.: visita técnica agendada"/></div>
             </div>
