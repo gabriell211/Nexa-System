@@ -11,7 +11,7 @@ export function FleetPanel({ renderColumns, headings }: {
   renderColumns: (printer: FleetPrinter) => ReactNode;
 }) {
   const data = useFleet();
-  const { request, page, setPage, search, setSearch, active, setActive } = data;
+  const { request, setPage, search, setSearch, active, setActive } = data;
   const meta = pagination(request.data);
   return <section className="panel">
     <FleetControls search={search} setSearch={setSearch} active={active}
