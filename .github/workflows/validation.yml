@@ -559,6 +559,25 @@ jobs:
       - name: Bundle unsigned NSIS Setup.exe with Tauri 2
         working-directory: collector/console
         run: npm run tauri build -- --bundles nsis
+      - name: Confirm elevated UAC manifest in the built Windows executable
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $executables = @(Get-ChildItem -Path 'collector/target/release' -Filter 'nexa-collector-console.exe' -File)
+          if ($executables.Count -ne 1) { throw "Nexa Collector console executable missing" }
+          $toolRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
+          $tools = @(Get-ChildItem -Path $toolRoot -Filter 'mt.exe' -Recurse -File |
+            Where-Object { $_.FullName -like '*\x64\mt.exe' } | Sort-Object FullName)
+          if ($tools.Count -eq 0) { throw 'Windows SDK mt.exe was not found' }
+          $manifestPath = Join-Path $env:RUNNER_TEMP 'collector-embedded.manifest'
+          & $tools[-1].FullName '-nologo' "-inputresource:$($executables[0].FullName);#1" "-out:$manifestPath"
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect embedded manifest' }
+          [xml]$manifest = Get-Content -Raw -LiteralPath $manifestPath
+          $requested = $manifest.SelectSingleNode("//*[local-name()='requestedExecutionLevel']")
+          if ($null -eq $requested -or $requested.GetAttribute('level') -ne 'requireAdministrator') {
+            throw 'Collector EXE lacks administrator-only UAC manifest'
+          }
+          if ($requested.GetAttribute('uiAccess') -ne 'false') { throw 'Unexpected Windows UIAccess' }
       - name: Upload Windows installer for review
         uses: actions/upload-artifact@v4
         with:

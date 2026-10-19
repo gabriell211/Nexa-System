@@ -19,31 +19,35 @@
     Abort "Missing Nexa Collector daemon"
   nexa_daemon_ok:
 
+  ; $COMMONPROGRAMDATA is the NSIS known-folder constant (%ProgramData%).
+  ; The former $COMMONAPPDATA was not an NSIS constant and was passed
+  ; literally to icacls, causing the installation to abort.
   ; State survives uninstall, under a controlled ProgramData ACL.
-  CreateDirectory "$COMMONAPPDATA\NexaCollector"
-  CreateDirectory "$COMMONAPPDATA\NexaCollector\data"
-  CreateDirectory "$COMMONAPPDATA\NexaCollector\credentials"
+  CreateDirectory "$COMMONPROGRAMDATA\NexaCollector"
+  CreateDirectory "$COMMONPROGRAMDATA\NexaCollector\data"
+  CreateDirectory "$COMMONPROGRAMDATA\NexaCollector\credentials"
 
   ; SIDs: SYSTEM/Administrators full; LocalService RX; Users RX for config/UI.
-  ExecWait '"$SYSDIR\icacls.exe" "$COMMONAPPDATA\NexaCollector" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-19:(OI)(CI)RX" "*S-1-5-32-545:(OI)(CI)RX"' $0
+  ; The service runs as LocalService. Never grant Users write access to secrets.
+  ExecWait '"$SYSDIR\icacls.exe" "$COMMONPROGRAMDATA\NexaCollector" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-19:(OI)(CI)RX" "*S-1-5-32-545:(OI)(CI)RX"' $0
   StrCmp $0 "0" +3
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger a pasta do Nexa Collector."
     Abort "Nexa Collector root ACL failure"
 
   ; Keep SQLite/WAL/SHM and secrets private, and allow service data writes.
-  ExecWait '"$SYSDIR\icacls.exe" "$COMMONAPPDATA\NexaCollector\data" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-19:(OI)(CI)M"' $0
+  ExecWait '"$SYSDIR\icacls.exe" "$COMMONPROGRAMDATA\NexaCollector\data" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-19:(OI)(CI)M"' $0
   StrCmp $0 "0" +3
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger a fila local de medicoes."
     Abort "Nexa Collector data ACL failure"
 
-  ExecWait '"$SYSDIR\icacls.exe" "$COMMONAPPDATA\NexaCollector\credentials" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-19:(OI)(CI)R"' $0
+  ExecWait '"$SYSDIR\icacls.exe" "$COMMONPROGRAMDATA\NexaCollector\credentials" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-19:(OI)(CI)R"' $0
   StrCmp $0 "0" +3
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger as credenciais do agente."
     Abort "Nexa Collector credential ACL failure"
 
   ; Create example config only on clean install; never overwrite binding.
-  IfFileExists "$COMMONAPPDATA\NexaCollector\config.json" nexa_config_exists 0
-    SetOutPath "$COMMONAPPDATA\NexaCollector"
+  IfFileExists "$COMMONPROGRAMDATA\NexaCollector\config.json" nexa_config_exists 0
+    SetOutPath "$COMMONPROGRAMDATA\NexaCollector"
     File /oname=config.json "${NEXA_DEFAULT_CONFIG}"
     SetOutPath "$INSTDIR"
   nexa_config_exists:
