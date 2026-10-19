@@ -33,9 +33,9 @@ final class PrinterRequest extends FormRequest
             'asset_number' => ['sometimes', 'nullable', 'string', 'max:80', 'regex:/^[\\pL\\pN._\\/ -]+$/u'],
             'mac_address' => ['sometimes', 'nullable', 'string', 'regex:/^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}$/'],
             'firmware_version' => ['sometimes', 'nullable', 'string', 'max:160'],
-            'owner_type' => ['sometimes', \\Illuminate\\Validation\\Rule::in(['unknown', 'customer', 'provider'])],
-            'connection_type' => ['sometimes', \\Illuminate\\Validation\\Rule::in(['unknown', 'network', 'usb'])],
-            'color_capability' => ['sometimes', \\Illuminate\\Validation\\Rule::in(['unknown', 'mono', 'color'])],
+            'owner_type' => ['sometimes', Rule::in(['unknown', 'customer', 'provider'])],
+            'connection_type' => ['sometimes', Rule::in(['unknown', 'network', 'usb'])],
+            'color_capability' => ['sometimes', Rule::in(['unknown', 'mono', 'color'])],
         ];
     }
 }
