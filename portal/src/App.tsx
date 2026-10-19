@@ -7,6 +7,7 @@ import {
 import { ApiError, api, queryString, readableError, resetCsrf } from './api';
 import { ActivationPage } from './pages/ActivationPage';
 import { AdminNavigation } from './components/AdminNavigation';
+import { BrandLogo } from './components/BrandLogo';
 import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
 import { StaffPage } from './pages/StaffPage';
 import { InventoryPage } from './pages/InventoryPage';
@@ -86,7 +87,7 @@ function Login({ onLogin }: { onLogin: (values: Credentials) => Promise<void> })
 
   return <main className="auth-page">
     <div className="auth-panel">
-      <div className="brand-badge"><span className="brand-mark">N</span><span>NEXA <strong>SYSTEM</strong></span></div>
+      <BrandLogo variant="login"/>
       <div className="auth-heading">
         <span className="eyebrow">PLATAFORMA DE GESTÃO MPS</span>
         <h1>Acesse sua operação.</h1>
@@ -146,7 +147,7 @@ function Shell({ token, identity, onLogout }: {
 
   return <div className="app-shell">
     <aside className="sidebar" aria-label="Menu lateral">
-      <div className="brand-badge sidebar-brand"><span className="brand-mark">N</span><span>NEXA <strong>SYSTEM</strong></span></div>
+      <BrandLogo variant="sidebar"/>
       <div className="workspace">
         <span className="workspace-icon"><Building2 size={20} aria-hidden="true" /></span>
         <div><small>EMPRESA ATUAL</small><strong>{identity.tenant.name}</strong></div>
@@ -161,7 +162,7 @@ function Shell({ token, identity, onLogout }: {
     </aside>
     <div className="content-area">
       <header className="topbar">
-        <span className="topbar-breadcrumb">Nexa <span>/</span> Painel administrativo</span>
+        <div className="topbar-identity"><BrandLogo variant="topbar"/><span className="topbar-breadcrumb"><span>/</span> {identity.role === "technician" ? "Área técnica" : "Painel administrativo"}</span></div>
         <div className="topbar-actions">
           <span className="system-status"><span className="status-dot" /> Dados da API</span>
           <button type="button" className="button ghost topbar-logout" onClick={() => void onLogout()} aria-label="Encerrar sessão" title="Encerrar sessão">
