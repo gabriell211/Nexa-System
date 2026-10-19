@@ -169,4 +169,86 @@ final class TechnicianMobileWorkflowTest extends TestCase
         ])->assertNotFound();
         $this->assertDatabaseCount('service_ticket_part_requests',0);
     }
+
+    public function test_customer_request_dispatch_mobile_acceptance_and_administrative_closure_end_to_end(): void
+    {
+        Storage::fake('local');
+        extract($this->setupData());
+        $client=$this->member($tenant,'customer');
+        $tenant->users()->updateExistingPivot($client->id,['customer_scope'=>'assigned']);
+        \Illuminate\Support\Facades\DB::table('customer_user_access')->insert([
+            'tenant_id'=>$tenant->id,'user_id'=>$client->id,'customer_id'=>$customer->id,
+            'created_at'=>now(),'updated_at'=>now(),
+        ]);
+        $ticket->update([
+            'status'=>'triage','assigned_user_id'=>null,
+            'opened_by_user_id'=>$client->id,'origin'=>'customer_portal',
+        ]);
+
+        $base='/api/v1/tickets/'.$ticket->id;
+        $assign=[
+            'assigned_user_id'=>$tech->id,
+            'reason'=>'Visita técnica atribuída pelo administrativo.',
+        ];
+        $this->withToken($adminToken)->postJson($base.'/assign',[
+            ...$assign,'assigned_user_id'=>$owner->id,
+        ])->assertUnprocessable();
+        $this->withToken($adminToken)->postJson($base.'/transition',[
+            'status'=>'resolved','reason'=>'Sem aceite do cliente ainda.',
+        ])->assertUnprocessable();
+        $this->withToken($adminToken)->postJson($base.'/assign',$assign)
+            ->assertOk()->assertJsonPath('data.status','pending')
+            ->assertJsonPath('data.assignee.id',$tech->id);
+        $this->assertDatabaseHas('audit_entries',['action'=>'ticket.assigned']);
+        $this->withToken($adminToken)->postJson($base.'/assign',$assign)
+            ->assertOk()->assertJsonPath('data.status','pending');
+        $this->assertSame(1, \App\Models\AuditEntry::query()
+            ->where('action','ticket.assigned')->count());
+
+        $mobileToken=$this->login($tech,$tenant);
+        $mobile='/api/v1/mobile/tickets/'.$ticket->id;
+        Auth::forgetGuards();
+        $this->withToken($mobileToken)->getJson('/api/v1/mobile/tickets')
+            ->assertOk()->assertJsonCount(1,'data')
+            ->assertJsonPath('data.0.id',$ticket->id);
+        $this->withToken($mobileToken)->postJson($base.'/assign',$assign)->assertForbidden();
+        $this->withToken($mobileToken)->postJson($mobile.'/start')
+            ->assertOk()->assertJsonPath('data.status','in_progress');
+        $this->withToken($mobileToken)->postJson($mobile.'/signature',[
+            'signer_name'=>'Responsável pelo equipamento',
+            'service_summary'=>'Impressora testada e reparada em atendimento presencial.',
+            'signature_png_base64'=>$this->png(),
+            'consent'=>true,
+        ])->assertOk()->assertJsonPath('data.status','resolved');
+
+        Auth::forgetGuards();
+        $this->withToken($mobileToken)->postJson($base.'/transition',[
+            'status'=>'closed','reason'=>'Tentativa de encerramento pelo aplicativo.',
+        ])->assertForbidden();
+        Auth::forgetGuards();
+        $this->withToken($adminToken)->postJson($base.'/transition',[
+            'status'=>'closed','reason'=>'Aceite conferido e chamado encerrado.',
+        ])->assertOk()->assertJsonPath('data.status','closed')
+            ->assertJsonPath('data.signature.signer_name','Responsável pelo equipamento');
+        $this->withToken($adminToken)->postJson($base.'/transition',[
+            'status'=>'triage','reason'=>'Não reutilizar assinatura de atendimento antigo.',
+        ])->assertUnprocessable();
+        $this->assertDatabaseHas('audit_entries',['action'=>'ticket.customer.signed']);
+        $this->assertDatabaseHas('audit_entries',['action'=>'ticket.transitioned']);
+        $this->assertDatabaseHas('service_tickets',['id'=>$ticket->id,'status'=>'closed']);
+        $this->assertDatabaseCount('service_ticket_signatures',1);
+
+        Auth::forgetGuards();
+        $this->postJson('/api/v1/browser/auth/login',[
+            'email'=>$client->email,'password'=>'strong-password-123',
+            'tenant'=>$tenant->slug,
+        ])->assertOk();
+        $this->getJson('/api/v1/browser/client/tickets/'.$ticket->id)
+            ->assertOk()->assertJsonPath('data.status','closed')
+            ->assertJsonPath('data.signature.signer_name','Responsável pelo equipamento');
+
+        Auth::forgetGuards();
+        $this->withToken($mobileToken)->getJson('/api/v1/mobile/tickets')
+            ->assertOk()->assertJsonCount(0,'data');
+    }
 }
