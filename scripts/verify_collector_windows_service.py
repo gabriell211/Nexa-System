@@ -135,4 +135,3 @@ assert 'pub mod recovery_guard;' in (root / 'collector/core/src/lib.rs').read_te
 assert "macos_launchd_mode: bool," in daemon
 assert 'windows-service = "=0.8.1"' in manifest
 print("Nexa NSIS Windows ACL and admin-only executable manifest checks passed (not a real install test)")
-
