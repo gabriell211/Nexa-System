@@ -1,0 +1,44 @@
+export interface ClientIdentity {
+  user: { id: number; name: string; email?: string };
+  tenant: { id: number; name: string; slug?: string };
+  role: string;
+  customer_scope: 'all' | 'assigned';
+}
+export interface Credentials { email: string; password: string; tenant: string }
+export interface Page<T> {
+  data: T[];
+  meta?: { current_page: number; last_page: number; total: number };
+  current_page?: number; last_page?: number; total?: number;
+}
+export interface Meter {
+  meter_total: string | null;
+  meter_mono: string | null;
+  meter_color: string | null;
+  meter_scan: string | null;
+  collected_at: string | null;
+}
+export interface FleetPrinter {
+  id: number;
+  customer_name: string | null;
+  manufacturer: string;
+  model: string;
+  serial_number: string | null;
+  ip_address: string | null;
+  status: string;
+  active: boolean;
+  location: string | null;
+  department: string | null;
+  cost_center: string | null;
+  cost_center_code: string | null;
+  latest_reading: Meter | null;
+}
+export interface FleetSummary {
+  printers: number;
+  active: number;
+  printers_with_readings: number;
+  assigned_customers: number;
+}
+export interface Reading extends Meter {
+  id: number;
+  received_at: string | null;
+}
