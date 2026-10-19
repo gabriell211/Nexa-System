@@ -58,6 +58,7 @@ message_boxes = [line for line in installer.splitlines() if line.lstrip().starts
 assert message_boxes and all(" /SD IDOK" in line for line in message_boxes), "Silent install must never wait for a dialog"
 error_levels = [line.strip() for line in installer.splitlines() if line.lstrip().startswith("SetErrorLevel ")]
 assert len(error_levels) == len(message_boxes) == len(set(error_levels)), "Each NSIS failure needs its own exit code"
+assert installer.count("IfSilent 0 +2\n      Quit\n    Abort ") == len(message_boxes), "Silent failures must preserve their exit codes"
 for required in [
     "!macro NSIS_HOOK_PREINSTALL",
     "!macro NSIS_HOOK_POSTINSTALL",
