@@ -64,7 +64,7 @@ final class ClientTicketController extends Controller
 
     private function output(ServiceTicket $ticket): array
     {
-        $ticket->loadMissing(['linkedPrinters:id,manufacturer,model,serial_number,ip_address',
+        $ticket->loadMissing(['linkedPrinters:id,tenant_id,customer_id,manufacturer,model,serial_number,ip_address',
             'attachments:id,tenant_id,ticket_id,original_name,mime_type,bytes,created_at']);
         return [
             'id' => $ticket->id,
@@ -75,7 +75,10 @@ final class ClientTicketController extends Controller
             'status' => $ticket->status,
             'created_at' => $ticket->created_at?->toIso8601String(),
             'updated_at' => $ticket->updated_at?->toIso8601String(),
-            'printers' => $ticket->linkedPrinters->map(static fn ($printer): array => [
+            'printers' => $ticket->linkedPrinters->filter(static fn ($printer): bool =>
+                (int) $printer->tenant_id === (int) $ticket->tenant_id &&
+                (int) $printer->customer_id === (int) $ticket->customer_id
+            )->map(static fn ($printer): array => [
                 'id' => $printer->id,
                 'manufacturer' => $printer->manufacturer,
                 'model' => $printer->model,
@@ -102,7 +105,7 @@ final class ClientTicketController extends Controller
         $result = ServiceTicket::query()
             ->where('tenant_id', $tenant->id)
             ->whereIn('customer_id', $this->permitted($request))
-            ->with(['linkedPrinters:id,manufacturer,model,serial_number,ip_address',
+            ->with(['linkedPrinters:id,tenant_id,customer_id,manufacturer,model,serial_number,ip_address',
                 'attachments:id,tenant_id,ticket_id,original_name,mime_type,bytes,created_at'])
             ->orderByDesc('id')->paginate($data['per_page'] ?? 20);
         return response()->json([
