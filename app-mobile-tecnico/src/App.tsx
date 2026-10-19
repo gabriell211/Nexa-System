@@ -27,7 +27,7 @@ function Field({label,value,onChangeText,secureTextEntry=false,multiline=false,p
 }) {
   return <View style={styles.field}>
     <Text style={styles.label}>{label}</Text>
-    <TextInput accessibilityLabel={label} style={[styles.input,multiline && {height:105,textAlignVertical:'top'}]}
+    <TextInput accessibilityLabel={label} style={[styles.input,multiline && {height:105,textAlignVertical:'top' as const}]}
       value={value} onChangeText={onChangeText} autoCapitalize="none"
       multiline={multiline} secureTextEntry={secureTextEntry} placeholder={placeholder}
       placeholderTextColor="#758096" />
@@ -44,6 +44,9 @@ export default function App(): React.JSX.Element {
   const [tenant,setTenant] = useState('');
   const [screen,setScreen] = useState<Screen>('tickets');
   const [list,setList] = useState<Ticket[]>([]);
+  const [ticketPage,setTicketPage] = useState(1);
+  const [lastTicketPage,setLastTicketPage] = useState(1);
+  const loadingNext=useRef(false);
   const [current,setCurrent] = useState<Ticket | null>(null);
   const [items,setItems] = useState<StockItem[]>([]);
   const [search,setSearch] = useState('');
@@ -54,9 +57,10 @@ export default function App(): React.JSX.Element {
   const [summary,setSummary] = useState('');
   const [consent,setConsent] = useState(false);
   const [strokes,setStrokes] = useState<string[]>([]);
-  const [activeStroke,setActiveStroke] = useState(-1);
   const [padWidth,setPadWidth] = useState(320);
   const shot=useRef<ViewShot>(null);
+  const partRequestId=useRef<string|null>(null);
+  const activeStrokeIndex=useRef(-1);
 
   useEffect(() => {
     let active=true;
@@ -68,8 +72,9 @@ export default function App(): React.JSX.Element {
   useEffect(()=>{
     if (!authenticated) return;
     let alive=true;
-    api.tickets().then(data=>{if(alive)setList(data)})
-      .catch(e=>{if(alive)setError(String(e instanceof Error ? e.message:e))});
+    api.tickets().then(result=>{if(alive){
+      setList(result.data);setTicketPage(1);setLastTicketPage(result.meta?.last_page??1);
+    }}).catch(e=>{if(alive)setError(String(e instanceof Error ? e.message:e))});
     return ()=>{alive=false};
   },[authenticated]);
 
@@ -85,10 +90,23 @@ export default function App(): React.JSX.Element {
     } finally {setBusy(false)}
   }
   async function refresh():Promise<void> {
-    setList(await api.tickets());
+    const result=await api.tickets();
+    setList(result.data);setTicketPage(1);setLastTicketPage(result.meta?.last_page??1);
+  }
+  async function loadMore():Promise<void> {
+    if(loadingNext.current||busy||ticketPage>=lastTicketPage)return;
+    loadingNext.current=true;
+    try {
+      const page=await api.tickets(ticketPage+1);
+      setList(previous=>previous.concat(page.data.filter(item=>!previous.some(t=>t.id===item.id))));
+      setTicketPage(ticketPage+1);
+      setLastTicketPage(page.meta?.last_page??lastTicketPage);
+    } catch(e) {
+      setError(e instanceof Error?e.message:'Erro ao carregar mais chamados.');
+    } finally {loadingNext.current=false}
   }
   async function openTicket(id:number):Promise<void> {
-    await run(async()=>{setCurrent(await api.ticket(id));setScreen('detail')});
+    await run(async()=>{setCurrent(await api.ticket(id));partRequestId.current=null;setScreen('detail')});
   }
   async function submitLogin():Promise<void> {
     await run(async()=>{await api.login(email.trim(),password,tenant.trim());setPassword('');setAuthenticated(true);setScreen('tickets')});
@@ -111,10 +129,12 @@ export default function App(): React.JSX.Element {
     const quantity=Number(qty);
     if(!Number.isInteger(quantity)||quantity<1||quantity>1000){setError('Quantidade inválida.');return}
     if(partReason.trim().length<5){setError('Explique por que a peça é necessária.');return}
-    const request_id=makeUuid();
+    const request_id=partRequestId.current??makeUuid();
+    partRequestId.current=request_id;
     await run(async()=>{
       await api.requestPart(current.id,{stock_item_id:selected.id,quantity,reason:partReason.trim(),request_id});
       setCurrent(await api.ticket(current.id));
+      partRequestId.current=null;
       setSelected(null);setPartReason('');setQty('1');setScreen('detail');
       Alert.alert('Solicitação enviada','O setor responsável poderá analisar e autorizar a peça.');
     });
@@ -124,15 +144,17 @@ export default function App(): React.JSX.Element {
     return `${Math.round(Math.max(0,Math.min(padWidth,locationX)))} ${Math.round(Math.max(0,Math.min(180,locationY)))}`;
   }
   function beginStroke(e:GestureResponderEvent):void {
-    setStrokes(current=>{setActiveStroke(current.length);return [...current,'M '+point(e)]});
+    activeStrokeIndex.current=strokes.length;
+    setStrokes(current=>[...current,'M '+point(e)]);
   }
   function extendStroke(e:GestureResponderEvent):void {
-    if(activeStroke<0)return;
-    setStrokes(current=>current.map((stroke,index)=>index===activeStroke?stroke+' L '+point(e):stroke));
+    const active=activeStrokeIndex.current;
+    if(active<0)return;
+    setStrokes(current=>current.map((stroke,index)=>index===active?stroke+' L '+point(e):stroke));
   }
   async function submitSignature():Promise<void> {
     if(!current)return;
-    if(strokes.length===0||signer.trim().length<3||summary.trim().length<10||!consent){
+    if(!strokes.some(path=>path.includes(' L '))||signer.trim().length<3||summary.trim().length<10||!consent){
       setError('Informe o serviço realizado, o nome do cliente, a assinatura e a confirmação de aceite.');
       return;
     }
@@ -168,7 +190,8 @@ export default function App(): React.JSX.Element {
       <Action title="Sair" subtle onPress={()=>void exit()}/></View>
     <Action title="Atualizar lista" subtle disabled={busy} onPress={()=>void run(refresh)}/>
     <FlatList data={list} keyExtractor={item=>String(item.id)} refreshing={busy}
-      onRefresh={()=>void run(refresh)} ListEmptyComponent={<Text style={styles.empty}>Nenhum chamado atribuído.</Text>}
+      onRefresh={()=>void run(refresh)} onEndReached={()=>void loadMore()} onEndReachedThreshold={0.4}
+      ListEmptyComponent={<Text style={styles.empty}>Nenhum chamado atribuído.</Text>}
       renderItem={({item})=><Pressable accessibilityRole="button"
         onPress={()=>void openTicket(item.id)} style={styles.card}>
         <Text style={styles.cardTitle}>#{item.id} · {item.subject}</Text>
@@ -209,13 +232,13 @@ export default function App(): React.JSX.Element {
     <Field label="Pesquisar peça por nome ou código" value={search} onChangeText={setSearch}/>
     <Action title="Pesquisar" subtle disabled={busy} onPress={()=>void searchParts()}/>
     {items.map(item=><Pressable key={item.id} accessibilityRole="button"
-      onPress={()=>setSelected(item)} style={[styles.item,selected?.id===item.id&&styles.selected]}>
+      onPress={()=>{partRequestId.current=null;setSelected(item)}} style={[styles.item,selected?.id===item.id&&styles.selected]}>
       <Text style={styles.cardTitle}>{item.name}</Text><Text style={styles.meta}>{item.sku}</Text>
     </Pressable>)}
     {selected && <>
       <Text style={styles.label}>Selecionada: {selected.name}</Text>
-      <Field label="Quantidade" value={qty} onChangeText={setQty}/>
-      <Field label="Motivo da solicitação" value={partReason} onChangeText={setPartReason} multiline/>
+      <Field label="Quantidade" value={qty} onChangeText={value=>{setQty(value);partRequestId.current=null}}/>
+      <Field label="Motivo da solicitação" value={partReason} onChangeText={value=>{setPartReason(value);partRequestId.current=null}} multiline/>
       <Action title="Enviar solicitação de peça" disabled={busy} onPress={()=>void sendPart()}/>
     </>}
   </ScrollView>;
@@ -229,7 +252,7 @@ export default function App(): React.JSX.Element {
       <View onLayout={e=>setPadWidth(e.nativeEvent.layout.width)} style={styles.pad}
         onStartShouldSetResponder={()=>true} onMoveShouldSetResponder={()=>true}
         onResponderGrant={beginStroke} onResponderMove={extendStroke}
-        onResponderRelease={()=>setActiveStroke(-1)}>
+        onResponderRelease={()=>{activeStrokeIndex.current=-1}}>
         <Svg width="100%" height={180} viewBox={`0 0 ${padWidth} 180`}>
           {strokes.map((d,i)=><Path key={i} d={d} stroke="#101829" strokeWidth={2.7}
             strokeLinecap="round" strokeLinejoin="round" fill="none"/>)}

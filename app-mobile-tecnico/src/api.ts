@@ -85,9 +85,8 @@ export async function logout(): Promise<void> {
   finally { await clearSession(); }
 }
 
-export async function tickets(): Promise<Ticket[]> {
-  const page = await request<Page<Ticket>>('/mobile/tickets');
-  return page.data;
+export async function tickets(page = 1): Promise<Page<Ticket>> {
+  return request<Page<Ticket>>('/mobile/tickets?page='+encodeURIComponent(String(page)));
 }
 export async function ticket(id: number): Promise<Ticket> {
   return (await request<{data:Ticket}>(`/mobile/tickets/${id}`)).data;
