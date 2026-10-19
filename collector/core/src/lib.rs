@@ -1,6 +1,7 @@
 pub mod recovery_guard;
 pub mod discovery;
 pub mod mib_registry;
+pub mod snmp_inventory;
 pub mod candidate_review;
 pub mod local_control;
 pub mod usb_devices;

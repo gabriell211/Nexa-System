@@ -24,6 +24,22 @@ mod macos_launchd_runtime;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
+    if args.len() == 4 && args[1] == "--inspect-snmp" {
+        // Explicit, offline-to-cloud diagnostic. Config grants the permitted
+        // subnets. SNMP community is read from protected environment/credentials,
+        // never accepted on argv or written to disk. No meter upload occurs.
+        let cfg = read_config(&args[2])?;
+        let ip: std::net::Ipv4Addr = args[3].parse()?;
+        nexa_collector_core::snmp_inventory::authorized_device(ip, &cfg.authorized_subnets)
+            .map_err(|_| "IP outside authorized private subnets")?;
+        let community = load_secret("NEXA_SNMP_COMMUNITY", false, false)?
+            .ok_or("SNMP read-only credential is not configured")?;
+        let result = nexa_collector_core::snmp_inventory::inspect_v2c(
+            ip, &cfg.authorized_subnets, community.as_bytes(),
+        ).map_err(|_| "SNMP inventory unavailable or incomplete")?;
+        println!("{}", serde_json::to_string_pretty(&result)?);
+        return Ok(());
+    }
     if args.len() == 2 && args[1] == "--mib-catalog" {
         // Offline read-only metadata dump; does not scan any IP address,
         // access SNMP secrets or enroll a monitored printer.
