@@ -27,7 +27,7 @@ final class ClientPrinterResource extends JsonResource
             'department' => $assignment?->department?->name,
             'cost_center' => $assignment?->costCenter?->name,
             'cost_center_code' => $assignment?->costCenter?->code,
-            'latest_reading' => $reading ? [
+            'latest_reading' => app(\\App\\Services\\CustomerAccountPermissions::class)->forRequest($request)['view_reports'] && $reading ? [
                 // Decimal strings avoid IEEE-754 precision loss in JavaScript.
                 'meter_total' => $reading->meter_total === null ? null : (string) $reading->meter_total,
                 'meter_mono' => $reading->meter_mono === null ? null : (string) $reading->meter_mono,
