@@ -589,7 +589,14 @@ jobs:
           if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
             throw 'The disposable Windows runner must be elevated for the SCM installation test.'
           }
-          $result = Start-Process -FilePath $exe[0].FullName -ArgumentList '/S' -PassThru -Wait
+          # Start-Process -Wait may wait for child GUI processes too. Monitor
+          # the installer process itself and bound execution to two minutes.
+          $result = Start-Process -FilePath $exe[0].FullName -ArgumentList '/S' -PassThru
+          if (-not $result.WaitForExit(120000)) {
+            & "$env:WINDIR\System32\sc.exe" qc NexaCollector
+            Stop-Process -Id $result.Id -Force -ErrorAction SilentlyContinue
+            throw 'NSIS installer timed out: possible modal SCM error dialog; inspect user screenshot'
+          }
           if ($result.ExitCode -ne 0) { throw "Installer failed with exit code $($result.ExitCode)" }
           $installed = Get-CimInstance Win32_Service -Filter "Name = 'NexaCollector'"
           if ($null -eq $installed) { throw 'NexaCollector service was not registered by NSIS' }
@@ -607,7 +614,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'SCM query failed' }
           $uninstaller = Join-Path $env:ProgramFiles 'Nexa Collector\uninstall.exe'
           if (-not (Test-Path $uninstaller)) { throw "Missing Tauri NSIS uninstaller: $uninstaller" }
-          $removed = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
+          $removed = Start-Process -FilePath $uninstaller -ArgumentList '/S' -PassThru
+          if (-not $removed.WaitForExit(120000)) {
+            Stop-Process -Id $removed.Id -Force -ErrorAction SilentlyContinue
+            throw 'NSIS uninstaller exceeded 120 seconds'
+          }
           if ($removed.ExitCode -ne 0) { throw "Uninstaller failed: $($removed.ExitCode)" }
           Start-Sleep -Seconds 3
           $left = Get-CimInstance Win32_Service -Filter "Name = 'NexaCollector'"
