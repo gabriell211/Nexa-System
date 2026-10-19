@@ -1,6 +1,6 @@
-import { useDeferredValue, useState, type FormEvent, type ReactNode } from 'react';
+import { useDeferredValue, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { BrowserRouter, Link, NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Link, NavLink, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import {
   Activity, ArrowRight, Building2, ChevronLeft, ChevronRight, ClipboardList, ClipboardCheck,
   Database, LayoutDashboard, LogOut, Pencil, Plus, Printer as PrinterIcon, ShieldAlert,
@@ -407,6 +407,10 @@ function PrinterDialog({ printer, onClose, onSave, pending }: {
 
 function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boolean }) {
   const qc = useQueryClient();
+  const [routeParams, setRouteParams] = useSearchParams();
+  const byCustomer = routeParams.get('view') === 'customer';
+  const [customerId, setCustomerId] = useState('');
+
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const delayed = useDeferredValue(search);
@@ -416,9 +420,20 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
   const [historyPrinter, setHistoryPrinter] = useState<Printer | null>(null);
   const [notice, setNotice] = useState('');
 
+  useEffect(() => {
+    if (routeParams.get('new') === '1' && canWrite) {
+      setEditing('new');
+      const next = new URLSearchParams(routeParams);
+      next.delete('new');
+      setRouteParams(next, {replace: true});
+    }
+  }, [routeParams, setRouteParams, canWrite]);
+
   const listing = useQuery({
-    queryKey: ['printers', page, delayed, activeOnly],
-    queryFn: () => api<Page<Printer>>('/printers' + queryString({ page, q: delayed, active_only: activeOnly }), token),
+    queryKey: ['printers', page, delayed, activeOnly, byCustomer, customerId],
+    enabled: !byCustomer || customerId !== '',
+    queryFn: () => api<Page<Printer>>('/printers' + queryString({ page, q: delayed, active_only: activeOnly,
+      ...(byCustomer && customerId ? { customer_id: Number(customerId) } : {}) }), token),
     placeholderData: keepPreviousData,
   });
 
@@ -456,6 +471,14 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
     <PageTitle kicker="GESTÃO DO PARQUE" title="Impressoras" subtitle="Inventário dos equipamentos vinculados aos clientes."
       action={canWrite && <button className="button primary" type="button" onClick={() => setEditing('new')}><Plus size={17}/> Nova impressora</button>} />
     <section className="data-card">
+      {byCustomer && <div className="admin-customer-filter">
+        <PagedEntitySelect<Customer> id="park-customer" label="Selecione um cliente"
+          searchLabel="Pesquisar cliente" placeholder="Buscar cliente..."
+          emptyLabel="Selecione o cliente para visualizar suas impressoras"
+          value={customerId} onChange={id => {setCustomerId(id);setPage(1);}}
+          queryKey={['park-filter-customers']} endpoint="/customers"
+          filters={{active_only:true}} optionLabel={item=>item.name}/>
+      </div>}
       <div className="table-tools"><label className="search-field"><Search size={18} aria-hidden="true"/>
         <input type="search" aria-label="Pesquisar impressoras" value={search} maxLength={100}
           placeholder="Fabricante, modelo ou série..." onChange={(event) => { setSearch(event.target.value); setPage(1); }}/></label>
@@ -463,7 +486,8 @@ function PrintersPage({ token, canWrite }: { token: string | null; canWrite: boo
       </div>
       {notice && <p role="status" className="notice success">{notice}</p>}
       {deactivate.error && <ErrorMessage error={deactivate.error}/>}
-      {listing.isPending ? <LoadingState/> : listing.error ? <ErrorMessage error={listing.error}/> : listing.data.data.length === 0 ? <EmptyState>Nenhuma impressora encontrada para estes filtros.</EmptyState> : <>
+      {byCustomer && !customerId ? <EmptyState>Selecione o cliente para visualizar o parque atribuído.</EmptyState> :
+      listing.isPending ? <LoadingState/> : listing.error ? <ErrorMessage error={listing.error}/> : listing.data.data.length === 0 ? <EmptyState>Nenhuma impressora encontrada para estes filtros.</EmptyState> : <>
         <div className="table-wrap"><table><thead><tr><th>Impressora</th><th>Cliente</th><th>IP</th><th>Últimos contadores</th><th>Estado de coleta</th><th>Cadastro</th><th className="actions-head">Ações</th></tr></thead>
           <tbody>{listing.data.data.map((printer) => <tr key={printer.id}>
             <td><strong>{printer.manufacturer} {printer.model}</strong><small>{printer.serial_number || 'Série não informada'}</small></td>
