@@ -1,0 +1,151 @@
+name: Publish Nexa Collector v0.1.0
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/publish-collector-v0.1.0.yml
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: nexa-collector-release-v0.1.0
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish verified collector installers
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN: "39310341658"
+      SOURCE_SHA: 86c76c58c515f98435daf5df9ebedf6edd656120
+      RELEASE_TAG: v0.1.0
+    steps:
+      - name: Check out validated source code
+        uses: actions/checkout@v4
+        with:
+          ref: 86c76c58c515f98435daf5df9ebedf6edd656120
+          persist-credentials: false
+
+      - name: Verify tested source and unpublished draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jq -r .version collector/console/src-tauri/tauri.conf.json)" = "0.1.0"
+          grep -Fxq 'version = "0.1.0"' collector/Cargo.toml
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN")"
+          test "$(jq -r .head_sha <<<"$run")" = "$SOURCE_SHA"
+          test "$(jq -r .head_branch <<<"$run")" = main
+          test "$(jq -r .conclusion <<<"$run")" = success
+          test "$(jq -r .name <<<"$run")" = "Nexa validation"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Release tag already exists. Refusing to retag."
+            exit 1
+          fi
+          draft="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" | jq -cer --arg tag "$RELEASE_TAG" '[.[] | select(.tag_name == $tag)] | first')"
+          test "$(jq -r .draft <<<"$draft")" = true
+          test "$(jq -r .prerelease <<<"$draft")" = true
+          echo "RELEASE_ID=$(jq -r .id <<<"$draft")" >> "$GITHUB_ENV"
+
+      - name: Download installers from the successful main build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p incoming/{win,linux,intel,arm} release
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-windows-setup-unsigned -D incoming/win
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-linux-x64-deb-rpm-unsigned -D incoming/linux
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-macos-x86_64-pkg-unsigned -D incoming/intel
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-macos-arm64-pkg-unsigned -D incoming/arm
+          stage_one() {
+            local folder="$1" pattern="$2" dest="$3"
+            local -a files=()
+            mapfile -t files < <(find "$folder" -type f -name "$pattern" -print)
+            if test "${#files[@]}" -ne 1; then
+              echo "::error::Expected one matching $pattern in $folder"
+              exit 1
+            fi
+            cp -- "${files[0]}" "release/$dest"
+            test "$(stat -c%s "release/$dest")" -gt 102400
+          }
+          stage_one incoming/win '*-setup.exe' 'Nexa.Collector_0.1.0_x64-setup.exe'
+          stage_one incoming/linux '*.deb' 'Nexa-Collector-0.1.0-linux-x64.deb'
+          stage_one incoming/linux '*.rpm' 'Nexa-Collector-0.1.0-linux-x64.rpm'
+          stage_one incoming/intel '*.pkg' 'NexaCollector-0.1.0-x86_64-unsigned.pkg'
+          stage_one incoming/arm '*.pkg' 'NexaCollector-0.1.0-arm64-unsigned.pkg'
+          (cd release && sha256sum -- *.exe *.deb *.rpm *.pkg > SHA256SUMS.txt)
+          test "$(wc -l < release/SHA256SUMS.txt)" -eq 5
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat > RELEASE_NOTES.md <<'NOTES'
+          ## Nexa Collector v0.1.0 — prévia técnica
+
+          Instaladores nativos para Windows x64 (NSIS), Linux x64 (DEB e RPM) e macOS Intel e Apple Silicon (PKG), todos com console Tauri/React e daemon Rust.
+
+          ### Recursos
+          - Fila SQLite protegida, envio HTTPS, heartbeat e retomada após falhas.
+          - Descoberta de dispositivos, aprovação local e monitoramento SNMP autorizado.
+          - Integração com o parque de impressoras do Nexa System e coleta de contadores quando suportada.
+
+          ### Limitações e segurança
+          - Pacotes não assinados e não homologados em hardware real. Prévia técnica, não recomendada para implantação em produção.
+          - Os instaladores não contêm credenciais, tokens ou associação a clientes; é necessário configurar o serviço antes de ativá-lo.
+          - O serviço Linux/macOS não é ativado automaticamente sem credenciais válidas.
+          - O suporte local à Canon DR-C225 II permanece experimental e dependente de sessão Windows e utilitário Canon. Não representa leitura automática de USB em segundo plano.
+          - Homologação por modelo/OID, provisionamento simplificado, proxy, assinatura, atualização e rollback ainda precisam de validação.
+          - Não desative SmartScreen ou Gatekeeper para contornar a ausência de assinaturas.
+
+          ### Procedência
+          Código de origem: 86c76c58c515f98435daf5df9ebedf6edd656120
+          GitHub Actions bem-sucedido: execução 39310341658 (Nexa validation).
+          Os hashes SHA-256 dos cinco instaladores estão em SHA256SUMS.txt.
+
+          Consulte docs/NEXA-COLLECTOR-NATIVE-INSTALLERS.md e docs/NEXA-COLLECTOR-CLIENT-KEYS.md para os procedimentos de instalação e ativação.
+          NOTES
+
+      - name: Upload installer assets and checksums to existing draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in release/*; do
+            name="$(basename "$file")"
+            digest="sha256:$(sha256sum "$file" | cut -d ' ' -f1)"
+            assets="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100")"
+            current="$(jq -r --arg n "$name" '.[] | select(.name == $n) | .id' <<<"$assets" | head -n 1)"
+            if [[ -n "$current" ]]; then
+              saved_digest="$(jq -r --arg n "$name" '.[] | select(.name == $n) | .digest' <<<"$assets" | head -n 1)"
+              if [[ "$saved_digest" == "$digest" ]]; then
+                echo "Reusing verified asset: $name"
+                continue
+              fi
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$current" >/dev/null
+            fi
+            curl --fail-with-body --silent --show-error --retry 4 --retry-all-errors \
+              -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+              -H 'Content-Type: application/octet-stream' --data-binary @"$file" \
+              "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?name=$name" \
+              | jq -e '.state == "uploaded"'
+          done
+          test "$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID/assets?per_page=100" --jq 'length')" -eq 6
+
+      - name: Publish prerelease at validated source commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" \
+            -f name="Nexa Collector v0.1.0 — prévia técnica" \
+            -f body="$(cat RELEASE_NOTES.md)" \
+            -f target_commitish="$SOURCE_SHA" \
+            -F draft=false -F prerelease=true \
+            --jq '{url: .html_url, draft: .draft, prerelease: .prerelease, commit: .target_commitish}'
+          published="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID")"
+          test "$(jq -r .draft <<<"$published")" = false
+          test "$(jq -r .prerelease <<<"$published")" = true
+          test "$(jq -r .tag_name <<<"$published")" = "$RELEASE_TAG"
+          echo "Published: $(jq -r .html_url <<<"$published")"
