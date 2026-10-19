@@ -5,7 +5,7 @@ export function PrintersPage() {
   return <>
     <div className="page-heading"><div><span className="eyebrow">INVENTÁRIO</span>
       <h1>Minhas impressoras</h1><p>Consulte os equipamentos, endereços IP e pontos de uso da sua empresa.</p></div></div>
-    <FleetPanel headings={['Situação', 'Fabricante', 'Modelo', 'Localização', 'Departamento', 'Centro de custo', 'Endereço IP', 'Número de série', 'Total de páginas*']}
+    <FleetPanel headings={['Situação', 'Fabricante', 'Modelo', 'Localização', 'Departamento', 'Centro de custo', 'Endereço IP', 'Número de série', 'Patrimônio', 'Proprietário', 'Total de páginas*']}
       renderColumns={p => <>
         <td><span className={'status ' + (p.active ? 'active' : 'inactive')}>{p.active ? 'Ativa' : 'Inativa'}</span>
           <small>{p.status === 'unknown' ? 'Estado não determinado' : p.status}</small></td>
