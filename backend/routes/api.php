@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\PrinterController;
 use App\Http\Controllers\Api\V1\ClientPrinterController;
 use App\Http\Controllers\Api\V1\ClientFleetSummaryController;
+use App\Http\Controllers\Api\V1\ClientFleetAnalyticsController;
 use App\Http\Controllers\Api\V1\PrinterReadingHistoryController;
 use App\Http\Controllers\Api\V1\PrinterProductionPreviewController;
 use App\Http\Controllers\Api\V1\PrinterAssignmentController;
@@ -196,6 +197,8 @@ Route::prefix('v1')->group(function () use ($registerBackoffice): void {
                     Route::get('/client/printers', ClientPrinterController::class)
                         ->middleware('nexa.roles:customer');
                     Route::get('/client/summary', ClientFleetSummaryController::class)
+                        ->middleware('nexa.roles:customer');
+                    Route::get('/client/analytics', ClientFleetAnalyticsController::class)
                         ->middleware('nexa.roles:customer');
                     $registerBackoffice();
                 }
