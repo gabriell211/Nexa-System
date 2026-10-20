@@ -1,6 +1,6 @@
 use nexa_collector_core::{
     collect_snmp_v2c, heartbeat_sleep_seconds, read_config, send_heartbeat, send_heartbeat_with_watchdog, upload_pending,
-    upload_error_kind, CollectorConfig, CollectorError, DiscoveryReport, DiscoverySchedule, Outbox, UploadRetryPolicy, WatchdogHeartbeat,
+    upload_error_kind, CollectorConfig, CollectorError, DiscoveryReport, DiscoverySchedule, Outbox, ProxyAuth, UploadRetryPolicy, WatchdogHeartbeat,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use std::{
@@ -69,6 +69,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     #[cfg(windows)]
+    if args.len() == 2 && args[1] == "--provision-windows" {
+        return windows_service_runtime::provision();
+    }
+    #[cfg(windows)]
     if args.len() == 2 && args[1] == "--service" {
         return windows_service_runtime::dispatch();
     }
@@ -103,7 +107,7 @@ fn run_application(
         eprintln!("Usage: nexa-collector-daemon <config.json> <queue.sqlite> [--once | --list-quarantined | --storage-status | --watchdog-status | --reset-watchdog-circuit | --restore-quarantined <sample-uuid> | --migrate-encrypted-to <new-queue.sqlite> | --rotate-encryption-to <new-queue.sqlite> | --review-candidate <ipv4> <save|ignore|reset>]");
         std::process::exit(2);
     }
-    let cfg = read_config(&args[1])?;
+    let mut cfg = read_config(&args[1])?;
     if windows_service_mode && !cfg.usb_scanners.is_empty() {
         // The installer enables SCM restart-on-failure. This configuration is
         // unsupported in session 0, so stop cleanly instead of restarting in
@@ -115,6 +119,18 @@ fn run_application(
     // Never fall back to inherited env variables if that directory is set.
     let has_systemd_credentials = env::var_os("CREDENTIALS_DIRECTORY").is_some();
     let supervised_mode = has_systemd_credentials || windows_service_mode || macos_launchd_mode;
+    let proxy_user = load_secret("NEXA_PROXY_USERNAME", windows_service_mode, macos_launchd_mode)?;
+    let proxy_password = load_secret("NEXA_PROXY_PASSWORD", windows_service_mode, macos_launchd_mode)?;
+    match (proxy_user, proxy_password) {
+        (Some(username), Some(password)) => {
+            cfg.proxy_auth = Some(ProxyAuth {
+                username: Zeroizing::new(username), password: Zeroizing::new(password),
+            });
+            cfg.validate()?;
+        }
+        (None, None) => {}
+        _ => return Err("proxy username and password must both be configured".into()),
+    }
     let recovery_guard = recovery_guard::RecoveryGuard::for_queue(Path::new(&args[2]));
     if watchdog_status {
         let (recent, open, history) = recovery_guard.status(Utc::now())?;
