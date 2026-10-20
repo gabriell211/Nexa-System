@@ -124,7 +124,7 @@ fn run_application(
     match (proxy_user, proxy_password) {
         (Some(username), Some(password)) => {
             cfg.proxy_auth = Some(ProxyAuth {
-                username: Zeroizing::new(username), password: Zeroizing::new(password),
+                username, password,
             });
             cfg.validate()?;
         }
