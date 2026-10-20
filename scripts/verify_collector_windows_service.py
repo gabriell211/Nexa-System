@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Safety and packaging assertions; cannot substitute a real SCM field test."""
 from pathlib import Path
+import re
 from xml.etree import ElementTree
 
 root = Path(__file__).resolve().parents[1]
@@ -56,10 +57,12 @@ assert '#[cfg(windows)]' in build and '#[cfg(not(windows))]' in build
 installer = (root / "collector/console/src-tauri/windows/installer-hooks.nsh").read_text(encoding="utf-8")
 message_boxes = [line for line in installer.splitlines() if line.lstrip().startswith("MessageBox ")]
 assert message_boxes and all(" /SD IDOK" in line for line in message_boxes), "Silent install must never wait for a dialog"
-error_levels = [line.strip() for line in installer.splitlines() if line.lstrip().startswith("SetErrorLevel ")]
-assert len(error_levels) == len(message_boxes) == len(set(error_levels)), "Each NSIS failure needs its own exit code"
-assert installer.count("IfSilent 0 +2\n      Quit\n    Abort ") == len(message_boxes), "Silent failures must preserve their exit codes"
-assert installer.count("!insertmacro NEXA_DIAGNOSTIC ") == len(message_boxes)
+hooks = installer.split("!macro NSIS_HOOK_PREINSTALL", 1)[1]
+hook_boxes = [line for line in hooks.splitlines() if line.lstrip().startswith("MessageBox ")]
+error_levels = [line.strip() for line in hooks.splitlines() if line.lstrip().startswith("SetErrorLevel ")]
+assert len(error_levels) == len(hook_boxes) == len(set(error_levels)), "Each NSIS hook failure needs its own exit code"
+assert len(re.findall(r"IfSilent 0 \+2\s+Quit\s+Abort ", hooks)) == len(hook_boxes), "Silent failures must preserve their exit codes"
+assert hooks.count("!insertmacro NEXA_DIAGNOSTIC ") == len(hook_boxes)
 assert 'FileWrite $9 "${CODE}$\\r$\\n"' in installer
 assert 'SCM exit: $0$\\r$\\nSCM output: $1$\\r$\\n' in installer
 assert not any("StrCmp " in line and "+" in line for line in installer.splitlines()), "NSIS failure blocks must not use fragile relative jumps"
@@ -74,7 +77,7 @@ for required in [
     "SCM create returned exit code",
     "qc NexaCollector",
     "type= own",
-    'binPath= "$\\\"$INSTDIR\\nexa-collector-daemon.exe$\\\" --service"',
+    r'\$\"$INSTDIR\nexa-collector-daemon.exe\$\" --service',
     "start= demand",
     'obj= "NT AUTHORITY\\LocalService"',
     "failure NexaCollector",
@@ -86,8 +89,12 @@ for required in [
     "S-1-5-32-544",
     "/inheritance:r",
     "$COMMONPROGRAMDATA",
-    "config.json",
-    "File /oname=config.json",
+    "Page custom NexaProvisionPage NexaProvisionLeave",
+    "FileWriteUTF16LE /BOM",
+    "--provision-windows",
+    "NEXA_INSTALL_COLLECTOR_ID",
+    "NEXA_INSTALL_TOKEN",
+    "NEXA_INSTALL_PROXY_URL",
     "IfFileExists",
     "Abort",
 ]:
@@ -116,6 +123,11 @@ assert "ServiceState::Stopped" in runtime
 assert "super::run_application(" in runtime
 assert "Ordering::SeqCst" in runtime
 assert "windows_service_mode && args.len() != 3" in daemon
+assert 'args[1] == "--provision-windows"' in daemon
+assert "pub fn provision()" in runtime
+assert 'root.join("config.json")' in runtime
+assert "NEXA_COLLECTOR_TOKEN" in runtime
+assert "NEXA_COLLECTOR_DB_KEY_HEX" in runtime
 assert "load_secret(\"NEXA_COLLECTOR_DB_KEY_HEX\", windows_service_mode, macos_launchd_mode)" in daemon
 assert "shutdown.load(Ordering::Relaxed)" in daemon
 watchdog = (root / "collector/daemon/src/progress_watchdog.rs").read_text()
