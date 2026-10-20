@@ -283,7 +283,30 @@ FunctionEnd
       Quit
     Abort "Nexa Collector failure flag error"
   nexa_installed:
-  DetailPrint "NexaCollector instalado com inicio manual ate vinculacao."
+  ; Provisioning is complete; enable startup and verify the actual service.
+  ExecWait '"$SYSDIR\sc.exe" config NexaCollector start= auto' $0
+  ${If} $0 != "0"
+    ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $1
+    MessageBox MB_ICONSTOP|MB_OK "Falha ao habilitar inicio automatico do Collector." /SD IDOK
+    SetErrorLevel 24
+    !insertmacro NEXA_DIAGNOSTIC 24
+    IfSilent 0 +2
+      Quit
+    Abort "Nexa Collector automatic startup configuration failed"
+  ${EndIf}
+  nsExec::ExecToStack '"$SYSDIR\sc.exe" start NexaCollector'
+  Pop $0
+  Pop $1
+  ${If} $0 != "0"
+    ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $2
+    MessageBox MB_ICONSTOP|MB_OK "O Collector foi configurado, mas o servico nao iniciou (codigo $0).$\r$\n$1" /SD IDOK
+    SetErrorLevel 25
+    !insertmacro NEXA_DIAGNOSTIC 25
+    IfSilent 0 +2
+      Quit
+    Abort "Nexa Collector service startup failed"
+  ${EndIf}
+  DetailPrint "NexaCollector vinculado e iniciado."
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
