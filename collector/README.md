@@ -425,12 +425,13 @@ Execute em PowerShell (sem símbolo $ inicial nos comandos) com Rust MSVC, Node 
 
 O instalador NSIS em `collector/console/src-tauri/windows/installer-hooks.nsh`:
 
-- Empacota Console e `nexa-collector-daemon.exe`, registra serviço `NexaCollector` no Windows SCM sob `NT AUTHORITY\LocalService` (início manual até vincular o agente).
-- Prepara `%ProgramData%\NexaCollector` com `config.json`, `data\` e `credentials\`; protege o banco de dados, as credenciais e os arquivos do serviço com ACLs. Configuração existente não é sobrescrita.
+- Empacota Console e `nexa-collector-daemon.exe`, registra serviço `NexaCollector` no Windows SCM sob `NT AUTHORITY\LocalService` e o inicia após vincular o agente.
+- Solicita o ID e a chave do Collector emitidos no portal administrativo, a URL HTTPS da API e, se necessário, o proxy HTTP/HTTPS com usuário e senha. O proxy é usado nas chamadas de heartbeat e envio de medições; a senha fica em `credentials\`, fora de `config.json`.
+- Prepara `%ProgramData%\NexaCollector` com `config.json`, `data\` e `credentials\`; protege o banco de dados, as credenciais e os arquivos do serviço com ACLs. Gera uma chave aleatória para a fila criptografada e preserva os dados de instalações anteriores.
 - Configura recuperação contra falhas de processo. Na desinstalação, remove o serviço e preserva a fila criptografada, credenciais e configuração.
 - Recusa instalar sobre um serviço já existente para evitar corromper instalações ativas; uma rotina auditada de atualização/rollback será necessária.
 
-**Provisionamento:** antes de iniciar o serviço, um administrador ainda precisa vincular `collector_id` e `api_url` ao cliente no arquivo `config.json`, configurar equipamentos e OIDs realmente homologados, e instalar os arquivos protegidos `NEXA_COLLECTOR_TOKEN`, `NEXA_COLLECTOR_DB_KEY_HEX`, `NEXA_SNMP_COMMUNITY` em `credentials/`. Nenhuma credencial vai no instalador ou no registro SCM. O Setup **não** contém ainda o wizard de chave de cliente/proxy nem ativa o serviço antes do provisionamento.
+**Provisionamento:** o Setup recebe os valores do portal e grava a vinculação em arquivos protegidos, sem colocar credenciais nos argumentos ou no registro SCM. O serviço inicia com uma configuração vazia de equipamentos e envia heartbeat. Depois, um administrador deve configurar os equipamentos, as sub-redes autorizadas e os OIDs homologados em `config.json`. Quando houver impressoras SNMP, deve instalar `NEXA_SNMP_COMMUNITY` em `credentials\` antes de reiniciar o serviço com essa configuração. Instalações silenciosas (`/S`) recebem `NEXA_INSTALL_COLLECTOR_ID`, `NEXA_INSTALL_TOKEN`, `NEXA_INSTALL_API_URL` e, opcionalmente, `NEXA_INSTALL_PROXY_URL`, `NEXA_INSTALL_PROXY_USERNAME` e `NEXA_INSTALL_PROXY_PASSWORD` no ambiente do processo instalador.
 
 **Limites:** bundle NSIS e checagens de segurança do CI não substituem teste real de instalação/desinstalação no Windows, revisão de ACL, assinatura do executável, atualização/rollback e ensaio de hardware. Não distribuir em produção sem esses critérios.
 

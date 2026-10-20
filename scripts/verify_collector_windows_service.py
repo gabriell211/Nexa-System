@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Safety and packaging assertions; cannot substitute a real SCM field test."""
 from pathlib import Path
+import re
 from xml.etree import ElementTree
 
 root = Path(__file__).resolve().parents[1]
@@ -54,6 +55,17 @@ assert 'tauri_build::WindowsAttributes::new().app_manifest(' in build
 assert '#[cfg(windows)]' in build and '#[cfg(not(windows))]' in build
 
 installer = (root / "collector/console/src-tauri/windows/installer-hooks.nsh").read_text(encoding="utf-8")
+message_boxes = [line for line in installer.splitlines() if line.lstrip().startswith("MessageBox ")]
+assert message_boxes and all(" /SD IDOK" in line for line in message_boxes), "Silent install must never wait for a dialog"
+hooks = installer.split("!macro NSIS_HOOK_PREINSTALL", 1)[1]
+hook_boxes = [line for line in hooks.splitlines() if line.lstrip().startswith("MessageBox ")]
+error_levels = [line.strip() for line in hooks.splitlines() if line.lstrip().startswith("SetErrorLevel ")]
+assert len(error_levels) == len(hook_boxes) == len(set(error_levels)), "Each NSIS hook failure needs its own exit code"
+assert len(re.findall(r"IfSilent 0 \+2\s+Quit\s+Abort ", hooks)) == len(hook_boxes), "Silent failures must preserve their exit codes"
+assert hooks.count("!insertmacro NEXA_DIAGNOSTIC ") == len(hook_boxes)
+assert 'FileWrite $9 "${CODE}$\\r$\\n"' in installer
+assert 'SCM exit: $0$\\r$\\nSCM output: $1$\\r$\\n' in installer
+assert not any("StrCmp " in line and "+" in line for line in installer.splitlines()), "NSIS failure blocks must not use fragile relative jumps"
 for required in [
     "!macro NSIS_HOOK_PREINSTALL",
     "!macro NSIS_HOOK_POSTINSTALL",
@@ -65,11 +77,13 @@ for required in [
     "SCM create returned exit code",
     "qc NexaCollector",
     "type= own",
-    'binPath= "$\\\"$INSTDIR\\nexa-collector-daemon.exe$\\\" --service"',
+    r'\$\"$INSTDIR\nexa-collector-daemon.exe\$\" --service',
     "start= demand",
     'obj= "NT AUTHORITY\\LocalService"',
     "failure NexaCollector",
     "failureflag NexaCollector",
+    "config NexaCollector start= auto",
+    "start NexaCollector",
     "NexaCollector\\credentials",
     "NexaCollector\\data",
     "S-1-5-19",
@@ -77,8 +91,12 @@ for required in [
     "S-1-5-32-544",
     "/inheritance:r",
     "$COMMONPROGRAMDATA",
-    "config.json",
-    "File /oname=config.json",
+    "Page custom NexaProvisionPage NexaProvisionLeave",
+    "FileWriteUTF16LE /BOM",
+    "--provision-windows",
+    "NEXA_INSTALL_COLLECTOR_ID",
+    "NEXA_INSTALL_TOKEN",
+    "NEXA_INSTALL_PROXY_URL",
     "IfFileExists",
     "Abort",
 ]:
@@ -88,10 +106,14 @@ for required in [
 assert "$COMMONAPPDATA" not in "\\n".join(
     line for line in installer.splitlines() if not line.lstrip().startswith(";")
 )
-for forbidden in ["powershell.exe", "Start-Service", "sc.exe start NexaCollector", "start= auto", "RMDir /r", "Delete $COMMONAPPDATA"]:
+for forbidden in ["powershell.exe", "Start-Service", "RMDir /r", "Delete $COMMONAPPDATA"]:
     assert forbidden.lower() not in installer.lower(), f"Unsafe installer action: {forbidden}"
 assert "NSIS_HOOK_PREUNINSTALL" in installer
 assert "sc.exe\" delete NexaCollector" in installer
+preuninstall = installer.split("!macro NSIS_HOOK_PREUNINSTALL", 1)[1].split("!macroend", 1)[0]
+assert '${If} $0 == "1060"' in preuninstall
+assert '${ElseIf} $0 != "0"' in preuninstall
+assert 'Abort "Nexa Collector uninstall service state unavailable"' in preuninstall
 assert " --service" in installer
 assert "define_windows_service!" in runtime
 assert "service_control_handler::register" in runtime
@@ -103,6 +125,11 @@ assert "ServiceState::Stopped" in runtime
 assert "super::run_application(" in runtime
 assert "Ordering::SeqCst" in runtime
 assert "windows_service_mode && args.len() != 3" in daemon
+assert 'args[1] == "--provision-windows"' in daemon
+assert "pub fn provision()" in runtime
+assert 'root.join("config.json")' in runtime
+assert "NEXA_COLLECTOR_TOKEN" in runtime
+assert "NEXA_COLLECTOR_DB_KEY_HEX" in runtime
 assert "load_secret(\"NEXA_COLLECTOR_DB_KEY_HEX\", windows_service_mode, macos_launchd_mode)" in daemon
 assert "shutdown.load(Ordering::Relaxed)" in daemon
 watchdog = (root / "collector/daemon/src/progress_watchdog.rs").read_text()

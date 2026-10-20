@@ -20,7 +20,8 @@ export function CollectorCredentialDialog({ customer, token, onClose, onIssued }
   const [issued, setIssued] = useState<IssuedCollectorCredentials | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState<'id' | 'token' | null>(null);
+  const [copied, setCopied] = useState<'id' | 'token' | 'api' | null>(null);
+  const apiUrl = window.location.origin;
 
   async function issue(): Promise<void> {
     if (issued || pending) return;
@@ -39,7 +40,7 @@ export function CollectorCredentialDialog({ customer, token, onClose, onIssued }
     }
   }
 
-  async function copy(value: string, field: 'id' | 'token'): Promise<void> {
+  async function copy(value: string, field: 'id' | 'token' | 'api'): Promise<void> {
     setError(null);
     setCopied(null);
     try {
@@ -101,9 +102,18 @@ export function CollectorCredentialDialog({ customer, token, onClose, onIssued }
                   {copied === 'token' ? 'Copiado' : 'Copiar chave'}
                 </button>
               </div>
+              <label htmlFor="issued-api-url">URL da API para o instalador</label>
+              <div className="collector-credential-row">
+                <input id="issued-api-url" type="text" readOnly autoComplete="off" spellCheck={false} value={apiUrl} />
+                <button type="button" className="button ghost" onClick={() => void copy(apiUrl, 'api')}
+                  aria-label="Copiar URL da API">
+                  {copied === 'api' ? <Check size={16} /> : <ClipboardCopy size={16} />}
+                  {copied === 'api' ? 'Copiado' : 'Copiar URL'}
+                </button>
+              </div>
             </div>
             <p className="stock-footnote">
-              Configure o collector_id e o token no Collector com armazenamento seguro. Não compartilhe a chave em mensagens públicas.
+              No instalador do Nexa Collector, informe este ID e esta chave, além da URL HTTPS da API. Se a rede usar proxy, informe também seus dados no instalador. Não compartilhe a chave em mensagens públicas.
             </p>
             {error && <p role="alert" className="notice error">{error}</p>}
             <div className="modal-actions">
