@@ -259,11 +259,15 @@ fn default_max_pending_payload_bytes() -> u64 { DEFAULT_MAX_PENDING_PAYLOAD_BYTE
 const DEFAULT_MAX_SQLITE_FILES_BYTES: u64 = 512 * 1024 * 1024;
 fn default_max_sqlite_files_bytes() -> u64 { DEFAULT_MAX_SQLITE_FILES_BYTES }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CollectorConfig {
     pub collector_id: Uuid,
     pub api_url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_url: Option<String>,
+    #[serde(skip)]
+    pub proxy_auth: Option<ProxyAuth>,
     pub interval_seconds: u64,
     #[serde(default = "default_heartbeat_interval")]
     pub heartbeat_interval_seconds: u64,
@@ -280,6 +284,24 @@ pub struct CollectorConfig {
     pub printers: Vec<PrinterConfig>,
     #[serde(default)]
     pub usb_scanners: Vec<UsbScannerConfig>,
+}
+
+#[derive(Clone)]
+pub struct ProxyAuth {
+    pub username: Zeroizing<String>,
+    pub password: Zeroizing<String>,
+}
+
+fn checked_url(value: &str, schemes: &[&str]) -> Result<reqwest::Url, CollectorError> {
+    let url = reqwest::Url::parse(value)
+        .map_err(|_| CollectorError::Configuration("invalid server or proxy URL".into()))?;
+    if !schemes.contains(&url.scheme()) || url.host_str().is_none()
+        || !url.username().is_empty() || url.password().is_some()
+        || url.query().is_some() || url.fragment().is_some()
+    {
+        return Err(CollectorError::Configuration("invalid server or proxy URL".into()));
+    }
+    Ok(url)
 }
 
 impl CollectorConfig {
@@ -303,10 +325,13 @@ impl CollectorConfig {
                 "max_sqlite_files_bytes must be 1..68719476736".into(),
             ));
         }
-        if !self.api_url.starts_with("https://") {
-            return Err(CollectorError::Configuration("api_url must use HTTPS".into()));
+        checked_url(&self.api_url, &["https"])?;
+        if let Some(proxy_url) = &self.proxy_url {
+            checked_url(proxy_url, &["http", "https"])?;
+        } else if self.proxy_auth.is_some() {
+            return Err(CollectorError::Configuration("proxy credentials require a proxy URL".into()));
         }
-        if self.authorized_subnets.is_empty() && (self.usb_scanners.is_empty() || !self.printers.is_empty()) {
+        if self.authorized_subnets.is_empty() && (!self.printers.is_empty() || self.discovery_schedule.enabled) {
             return Err(CollectorError::Configuration("at least one authorized CIDR is required".into()));
         }
         let subnets: Vec<IpNet> = self.authorized_subnets.iter()
@@ -966,7 +991,7 @@ impl Outbox {
                  + (SELECT COALESCE(SUM(LENGTH(CAST(payload AS BLOB))), 0) FROM quarantined_readings)
                  + LENGTH(CAST(?2 AS BLOB)) <= ?5",
             params![
-                sample_id, payload, Utc::now().to_rfc3339(), 
+                sample_id, payload, Utc::now().to_rfc3339(),
                 self.max_pending_samples, self.max_pending_payload_bytes
             ],
         )? };
@@ -1436,10 +1461,7 @@ pub fn send_heartbeat_with_watchdog(
     if token.len() != 64 || !token.as_bytes().iter().all(|b| b.is_ascii_hexdigit()) {
         return Err(CollectorError::Configuration("collector token must be 64 hex characters".into()));
     }
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
+    let client = collector_http_client(cfg)?;
     let ack: HeartbeatAck = client
         .post(format!("{}/api/v1/collector/heartbeat", cfg.api_url.trim_end_matches('/')))
         .bearer_auth(token)
@@ -1449,6 +1471,20 @@ pub fn send_heartbeat_with_watchdog(
         return Err(CollectorError::Configuration("heartbeat ACK identity mismatch".into()));
     }
     Ok(())
+}
+
+fn collector_http_client(cfg: &CollectorConfig) -> Result<reqwest::blocking::Client, CollectorError> {
+    let mut builder = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none());
+    if let Some(url) = &cfg.proxy_url {
+        let mut proxy = reqwest::Proxy::all(url)?;
+        if let Some(auth) = &cfg.proxy_auth {
+            proxy = proxy.basic_auth(&auth.username, &auth.password);
+        }
+        builder = builder.proxy(proxy);
+    }
+    Ok(builder.build()?)
 }
 
 /// Deterministic up-to-10% jitter spreads restarts across collectors without
@@ -1533,10 +1569,7 @@ pub fn upload_pending(
     }
     let samples = outbox.next_batch(100)?;
     if samples.is_empty() { return Ok(0); }
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()?;
+    let client = collector_http_client(cfg)?;
     process_upload_batch(outbox, &samples, |subset| {
         send_ingest_samples(cfg, token, subset, &client)
     })
@@ -2244,6 +2277,7 @@ mod tests {
         let mut cfg = CollectorConfig {
             collector_id: Uuid::new_v4(),
             api_url: "https://nexa.example".into(),
+            proxy_url: None, proxy_auth: None,
             interval_seconds: 300,
             heartbeat_interval_seconds: 60,
             max_pending_samples: 0,
@@ -2265,6 +2299,7 @@ mod tests {
     fn disallows_outside_authorized_cidr() {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
+            proxy_url: None, proxy_auth: None,
             interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000, max_pending_payload_bytes: 64 * 1024 * 1024, max_sqlite_files_bytes: 512 * 1024 * 1024, authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![PrinterConfig {
                 printer_id: 1, ip: "10.1.1.10".parse().unwrap(),
@@ -2280,6 +2315,7 @@ mod tests {
     fn validates_heartbeat_separately_from_meter_polling() {
         let mut cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
+            proxy_url: None, proxy_auth: None,
             interval_seconds: 1800, heartbeat_interval_seconds: 60, max_pending_samples: 50_000,
             max_pending_payload_bytes: 64 * 1024 * 1024,
             max_sqlite_files_bytes: 512 * 1024 * 1024,
@@ -2288,6 +2324,14 @@ mod tests {
             usb_scanners: vec![],
         };
         assert!(cfg.validate().is_ok());
+        cfg.authorized_subnets.clear();
+        assert!(cfg.validate().is_ok(), "an unconfigured collector can send heartbeats");
+        cfg.proxy_url = Some("http://proxy.example:8080".into());
+        assert!(cfg.validate().is_ok());
+        cfg.proxy_url = Some("http://user:secret@proxy.example:8080".into());
+        assert!(cfg.validate().is_err(), "proxy credentials must remain in protected files");
+        cfg.proxy_url = None;
+        cfg.authorized_subnets.push("192.168.1.0/24".into());
         cfg.heartbeat_interval_seconds = 0;
         assert!(cfg.validate().is_err());
         cfg.heartbeat_interval_seconds = 3601;
@@ -2300,6 +2344,7 @@ mod tests {
     fn usb_profile_requires_exact_binding_and_unique_backend_id() {
         let mut cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
+            proxy_url: None, proxy_auth: None,
             interval_seconds: 300, heartbeat_interval_seconds: 60,
             max_pending_samples: 50_000, max_pending_payload_bytes: 64 * 1024 * 1024,
             max_sqlite_files_bytes: 512 * 1024 * 1024,
@@ -2740,6 +2785,7 @@ mod tests {
     fn rejects_insecure_server_endpoint() {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "http://example.test".into(),
+            proxy_url: None, proxy_auth: None,
             interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000,
             max_pending_payload_bytes: 64 * 1024 * 1024,
             max_sqlite_files_bytes: 512 * 1024 * 1024,
