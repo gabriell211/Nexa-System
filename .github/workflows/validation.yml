@@ -601,6 +601,16 @@ jobs:
           if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
             throw 'The disposable Windows runner must be elevated for the SCM installation test.'
           }
+            # An unattended fixture exercises the same protected provisioning
+            # path as the interactive wizard without exposing values in argv.
+            $env:NEXA_INSTALL_COLLECTOR_ID = [guid]::NewGuid().ToString()
+            $env:NEXA_INSTALL_TOKEN = [Convert]::ToHexString(
+              [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
+            $env:NEXA_INSTALL_API_URL = 'https://nexa.example.com'
+            $env:NEXA_INSTALL_PROXY_URL = 'http://127.0.0.1:8888'
+            $env:NEXA_INSTALL_PROXY_USERNAME = 'ci-proxy-user'
+            $env:NEXA_INSTALL_PROXY_PASSWORD = [Convert]::ToHexString(
+              [Security.Cryptography.RandomNumberGenerator]::GetBytes(16))
           # Start-Process -Wait may wait for child GUI processes too. Monitor
           # the installer process itself and bound execution to two minutes.
           $result = Start-Process -FilePath $exe[0].FullName -ArgumentList '/S' -PassThru
@@ -622,8 +632,26 @@ jobs:
           if ($installed.StartMode -ne 'Manual') { throw 'Service must not auto-start without credentials' }
           if ($installed.State -eq 'Running') { throw 'Service started without customer provisioning' }
           $directory = Join-Path $env:ProgramData 'NexaCollector'
-          if (-not (Test-Path (Join-Path $directory 'config.json'))) { throw 'Provisioning template missing' }
+            $configFile = Join-Path $directory 'config.json'
+            if (-not (Test-Path $configFile)) { throw 'Provisioned config missing' }
           if (-not (Test-Path (Join-Path $directory 'credentials'))) { throw 'Protected credentials directory missing' }
+            $config = Get-Content -Raw -LiteralPath $configFile | ConvertFrom-Json
+            if ($config.collector_id -ne $env:NEXA_INSTALL_COLLECTOR_ID) { throw 'Collector ID not provisioned' }
+            if ($config.api_url -ne $env:NEXA_INSTALL_API_URL) { throw 'API URL not provisioned' }
+            if ($config.proxy_url -ne $env:NEXA_INSTALL_PROXY_URL) { throw 'Proxy URL not provisioned' }
+            $secrets = Join-Path $directory 'credentials'
+            if ((Get-Content -Raw -LiteralPath (Join-Path $secrets 'NEXA_COLLECTOR_TOKEN')) -ne $env:NEXA_INSTALL_TOKEN) {
+              throw 'Collector key not provisioned'
+            }
+            if ((Get-Content -Raw -LiteralPath (Join-Path $secrets 'NEXA_PROXY_USERNAME')) -ne $env:NEXA_INSTALL_PROXY_USERNAME) {
+              throw 'Proxy username not provisioned'
+            }
+            if ((Get-Content -Raw -LiteralPath (Join-Path $secrets 'NEXA_PROXY_PASSWORD')) -ne $env:NEXA_INSTALL_PROXY_PASSWORD) {
+              throw 'Proxy password not provisioned'
+            }
+            $dbKey = Get-Content -Raw -LiteralPath (Join-Path $secrets 'NEXA_COLLECTOR_DB_KEY_HEX')
+            if ($dbKey -notmatch '^[0-9a-f]{64}$') { throw 'Encrypted queue key not generated' }
+            if (Test-Path (Join-Path $secrets 'install-request.utf16')) { throw 'Temporary installer request was retained' }
           & "$env:WINDIR\System32\icacls.exe" (Join-Path $directory 'credentials')
           if ($LASTEXITCODE -ne 0) { throw 'Credentials directory ACL inspection failed' }
           & "$env:WINDIR\System32\sc.exe" qc NexaCollector
