@@ -103,6 +103,12 @@
     MessageBox MB_ICONSTOP|MB_OK "Falha ao registrar NexaCollector (codigo $0).$\r$\n$1$\r$\nDados do cliente preservados. Informe o codigo de erro ao suporte." /SD IDOK
     SetErrorLevel 16
     !insertmacro NEXA_DIAGNOSTIC 16
+    ; The command contains no authentication material; retain only SCM's
+    ; return code and output for an unattended installation failure.
+    FileOpen $9 "$TEMP\NexaCollector-installer-error.txt" a
+    FileSeek $9 0 END
+    FileWrite $9 "SCM exit: $0$\r$\nSCM output: $1$\r$\n"
+    FileClose $9
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector registration failure"
