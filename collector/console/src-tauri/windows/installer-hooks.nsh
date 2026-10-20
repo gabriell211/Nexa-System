@@ -54,32 +54,35 @@
   ; SIDs: SYSTEM/Administrators full; LocalService RX; Users RX for config/UI.
   ; The service runs as LocalService. Never grant Users write access to secrets.
   ExecWait '"$SYSDIR\icacls.exe" "$COMMONPROGRAMDATA\NexaCollector" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-19:(OI)(CI)RX" "*S-1-5-32-545:(OI)(CI)RX"' $0
-  StrCmp $0 "0" +3
+  ${If} $0 != "0"
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger a pasta do Nexa Collector." /SD IDOK
     SetErrorLevel 13
     !insertmacro NEXA_DIAGNOSTIC 13
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector root ACL failure"
+  ${EndIf}
 
   ; Keep SQLite/WAL/SHM and secrets private, and allow service data writes.
   ExecWait '"$SYSDIR\icacls.exe" "$COMMONPROGRAMDATA\NexaCollector\data" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-19:(OI)(CI)M"' $0
-  StrCmp $0 "0" +3
+  ${If} $0 != "0"
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger a fila local de medicoes." /SD IDOK
     SetErrorLevel 14
     !insertmacro NEXA_DIAGNOSTIC 14
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector data ACL failure"
+  ${EndIf}
 
   ExecWait '"$SYSDIR\icacls.exe" "$COMMONPROGRAMDATA\NexaCollector\credentials" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" "*S-1-5-19:(OI)(CI)R"' $0
-  StrCmp $0 "0" +3
+  ${If} $0 != "0"
     MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger as credenciais do agente." /SD IDOK
     SetErrorLevel 15
     !insertmacro NEXA_DIAGNOSTIC 15
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector credential ACL failure"
+  ${EndIf}
 
   ; Create example config only on clean install; never overwrite binding.
   IfFileExists "$COMMONPROGRAMDATA\NexaCollector\config.json" nexa_config_exists 0
