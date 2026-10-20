@@ -10,6 +10,11 @@ use nexa_collector_core::{
 use serde::Serialize;
 use std::env;
 
+#[cfg(windows)]
+fn installed_root() -> Option<std::path::PathBuf> {
+    env::var_os("ProgramData").map(|path| std::path::PathBuf::from(path).join("NexaCollector"))
+}
+
 #[derive(Serialize)]
 struct CanonMeterView {
     meter_scan_total: String,
@@ -93,8 +98,14 @@ fn get_snapshot() -> CollectorSnapshot {
     };
 
     let mut capacity_limits = None;
-    match env::var("NEXA_COLLECTOR_CONFIG") {
-        Ok(path) => match read_config(path) {
+    let config_path = env::var("NEXA_COLLECTOR_CONFIG").ok().or_else(|| {
+        #[cfg(windows)]
+        { installed_root().map(|root| root.join("config.json").to_string_lossy().into_owned()) }
+        #[cfg(not(windows))]
+        { None }
+    });
+    match config_path {
+        Some(path) => match read_config(path) {
             Ok(config) => {
                 snapshot.configured = true;
                 snapshot.collector_id = Some(config.collector_id.to_string());
@@ -117,10 +128,17 @@ fn get_snapshot() -> CollectorSnapshot {
             }
             Err(_) => snapshot.error = Some("Configuração não encontrada ou inválida.".into()),
         },
-        Err(_) => snapshot.error = Some("NEXA_COLLECTOR_CONFIG não definida.".into()),
+        None => snapshot.error = Some("Configuração do Collector não encontrada.".into()),
     }
 
-    if let Ok(path) = env::var("NEXA_COLLECTOR_DB") {
+    let default_db = env::var("NEXA_COLLECTOR_DB").is_err();
+    let db_path = env::var("NEXA_COLLECTOR_DB").ok().or_else(|| {
+        #[cfg(windows)]
+        { installed_root().map(|root| root.join("data").join("queue.sqlite").to_string_lossy().into_owned()) }
+        #[cfg(not(windows))]
+        { None }
+    });
+    if let Some(path) = db_path {
         // Use the exact daemon parser. Reading the incident journal never
         // opens SQLite, resets the circuit, or invokes any privileged command.
         match RecoveryGuard::for_queue(std::path::Path::new(&path)).snapshot(Utc::now()) {
@@ -134,7 +152,19 @@ fn get_snapshot() -> CollectorSnapshot {
             let (samples, payload_bytes, file_bytes) = capacity_limits.unwrap_or((
                 50_000, 64 * 1024 * 1024, 512 * 1024 * 1024,
             ));
-            let opened = match env::var("NEXA_COLLECTOR_DB_KEY_HEX") {
+            let key = env::var("NEXA_COLLECTOR_DB_KEY_HEX").or_else(|error| {
+                #[cfg(windows)]
+                {
+                    if default_db && matches!(error, env::VarError::NotPresent) {
+                        if let Some(root) = installed_root() {
+                            return std::fs::read_to_string(root.join("credentials").join("NEXA_COLLECTOR_DB_KEY_HEX"))
+                                .map_err(|_| env::VarError::NotPresent);
+                        }
+                    }
+                }
+                Err(error)
+            });
+            let opened = match key {
                 Ok(key) => Outbox::open_encrypted_read_only_disk_guard(
                     &path, samples, payload_bytes, file_bytes, &key,
                 ),
