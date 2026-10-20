@@ -61,6 +61,7 @@ assert len(error_levels) == len(message_boxes) == len(set(error_levels)), "Each 
 assert installer.count("IfSilent 0 +2\n      Quit\n    Abort ") == len(message_boxes), "Silent failures must preserve their exit codes"
 assert installer.count("!insertmacro NEXA_DIAGNOSTIC ") == len(message_boxes)
 assert 'FileWrite $9 "${CODE}$\\r$\\n"' in installer
+assert 'SCM exit: $0$\\r$\\nSCM output: $1$\\r$\\n' in installer
 assert not any("StrCmp " in line and "+" in line for line in installer.splitlines()), "NSIS failure blocks must not use fragile relative jumps"
 for required in [
     "!macro NSIS_HOOK_PREINSTALL",
