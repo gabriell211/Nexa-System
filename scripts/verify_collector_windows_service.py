@@ -82,6 +82,8 @@ for required in [
     'obj= "NT AUTHORITY\\LocalService"',
     "failure NexaCollector",
     "failureflag NexaCollector",
+    "config NexaCollector start= auto",
+    "start NexaCollector",
     "NexaCollector\\credentials",
     "NexaCollector\\data",
     "S-1-5-19",
@@ -104,7 +106,7 @@ for required in [
 assert "$COMMONAPPDATA" not in "\\n".join(
     line for line in installer.splitlines() if not line.lstrip().startswith(";")
 )
-for forbidden in ["powershell.exe", "Start-Service", "sc.exe start NexaCollector", "start= auto", "RMDir /r", "Delete $COMMONAPPDATA"]:
+for forbidden in ["powershell.exe", "Start-Service", "RMDir /r", "Delete $COMMONAPPDATA"]:
     assert forbidden.lower() not in installer.lower(), f"Unsafe installer action: {forbidden}"
 assert "NSIS_HOOK_PREUNINSTALL" in installer
 assert "sc.exe\" delete NexaCollector" in installer
