@@ -629,8 +629,8 @@ jobs:
           if ($installed.StartName -notmatch 'LocalService|LOCAL SERVICE') {
             throw "Service is running under unexpected account $($installed.StartName)"
           }
-          if ($installed.StartMode -ne 'Manual') { throw 'Service must not auto-start without credentials' }
-          if ($installed.State -eq 'Running') { throw 'Service started without customer provisioning' }
+            if ($installed.StartMode -ne 'Auto') { throw 'Provisioned service must start automatically' }
+            if ($installed.State -ne 'Running') { throw 'Provisioned service did not start' }
           $directory = Join-Path $env:ProgramData 'NexaCollector'
             $configFile = Join-Path $directory 'config.json'
             if (-not (Test-Path $configFile)) { throw 'Provisioned config missing' }
