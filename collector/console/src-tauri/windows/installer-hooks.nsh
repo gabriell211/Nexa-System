@@ -324,16 +324,77 @@ FunctionEnd
       Quit
     Abort "Nexa Collector uninstall service state unavailable"
   ${EndIf}
-  ExecWait '"$SYSDIR\sc.exe" stop NexaCollector' $1
-  Sleep 2000
-  ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $1
-  StrCmp $1 "0" nexa_uninstall_no_service
-    MessageBox MB_ICONSTOP|MB_OK "O servico NexaCollector nao pode ser removido. Feche o agente e tente novamente." /SD IDOK
+  ; A provisioned service is AUTO_START while installed. Disable restart
+  ; before stopping it so that an uninstall never races against its startup.
+  nsExec::ExecToStack '"$SYSDIR\sc.exe" config NexaCollector start= demand'
+  Pop $1
+  Pop $2
+  ${If} $1 != "0"
+    MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel desativar o inicio automatico (codigo $1).$\r$\n$2" /SD IDOK
+    SetErrorLevel 26
+    !insertmacro NEXA_DIAGNOSTIC 26
+    IfSilent 0 +2
+      Quit
+    Abort "Nexa Collector service disable failed"
+  ${EndIf}
+
+  ; Exit code 1062 means the service was already stopped and is safe to
+  ; delete. Any other failure is not evidence of a stopped service.
+  nsExec::ExecToStack '"$SYSDIR\sc.exe" stop NexaCollector'
+  Pop $1
+  Pop $2
+  ${If} $1 != "0"
+  ${AndIf} $1 != "1062"
+    MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel parar o servico NexaCollector (codigo $1).$\r$\n$2" /SD IDOK
+    SetErrorLevel 27
+    !insertmacro NEXA_DIAGNOSTIC 27
+    IfSilent 0 +2
+      Quit
+    Abort "Nexa Collector service stop failed"
+  ${EndIf}
+
+  nsExec::ExecToStack '"$SYSDIR\sc.exe" delete NexaCollector'
+  Pop $1
+  Pop $2
+  ${If} $1 != "0"
+    MessageBox MB_ICONSTOP|MB_OK "O servico nao pode ser marcado para remocao (codigo $1).$\r$\n$2" /SD IDOK
     SetErrorLevel 21
     !insertmacro NEXA_DIAGNOSTIC 21
     IfSilent 0 +2
       Quit
     Abort "Nexa Collector service removal failed"
+  ${EndIf}
+
+  ; sc delete returns success when the entry is merely *marked* for removal.
+  ; Wait for the SCM to stop the daemon and release the entry before allowing
+  ; Tauri to remove files. Preserve the original client config and secrets.
+  StrCpy $3 0
+  nexa_uninstall_wait_for_delete:
+    nsExec::ExecToStack '"$SYSDIR\sc.exe" query NexaCollector'
+    Pop $1
+    Pop $2
+    ${If} $1 == "1060"
+      Goto nexa_uninstall_no_service
+    ${ElseIf} $1 != "0"
+    ${AndIf} $1 != "1072"
+      MessageBox MB_ICONSTOP|MB_OK "Falha ao confirmar a remocao do servico (codigo $1).$\r$\n$2" /SD IDOK
+      SetErrorLevel 28
+      !insertmacro NEXA_DIAGNOSTIC 28
+      IfSilent 0 +2
+        Quit
+      Abort "Nexa Collector service removal inspection failed"
+    ${EndIf}
+    IntOp $3 $3 + 1
+    ${If} $3 >= 45
+      MessageBox MB_ICONSTOP|MB_OK "O Windows ainda esta removendo NexaCollector. Feche consoles de servicos e outros processos que usam o agente, reinicie o computador se necessario e tente desinstalar novamente. Os dados do cliente foram preservados." /SD IDOK
+      SetErrorLevel 29
+      !insertmacro NEXA_DIAGNOSTIC 29
+      IfSilent 0 +2
+        Quit
+      Abort "Nexa Collector service deletion timed out"
+    ${EndIf}
+    Sleep 1000
+    Goto nexa_uninstall_wait_for_delete
   nexa_uninstall_no_service:
 !macroend
 
