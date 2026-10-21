@@ -526,6 +526,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Compile and execute Windows Collector core/daemon tests
         run: cargo test --locked -p nexa-collector-core -p nexa-collector-daemon
+      - name: Repeat multi-process watchdog journal regression on Windows
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            Write-Host "Watchdog concurrent writer stress run $attempt / 3"
+            cargo test --locked -p nexa-collector-core --lib recovery_guard::tests::concurrent_process_writers_preserve_all_events_and_reset -- --exact --test-threads=1
+            if ($LASTEXITCODE -ne 0) { throw "Concurrent watchdog writers failed on repeat $attempt" }
+          }
       - name: Validate native NSIS installer security and service safety
         shell: pwsh
         working-directory: .
