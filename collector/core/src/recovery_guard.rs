@@ -471,9 +471,9 @@ mod tests {
         let finish_deadline = Instant::now() + timeout;
         let mut finished = [false; 3];
         loop {
-            for (index, child) in children.iter_mut().enumerate() {
+            for index in 0..children.len() {
                 if finished[index] { continue; }
-                if let Some(status) = child.try_wait().unwrap() {
+                if let Some(status) = children[index].try_wait().unwrap() {
                     if !status.success() {
                         for child in &mut children { let _ = child.kill(); }
                         for child in &mut children { let _ = child.wait(); }
