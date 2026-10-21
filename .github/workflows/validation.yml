@@ -664,9 +664,18 @@ jobs:
             throw 'NSIS uninstaller exceeded 120 seconds'
           }
           if ($removed.ExitCode -ne 0) { throw "Uninstaller failed: $($removed.ExitCode)" }
-          Start-Sleep -Seconds 3
-          $left = Get-CimInstance Win32_Service -Filter "Name = 'NexaCollector'"
-          if ($null -ne $left) { throw 'Uninstall left NexaCollector service registered' }
+          # A service may linger in the SCM while it finishes stopping or
+          # existing handles are released. Poll rather than assuming 3s.
+          $deadline = (Get-Date).AddSeconds(60)
+          do {
+            $left = Get-CimInstance Win32_Service -Filter "Name = 'NexaCollector'"
+            if ($null -eq $left) { break }
+            Start-Sleep -Seconds 2
+          } while ((Get-Date) -lt $deadline)
+          if ($null -ne $left) {
+            & "$env:WINDIR\System32\sc.exe" query NexaCollector
+            throw 'Uninstall left NexaCollector service registered after 60 seconds'
+          }
           if (-not (Test-Path $directory)) { throw 'Uninstall destroyed customer data' }
       - name: Upload Windows installer for review
         uses: actions/upload-artifact@v4
