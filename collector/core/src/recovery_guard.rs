@@ -412,18 +412,23 @@ mod tests {
         let queue = PathBuf::from(queue);
         let directory = queue.parent().unwrap();
         fs::write(directory.join(format!("ready-{mode}")), b"ready").unwrap();
-        let deadline = Instant::now() + Duration::from_secs(20);
+        // Windows CI can delay spawning subprocesses while compiling and
+        // scanning executables. Keep a bounded wait without hiding deadlocks.
+        let deadline = Instant::now() + Duration::from_secs(if cfg!(windows) { 90 } else { 30 });
         while !directory.join("go").exists() {
             assert!(Instant::now() < deadline, "concurrent writer start timed out");
-            thread::sleep(Duration::from_millis(5));
+            thread::sleep(Duration::from_millis(10));
         }
         let guard = RecoveryGuard::for_queue(&queue);
-        for _ in 0..8 {
+        for completed in 1..=8 {
             if mode == "reset" {
                 guard.reset(Utc::now()).unwrap();
             } else {
                 guard.record(&mode, Utc::now()).unwrap();
             }
+            // Independent, test-only progress markers identify precisely
+            // which process is blocked if the bounded test times out.
+            fs::write(directory.join(format!("progress-{mode}")), completed.to_string()).unwrap();
         }
     }
 
@@ -441,28 +446,54 @@ mod tests {
                 .env("NEXA_INTERNAL_WATCHDOG_WRITER_MODE", mode)
                 .spawn().unwrap()
         }).collect();
-        let deadline = Instant::now() + Duration::from_secs(20);
+        let timeout = Duration::from_secs(if cfg!(windows) { 90 } else { 30 });
+        let deadline = Instant::now() + timeout;
         while modes.iter().any(|mode| !tmp.path().join(format!("ready-{mode}")).exists()) {
-            if Instant::now() >= deadline {
-                for child in &mut children { let _ = child.kill(); }
-                panic!("concurrent writer children did not become ready");
+            for (index, child) in children.iter_mut().enumerate() {
+                if let Some(status) = child.try_wait().unwrap() {
+                    panic!("watchdog writer {} exited before starting: {status}", modes[index]);
+                }
             }
-            thread::sleep(Duration::from_millis(5));
+            if Instant::now() >= deadline {
+                let missing: Vec<_> = modes.iter()
+                    .filter(|mode| !tmp.path().join(format!("ready-{mode}")).exists())
+                    .copied().collect();
+                for child in &mut children { let _ = child.kill(); }
+                for child in &mut children { let _ = child.wait(); }
+                panic!("concurrent writer children did not become ready: {missing:?}");
+            }
+            thread::sleep(Duration::from_millis(10));
         }
         fs::write(tmp.path().join("go"), b"go").unwrap();
-        let finish_deadline = Instant::now() + Duration::from_secs(20);
-        for index in 0..children.len() {
-            loop {
+
+        // Poll all children instead of blocking on the first, so a failed
+        // writer is reported immediately and no orphan keeps the lock alive.
+        let finish_deadline = Instant::now() + timeout;
+        let mut finished = [false; 3];
+        loop {
+            for index in 0..children.len() {
+                if finished[index] { continue; }
                 if let Some(status) = children[index].try_wait().unwrap() {
-                    assert!(status.success(), "concurrent writer child failed");
-                    break;
+                    if !status.success() {
+                        for child in &mut children { let _ = child.kill(); }
+                        for child in &mut children { let _ = child.wait(); }
+                        panic!("concurrent writer {} failed: {status}", modes[index]);
+                    }
+                    finished[index] = true;
                 }
-                if Instant::now() >= finish_deadline {
-                    for child in &mut children { let _ = child.kill(); }
-                    panic!("concurrent writer child timed out");
-                }
-                thread::sleep(Duration::from_millis(5));
             }
+            if finished.iter().all(|done| *done) { break; }
+            if Instant::now() >= finish_deadline {
+                let progress: Vec<_> = modes.iter().enumerate().map(|(index, mode)| {
+                    let marker = tmp.path().join(format!("progress-{mode}"));
+                    let completed = fs::read_to_string(marker).unwrap_or_else(|_| "0".into());
+                    format!("{mode}: {completed}/8 writes, exited={}", finished[index])
+                }).collect();
+                for child in &mut children { let _ = child.kill(); }
+                for child in &mut children { let _ = child.wait(); }
+                panic!("concurrent writer child timed out after {timeout:?}: {progress:?}");
+            }
+            thread::sleep(Duration::from_millis(10));
         }
         let snapshot = RecoveryGuard::for_queue(&queue).snapshot(Utc::now()).unwrap();
         assert_eq!(snapshot.retained_incidents, 16);
