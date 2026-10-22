@@ -5,7 +5,15 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-type PrinterInfo = { printer_id: number; ip: string; oid: string; reference_model_id: number | null; auto_detect_reference: boolean };
+type PrinterInfo = {
+  printer_id: number; ip: string; oid: string;
+  monitored: boolean; last_tested_at: string | null;
+  manufacturer: string | null; model: string | null; serial: string | null; mac: string | null;
+  reference_model_id: number | null; auto_detect_reference: boolean;
+};
+type PrinterCommand =
+  | { action: "add"; printer_id: number; ip: string; oid: number[]; auto_detect_reference: boolean }
+  | { action: "monitor" | "disable" | "remove"; printer_id: number };
 type ReferenceStatus = "not_tested" | "approved" | "incompatible";
 type UsbScannerInfo = { printer_id: number; profile: string };
 type DiscoveryCandidate = { ip: string; print_ports: number[]; http_server: string | null; escl_scanner: boolean };
@@ -149,6 +157,21 @@ export default function App() {
   const [canonMeter, setCanonMeter] = useState<CanonDrc225Meter | null>(null);
   const [canonReading, setCanonReading] = useState(false);
   const [canonError, setCanonError] = useState<string | null>(null);
+  const [printerFilter, setPrinterFilter] = useState("");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [printerBusy, setPrinterBusy] = useState(false);
+  const [printerError, setPrinterError] = useState<string | null>(null);
+  const [printerNotice, setPrinterNotice] = useState<string | null>(null);
+  const [addingPrinter, setAddingPrinter] = useState(false);
+  const [removeArmed, setRemoveArmed] = useState(false);
+  const [expandedPrinter, setExpandedPrinter] = useState<number | null>(null);
+  const [newPrinterId, setNewPrinterId] = useState("");
+  const [newPrinterIp, setNewPrinterIp] = useState("");
+  const [newPrinterOid, setNewPrinterOid] = useState("");
+  const [autoDetectOid, setAutoDetectOid] = useState(true);
+  const [broadcastBusy, setBroadcastBusy] = useState(false);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
+  const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null);
   const discover = useCallback(async () => {
     setDiscovering(true);
     setDiscoveryError(null);
