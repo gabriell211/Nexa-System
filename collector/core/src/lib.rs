@@ -4,6 +4,7 @@ pub mod mib_registry;
 pub mod reference_catalog;
 pub mod snmp_inventory;
 pub mod candidate_review;
+pub mod fleet;
 pub mod local_control;
 pub mod usb_devices;
 pub mod canon_drc225;
@@ -1395,6 +1396,50 @@ impl Outbox {
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [&serialized],
         )?;
+        Ok(())
+    }
+
+    /// Current fleet override, or the provisioned legacy roster when no override exists.
+    /// A malformed override never silently restores legacy monitoring.
+    pub fn printer_fleet(
+        &self, cfg: &CollectorConfig,
+    ) -> Result<Vec<fleet::FleetPrinter>, CollectorError> {
+        let raw: Option<String> = self.connection.query_row(
+            "SELECT value FROM state WHERE key = 'printer_fleet_v1'",
+            [], |row| row.get(0),
+        ).optional()?;
+        let records = match raw {
+            Some(json) => serde_json::from_str::<Vec<fleet::FleetPrinter>>(&json)?,
+            None => fleet::from_config(cfg),
+        };
+        fleet::validate(cfg, &records)?;
+        Ok(records)
+    }
+
+    /// Serial, immediate transaction protects concurrent administrative
+    /// changes; disabling/removing does not delete queued historical samples.
+    pub fn apply_printer_command(
+        &mut self,
+        cfg: &CollectorConfig, command: &fleet::FleetCommand,
+        tested_at: Option<String>,
+    ) -> Result<(), CollectorError> {
+        let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let raw: Option<String> = tx.query_row(
+            "SELECT value FROM state WHERE key = 'printer_fleet_v1'",
+            [], |row| row.get(0),
+        ).optional()?;
+        let mut records = match raw {
+            Some(json) => serde_json::from_str::<Vec<fleet::FleetPrinter>>(&json)?,
+            None => fleet::from_config(cfg),
+        };
+        fleet::apply(cfg, &mut records, command, tested_at)?;
+        let serialized = serde_json::to_string(&records)?;
+        tx.execute(
+            "INSERT INTO state(key, value) VALUES ('printer_fleet_v1', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [&serialized],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 
