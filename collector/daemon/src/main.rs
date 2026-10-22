@@ -288,7 +288,7 @@ fn run_application(
     } else { None };
     // Managed printers may be added while the service is running.
     // Load the protected credential even when the initial JSON has no printers.
-    let snmp_community = load_secret("NEXA_SNMP_COMMUNITY", windows_service_mode, macos_launchd_mode)?;
+    let snmp_community = load_optional_snmp_secret(windows_service_mode, macos_launchd_mode)?;
     let has_active_snmp = outbox.printer_fleet(&cfg)?.iter().any(|item| item.monitored);
     if supervised_mode && (token.is_none() || (has_active_snmp && snmp_community.is_none())) {
         return Err("supervised collector requires token and configured SNMP credentials".into());
@@ -724,6 +724,34 @@ fn read_secret_file(path: &Path) -> Result<Zeroizing<String>, Box<dyn Error>> {
 /// In systemd mode missing credential files are fatal, NEVER silently
 /// replaced with environment variables or a plaintext DB configuration.
 /// Outside systemd, preserve explicit development CLI environment support.
+/// A collector with no active SNMP devices can still run heartbeats and
+/// receive protected enrollment commands before a credential is provisioned.
+fn load_optional_snmp_secret(
+    windows_service_mode: bool, macos_launchd_mode: bool,
+) -> Result<Option<Zeroizing<String>>, Box<dyn Error>> {
+    const NAME: &str = "NEXA_SNMP_COMMUNITY";
+    if windows_service_mode {
+        #[cfg(windows)]
+        {
+            let root = env::var_os("ProgramData").ok_or("ProgramData is missing")?;
+            let path = Path::new(&root).join("NexaCollector").join("credentials").join(NAME);
+            return if path.exists() { read_secret_file(&path).map(Some) } else { Ok(None) };
+        }
+    }
+    if macos_launchd_mode {
+        #[cfg(target_os = "macos")]
+        {
+            let path = Path::new("/Library/Application Support/NexaCollector").join("credentials").join(NAME);
+            return if path.exists() { read_secret_file(&path).map(Some) } else { Ok(None) };
+        }
+    }
+    if let Some(root) = env::var_os("CREDENTIALS_DIRECTORY") {
+        let path = Path::new(&root).join(NAME);
+        return if path.exists() { read_secret_file(&path).map(Some) } else { Ok(None) };
+    }
+    load_secret(NAME, windows_service_mode, macos_launchd_mode)
+}
+
 fn load_secret(
     name: &str,
     windows_service_mode: bool,
