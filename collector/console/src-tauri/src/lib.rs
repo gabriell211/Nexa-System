@@ -299,8 +299,12 @@ async fn discover_authorized_printers(cidrs: Vec<String>) -> Result<Vec<Discover
     // the exact provisioned service config and re-check the entire scope in
     // Rust before sending a single discovery packet.
     tauri::async_runtime::spawn_blocking(move || {
-        let path = env::var("NEXA_COLLECTOR_CONFIG")
-            .map_err(|_| "Configuração do Collector indisponível.".to_owned())?;
+        let path = env::var("NEXA_COLLECTOR_CONFIG").ok().or_else(|| {
+            #[cfg(windows)]
+            { installed_root().map(|root| root.join("config.json").to_string_lossy().into_owned()) }
+            #[cfg(not(windows))]
+            { None }
+        }).ok_or_else(|| "Configuração do Collector indisponível.".to_owned())?;
         let config = read_config(path)
             .map_err(|_| "Configuração do Collector inválida ou inacessível.".to_owned())?;
         discovery::discover_authorized_ranges(&config.authorized_subnets, &cidrs)
