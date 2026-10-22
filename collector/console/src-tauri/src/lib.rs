@@ -3,6 +3,7 @@ use nexa_collector_core::{
     canon_drc225::{self, CanonDrc225Meter},
     candidate_review::{CandidateReview, ReviewAction},
     discovery::{self, DiscoveryCandidate},
+    fleet::{FleetCommand, FleetPrinter},
     reference_catalog::{self, ReferenceSearchResult},
     usb_devices::{self, UsbDeviceCandidate},
     recovery_guard::{RecoveryGuard, WatchdogSnapshot},
@@ -28,6 +29,12 @@ struct PrinterInfo {
     printer_id: u64,
     ip: String,
     oid: String,
+    monitored: bool,
+    last_tested_at: Option<String>,
+    manufacturer: Option<String>,
+    model: Option<String>,
+    serial: Option<String>,
+    mac: Option<String>,
     reference_model_id: Option<u64>,
     auto_detect_reference: bool,
 }
@@ -82,8 +89,7 @@ fn get_snapshot() -> CollectorSnapshot {
         discovery_report: None,
         candidate_reviews: Vec::new(),
         candidate_reviews_error: None,
-        local_control_supported: cfg!(unix)
-            || (cfg!(windows) && env::var("NEXA_EXPERIMENTAL_WINDOWS_CONTROL").as_deref() == Ok("1")),
+        local_control_supported: cfg!(unix) || cfg!(windows),
         schedule_control_supported: cfg!(unix),
         printers: Vec::new(),
         usb_scanners: Vec::new(),
@@ -103,6 +109,7 @@ fn get_snapshot() -> CollectorSnapshot {
     };
 
     let mut capacity_limits = None;
+    let mut provisioned_config = None;
     let config_path = env::var("NEXA_COLLECTOR_CONFIG").ok().or_else(|| {
         #[cfg(windows)]
         { installed_root().map(|root| root.join("config.json").to_string_lossy().into_owned()) }
@@ -128,19 +135,22 @@ fn get_snapshot() -> CollectorSnapshot {
                 snapshot.queue_capacity = Some(config.max_pending_samples);
                 snapshot.payload_bytes_limit = Some(config.max_pending_payload_bytes);
                 capacity_limits = Some((config.max_pending_samples, config.max_pending_payload_bytes, config.max_sqlite_files_bytes));
-                snapshot.printers = config.printers.into_iter().map(|p| PrinterInfo {
+                snapshot.printers = config.printers.iter().map(|p| PrinterInfo {
                     printer_id: p.printer_id,
                     ip: p.ip.to_string(),
+                    monitored: true, last_tested_at: None,
+                    manufacturer: None, model: None, serial: None, mac: None,
                     oid: if p.auto_detect_reference { "Detectado por SNMP".into() } else {
                         p.effective_counter_oid().unwrap_or_default().iter().map(u64::to_string).collect::<Vec<_>>().join(".")
                     },
                     reference_model_id: p.reference_model_id,
                     auto_detect_reference: p.auto_detect_reference,
                 }).collect();
-                snapshot.usb_scanners = config.usb_scanners.into_iter().map(|s| UsbScannerInfo {
+                snapshot.usb_scanners = config.usb_scanners.iter().map(|s| UsbScannerInfo {
                     printer_id: s.printer_id,
-                    profile: s.profile,
+                    profile: s.profile.clone(),
                 }).collect();
+                provisioned_config = Some(config);
             }
             Err(_) => snapshot.error = Some("Configuração não encontrada ou inválida.".into()),
         },
@@ -209,6 +219,31 @@ fn get_snapshot() -> CollectorSnapshot {
                     match outbox.delivery_diagnostics() {
                         Ok(delivery) => snapshot.delivery = Some(delivery),
                         Err(_) => snapshot.error = Some("Histórico de transmissão local inválido.".into()),
+                    }
+                    if let Some(ref configured) = provisioned_config {
+                        match outbox.printer_fleet(configured) {
+                            Ok(fleet) => {
+                                snapshot.printers = fleet.into_iter().map(|entry: FleetPrinter| {
+                                    let p = entry.config;
+                                    PrinterInfo {
+                                        printer_id: p.printer_id,
+                                        ip: p.ip.to_string(),
+                                        oid: if p.auto_detect_reference { "Detecção SNMP automática".into() }
+                                            else { p.effective_counter_oid().unwrap_or_default().iter()
+                                                .map(u64::to_string).collect::<Vec<_>>().join(".") },
+                                        monitored: entry.monitored,
+                                        last_tested_at: entry.last_tested_at,
+                                        manufacturer: entry.manufacturer, model: entry.model,
+                                        serial: entry.serial, mac: entry.mac,
+                                        reference_model_id: p.reference_model_id,
+                                        auto_detect_reference: p.auto_detect_reference,
+                                    }
+                                }).collect();
+                            }
+                            Err(_) => snapshot.error = Some(
+                                "Cadastro local de impressoras inválido; coleta bloqueada até correção.".into()
+                            ),
+                        }
                     }
                     snapshot.last_run = outbox.last_run().ok().flatten();
                     match outbox.discovery_schedule_override(&snapshot.authorized_subnets) {
@@ -350,10 +385,35 @@ async fn save_discovery_schedule(schedule: DiscoverySchedule) -> Result<(), Stri
     }
 }
 
+#[tauri::command]
+async fn printer_action(command: FleetCommand) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let path = env::var_os("NEXA_COLLECTOR_DB")
+                .ok_or_else(|| "Banco do serviço não configurado.".to_owned())?;
+            nexa_collector_core::local_control::submit_fleet(
+                std::path::Path::new(&path), command,
+            )
+        }).await.map_err(|_| "Canal administrativo interrompido.".to_owned())?
+    }
+    #[cfg(windows)]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            nexa_collector_core::local_control::submit_windows_fleet(command)
+        }).await.map_err(|_| "Canal administrativo Windows interrompido.".to_owned())?
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = command;
+        Err("Controle de impressoras não suportado neste sistema.".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_snapshot, search_reference_models, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate, save_discovery_schedule])
+        .invoke_handler(tauri::generate_handler![get_snapshot, search_reference_models, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate, save_discovery_schedule, printer_action])
         .run(tauri::generate_context!())
         .expect("failed to start Nexa Collector Console");
 }
