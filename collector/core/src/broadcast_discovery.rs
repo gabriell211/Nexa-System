@@ -171,6 +171,25 @@ mod tests {
         assert!(plan_broadcast_networks(&allowed, &["192.168.15.1/32".into()]).is_err());
     }
     #[test]
+    fn accepts_only_authenticated_bounded_snmp_get_responses() {
+        let community = b"private";
+        let id = 100u32;
+        let mut binding = ber(0x06, &DESCR_OID);
+        binding.extend_from_slice(&ber(0x04, b"Printer"));
+        let mut pdu = ber(0x02, &id.to_be_bytes());
+        pdu.extend_from_slice(&[0x02, 0x01, 0, 0x02, 0x01, 0]);
+        pdu.extend_from_slice(&ber(0x30, &ber(0x30, &binding)));
+        let mut msg = vec![0x02, 0x01, 0x01];
+        msg.extend_from_slice(&ber(0x04, community));
+        msg.extend_from_slice(&ber(0xa2, &pdu));
+        let valid = ber(0x30, &msg);
+        assert!(valid_response(&valid, community, id));
+        assert!(!valid_response(&valid, b"public", id));
+        assert!(!valid_response(&valid, community, 101));
+        assert!(!valid_response(&valid[..valid.len() - 1], community, id));
+    }
+
+    #[test]
     fn broadcast_get_is_bounded_and_requires_matching_response() {
         let packet = get_request(b"private", 45).unwrap();
         let (tag, _, tail) = tlv(&packet).unwrap();
