@@ -1,5 +1,6 @@
 pub mod recovery_guard;
 pub mod discovery;
+pub mod broadcast_discovery;
 pub mod mib_registry;
 pub mod reference_catalog;
 pub mod snmp_inventory;
