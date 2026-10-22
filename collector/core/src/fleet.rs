@@ -180,6 +180,46 @@ mod tests {
     }
 
     #[test]
+    fn sqlite_printer_roster_survives_restart_and_rejects_conflicts_atomically() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("local.sqlite");
+        let cfg = sample_config();
+        let add = FleetCommand::Add {
+            printer_id: 55, ip: "192.168.15.55".parse().unwrap(),
+            oid: vec![1, 3, 6, 1, 2, 1, 43, 10, 2, 1, 4, 1, 1],
+            auto_detect_reference: false,
+        };
+        let mut db = crate::Outbox::open(&path).unwrap();
+        db.apply_printer_command(&cfg, &add, None, None).unwrap();
+        assert_eq!(db.printer_fleet(&cfg).unwrap().len(), 1);
+        assert!(db.apply_printer_command(&cfg, &add, None, None).is_err());
+        assert_eq!(db.printer_fleet(&cfg).unwrap().len(), 1);
+        drop(db);
+        let mut reopened = crate::Outbox::open(&path).unwrap();
+        let saved = reopened.printer_fleet(&cfg).unwrap();
+        assert_eq!(saved[0].config.printer_id, 55);
+        assert!(!saved[0].monitored);
+        reopened.apply_printer_command(&cfg, &FleetCommand::Monitor {
+            printer_id: 55,
+        }, Some("2026-10-22T12:00:00Z".into()), Some(FleetIdentity {
+            manufacturer: Some("Kyocera".into()),
+            model: Some("ECOSYS".into()),
+            serial: None,
+            mac: None,
+        })).unwrap();
+        assert!(reopened.printer_fleet(&cfg).unwrap()[0].monitored);
+        assert_eq!(reopened.printer_fleet(&cfg).unwrap()[0].manufacturer.as_deref(), Some("Kyocera"));
+        reopened.apply_printer_command(&cfg, &FleetCommand::Disable {
+            printer_id: 55,
+        }, None, None).unwrap();
+        assert!(!reopened.printer_fleet(&cfg).unwrap()[0].monitored);
+        reopened.apply_printer_command(&cfg, &FleetCommand::Remove {
+            printer_id: 55,
+        }, None, None).unwrap();
+        assert!(reopened.printer_fleet(&cfg).unwrap().is_empty());
+    }
+
+    #[test]
     fn rejects_unknown_commands_and_forged_monitoring_proof() {
         assert!(serde_json::from_str::<FleetCommand>(r#"{"action":"wipe","printer_id":1}"#).is_err());
         assert!(serde_json::from_str::<FleetCommand>(r#"{"action":"monitor","printer_id":1,"tested_at":"fake"}"#).is_err());
