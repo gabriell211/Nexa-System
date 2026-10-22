@@ -1423,6 +1423,7 @@ impl Outbox {
         &mut self,
         cfg: &CollectorConfig, command: &fleet::FleetCommand,
         tested_at: Option<String>,
+        identity: Option<fleet::FleetIdentity>,
     ) -> Result<(), CollectorError> {
         let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let raw: Option<String> = tx.query_row(
@@ -1434,6 +1435,14 @@ impl Outbox {
             None => fleet::from_config(cfg),
         };
         fleet::apply(cfg, &mut records, command, tested_at)?;
+        if let (fleet::FleetCommand::Monitor { printer_id }, Some(identity)) = (command, identity) {
+            if let Some(record) = records.iter_mut().find(|entry| entry.config.printer_id == *printer_id) {
+                record.manufacturer = identity.manufacturer;
+                record.model = identity.model;
+                record.serial = identity.serial;
+                record.mac = identity.mac;
+            }
+        }
         let serialized = serde_json::to_string(&records)?;
         tx.execute(
             "INSERT INTO state(key, value) VALUES ('printer_fleet_v1', ?1)
