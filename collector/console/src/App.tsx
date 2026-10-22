@@ -554,27 +554,99 @@ export default function App() {
 
           {tab === "printers" && (
             <>
-            <section className="panel">
-              <div className="panel-title"><h2>Dispositivos configurados</h2><span>{snapshot ? snapshot.printers.length + snapshot.usb_scanners.length : 0} registros</span></div>
-              <div className="table-scroll"><table>
-                <thead><tr><th>ID do equipamento</th><th>Conexão</th><th>Perfil de leitura</th><th>Estado</th></tr></thead>
-                <tbody>
-                  {snapshot?.printers.map((printer) => (
-                    <tr key={`ip-${printer.printer_id}`}>
-                      <td>#{printer.printer_id}</td><td>{printer.ip}</td>
-                        <td className="mono">SNMP: {printer.oid}{printer.reference_model_id ? ` · Ref. #${printer.reference_model_id}` : ""}</td><td>{printer.auto_detect_reference ? "Nome SNMP comparado a cada coleta; contador depende de validação" : "Contador depende de validação no Nexa"}</td>
-                    </tr>
-                  ))}
-                  {snapshot?.usb_scanners.map((scanner) => (
-                    <tr key={`usb-${scanner.printer_id}`}>
-                      <td>#{scanner.printer_id}</td><td>USB local</td>
-                      <td className="mono">{scanner.profile}</td><td>Leitura experimental em sessão interativa</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table></div>
-              {snapshot && snapshot.printers.length + snapshot.usb_scanners.length === 0 && <div className="empty">Nenhum equipamento configurado neste ponto de coleta.</div>}
-            </section>
+              <section className="panel printer-register">
+                <div className="panel-title"><h2>Cadastro de impressoras</h2>
+                  <span>Gerenciamento local conectado ao serviço Rust</span></div>
+                <div className="printer-toolbar">
+                  <div className="printer-buttons">
+                    <button type="button" className="primary-button" disabled={printerBusy || !selectedIds.length || !snapshot?.local_control_supported}
+                      onClick={() => void operatePrinters("monitor")}>Monitorar</button>
+                    <button type="button" className="secondary-button" disabled={printerBusy || !selectedIds.length || !snapshot?.local_control_supported}
+                      onClick={() => void operatePrinters("disable")}>Desativar</button>
+                    <button type="button" className="secondary-button" disabled={printerBusy || !snapshot?.local_control_supported}
+                      onClick={() => setAddingPrinter(value => !value)}>Adicionar</button>
+                    <button type="button" className="secondary-button" disabled={printerBusy || !selectedIds.length || !snapshot?.local_control_supported}
+                      onClick={() => setRemoveArmed(true)}>Remover</button>
+                  </div>
+                  <div className="printer-totals">
+                    <span>Impressoras cadastradas: <strong>{snapshot?.printers.length ?? 0}</strong></span>
+                    <span>Impressoras monitoradas: <strong>{snapshot?.printers.filter(p => p.monitored).length ?? 0}</strong></span>
+                  </div>
+                  <label className="printer-filter">
+                    <span className="sr-only">Filtrar impressoras</span>
+                    <input placeholder="Filtrar impressoras..." value={printerFilter}
+                      onChange={event => setPrinterFilter(event.target.value)} maxLength={120} /></label>
+                </div>
+                {addingPrinter && <form className="printer-add-form" onSubmit={event => { event.preventDefault(); void addPrinter(); }}>
+                  <h3>Adicionar impressora de rede</h3>
+                  <p>Use o ID do equipamento já associado ao cliente Nexa e um IP em faixa autorizada.</p>
+                  <label>ID no Nexa <input type="number" min="1" step="1" required value={newPrinterId}
+                    onChange={event => setNewPrinterId(event.target.value)} /></label>
+                  <label>IPv4 <input required value={newPrinterIp} maxLength={15} placeholder="192.168.15.45"
+                    onChange={event => setNewPrinterIp(event.target.value)} /></label>
+                  <label>OID total <input value={newPrinterOid} maxLength={300} disabled={autoDetectOid}
+                    placeholder="1.3.6.1.2.1.43.10.2.1.4.1.1"
+                    onChange={event => setNewPrinterOid(event.target.value)} /></label>
+                  <label className="printer-checkbox"><input type="checkbox" checked={autoDetectOid}
+                    onChange={event => setAutoDetectOid(event.target.checked)} />
+                    Detectar o OID por identidade SNMP, somente quando inequívoca</label>
+                  <div className="printer-buttons">
+                    <button type="submit" className="primary-button" disabled={printerBusy}>Salvar cadastro</button>
+                    <button type="button" className="secondary-button" onClick={() => setAddingPrinter(false)}>Cancelar</button>
+                  </div>
+                  <p>Salvar não ativa monitoramento. Monitorar exige leitura SNMP real.</p>
+                </form>}
+                {removeArmed && <div className="printer-confirm" role="alert">
+                  <span>Remover {selectedIds.length} impressora(s) do cadastro local? Leituras anteriores serão preservadas.</span>
+                  <button type="button" className="secondary-button" disabled={printerBusy}
+                    onClick={() => { setRemoveArmed(false); void operatePrinters("remove"); }}>Confirmar</button>
+                  <button type="button" className="secondary-button" onClick={() => setRemoveArmed(false)}>Cancelar</button>
+                </div>}
+                {printerError && <div className="notice error" role="alert">{printerError}</div>}
+                {printerNotice && <div className="notice" role="status">{printerNotice}</div>}
+                <div className="table-scroll"><table>
+                  <thead><tr><th><input type="checkbox" aria-label="Selecionar impressoras filtradas"
+                    checked={filteredPrinters.length > 0 && filteredPrinters.every(p => selectedIds.includes(p.printer_id))}
+                    onChange={event => {
+                      const ids = filteredPrinters.map(p => p.printer_id);
+                      setSelectedIds(previous => event.target.checked
+                        ? Array.from(new Set([...previous, ...ids]))
+                        : previous.filter(id => !ids.includes(id)));
+                    }} /></th>
+                    <th>Monitorada</th><th>Situação</th><th>Tipo</th><th>Homologado</th>
+                    <th>Endereço IP</th><th>Fabricante</th><th>Modelo</th>
+                    <th>Número de série</th><th>Endereço MAC</th><th>Ver detalhes</th></tr></thead>
+                  <tbody>{filteredPrinters.map(printer => <tr key={printer.printer_id}>
+                    <td><input type="checkbox" aria-label={"Selecionar impressora " + printer.printer_id}
+                      checked={selectedIds.includes(printer.printer_id)}
+                      onChange={event => setSelectedIds(previous => event.target.checked
+                        ? Array.from(new Set([...previous, printer.printer_id]))
+                        : previous.filter(id => id !== printer.printer_id))} /></td>
+                    <td>{printer.monitored ? "Sim" : "Não"}</td>
+                    <td>{!printer.monitored ? "Desativada" : printer.last_tested_at
+                      ? "SNMP validado" : "Ativa (sem teste registrado)"}</td>
+                    <td>Rede</td><td>Não homologado no Nexa</td>
+                    <td className="mono">{printer.ip}</td>
+                    <td>{printer.manufacturer ?? "Não identificado"}</td>
+                    <td>{printer.model ?? "Não identificado"}</td>
+                    <td>{printer.serial ?? "Não identificado"}</td>
+                    <td>{printer.mac ?? "Não identificado"}</td>
+                    <td><button type="button" className="secondary-button"
+                      aria-expanded={expandedPrinter === printer.printer_id}
+                      onClick={() => setExpandedPrinter(previous =>
+                        previous === printer.printer_id ? null : printer.printer_id)}>
+                      {expandedPrinter === printer.printer_id ? "Ocultar" : "Detalhes"}</button>
+                      {expandedPrinter === printer.printer_id && <div className="printer-details">
+                        <strong>Equipamento #{printer.printer_id}</strong>
+                        <span>OID: {printer.oid || "Seleção automática"}</span>
+                        <span>Teste SNMP: {printer.last_tested_at ? formatDate(printer.last_tested_at) : "Ainda não registrado"}</span>
+                        <span>Perfil de referência: {printer.reference_model_id ?? "Não selecionado"}</span>
+                        <span>Homologação de contador para faturamento: pendente</span>
+                      </div>}</td></tr>)}</tbody>
+                </table></div>
+                {snapshot?.printers.length === 0 && <div className="empty">
+                  Nenhuma impressora cadastrada. Utilize Adicionar para começar.</div>}
+              </section>
             <section className="panel">
               <div className="panel-title"><h2>Candidatos da última varredura programada</h2>
                 <span>Relatório persistido na fila local</span></div>
