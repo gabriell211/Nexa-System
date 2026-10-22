@@ -647,6 +647,83 @@ export default function App() {
                 {snapshot?.printers.length === 0 && <div className="empty">
                   Nenhuma impressora cadastrada. Utilize Adicionar para começar.</div>}
               </section>
+
+
+            </>
+          )}
+
+
+          {tab === "tools" && (
+            <>
+              <section className="tool-selector" aria-label="Ferramentas de descoberta">
+                <button type="button" className={`tool-card ${toolMode === "network" ? "selected" : ""}`}
+                  aria-pressed={toolMode === "network"} onClick={() => setToolMode("network")}>
+                  <Network size={30} aria-hidden="true" />
+                  <strong>Busca de impressoras na rede</strong>
+                  <span>Localize candidatos em sub-redes autorizadas.</span>
+                </button>
+                <button type="button" className={`tool-card ${toolMode === "usb" ? "selected" : ""}`}
+                  aria-pressed={toolMode === "usb"} onClick={() => setToolMode("usb")}>
+                  <Usb size={30} aria-hidden="true" />
+                  <strong>Busca de impressoras USB</strong>
+                  <span>Encontre impressoras, scanners e dispositivos de imagem conectados.</span>
+                </button>
+              </section>
+              {toolMode === null && (
+                <div className="notice" role="status">
+                  Escolha uma ferramenta para iniciar a descoberta. Nenhum dispositivo será cadastrado ou monitorado automaticamente.
+                </div>
+              )}
+              {toolMode === "network" && (
+                <div className="tool-workspace">
+                  <section className="panel">
+              <div className="panel-title"><h2>Descoberta na rede local</h2><span>Busca limitada às interfaces privadas deste computador</span></div>
+              <p>Portas de impressão e capacidades eSCL são indícios de equipamento. Confirme modelo, cliente e medidores antes do cadastro.</p>
+              <button type="button" className="primary-button" onClick={() => void discover()} disabled={discovering}>
+                <Network size={16} aria-hidden="true" />{discovering ? "Buscando..." : "Buscar impressoras e scanners"}
+              </button>
+              {discoveryError && <div className="notice error" role="alert">{discoveryError}</div>}
+              {discovered && <div className="table-scroll"><table>
+                <thead><tr><th>Endereço IP</th><th>Portas de impressão</th><th>Scanner eSCL</th><th>Servidor HTTP</th><th>Estado</th></tr></thead>
+                <tbody>{discovered.map((candidate) => <tr key={candidate.ip}>
+                  <td className="mono">{candidate.ip}</td>
+                  <td>{candidate.print_ports.length ? candidate.print_ports.join(", ") : "Nenhuma"}</td>
+                  <td>{candidate.escl_scanner ? "Capacidades acessíveis" : "Não identificado"}</td>
+                  <td>{candidate.http_server ?? "Não identificado"}</td>
+                  <td>Aguardando validação</td>
+                </tr>)}</tbody>
+              </table></div>}
+              {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão ou scanner eSCL respondeu nesta busca.</div>}
+            </section>
+                  <div className="discovery-settings">
+                <h3>Busca manual por faixa autorizada</h3>
+                <p>Informe até quatro faixas IPv4/CIDR privadas, separadas por vírgula ou linha.
+                  Cada faixa deve caber em /24 e estar integralmente contida nas sub-redes já autorizadas pelo administrador.</p>
+                <label htmlFor="manual-discovery-cidrs">Faixas para esta varredura</label>
+                <textarea id="manual-discovery-cidrs" rows={3} value={rangeDraft}
+                  placeholder="192.168.1.0/24" spellCheck={false} autoComplete="off"
+                  onChange={event => setRangeDraft(event.target.value)} maxLength={256} />
+                <button type="button" className="primary-button" onClick={() => void discoverRanges()}
+                  disabled={rangeDiscovering || !snapshot?.configured || !rangeDraft.trim()}>
+                  <Network size={16} aria-hidden="true" />
+                  {rangeDiscovering ? "Verificando faixas..." : "Buscar apenas nas faixas informadas"}
+                </button>
+                {rangeError && <div className="notice error" role="alert">{rangeError}</div>}
+                <p>Resultados aparecem abaixo como candidatos para revisão. Esta consulta não altera o cadastro
+                  e não habilita monitoramento. Faixas fora do escopo autorizado continuam bloqueadas pelo serviço.</p>
+              </div>
+                  <div className="discovery-settings">
+                    <h3>Busca rápida por broadcast SNMP</h3>
+                    <p>Utiliza as faixas acima, somente na rede local diretamente conectada.
+                      A credencial SNMP permanece no serviço protegido. Nem todos os equipamentos respondem ao broadcast.</p>
+                    <button type="button" className="primary-button"
+                      disabled={broadcastBusy || !rangeDraft.trim() || !snapshot?.local_control_supported}
+                      onClick={() => void broadcastDiscover()}>
+                      {broadcastBusy ? "Consultando broadcast..." : "Busca rápida (broadcast)"}
+                    </button>
+                    {broadcastError && <div className="notice error" role="alert">{broadcastError}</div>}
+                    {broadcastNotice && <div className="notice" role="status">{broadcastNotice}</div>}
+                  </div>
             <section className="panel">
               <div className="panel-title"><h2>Candidatos da última varredura programada</h2>
                 <span>Relatório persistido na fila local</span></div>
@@ -714,70 +791,6 @@ export default function App() {
                 Nenhum candidato disponível nesta varredura. Confira se a agenda foi habilitada pelo administrador.
               </div>}
             </section>
-
-            </>
-          )}
-
-
-          {tab === "tools" && (
-            <>
-              <section className="tool-selector" aria-label="Ferramentas de descoberta">
-                <button type="button" className={`tool-card ${toolMode === "network" ? "selected" : ""}`}
-                  aria-pressed={toolMode === "network"} onClick={() => setToolMode("network")}>
-                  <Network size={30} aria-hidden="true" />
-                  <strong>Busca de impressoras na rede</strong>
-                  <span>Localize candidatos em sub-redes autorizadas.</span>
-                </button>
-                <button type="button" className={`tool-card ${toolMode === "usb" ? "selected" : ""}`}
-                  aria-pressed={toolMode === "usb"} onClick={() => setToolMode("usb")}>
-                  <Usb size={30} aria-hidden="true" />
-                  <strong>Busca de impressoras USB</strong>
-                  <span>Encontre impressoras, scanners e dispositivos de imagem conectados.</span>
-                </button>
-              </section>
-              {toolMode === null && (
-                <div className="notice" role="status">
-                  Escolha uma ferramenta para iniciar a descoberta. Nenhum dispositivo será cadastrado ou monitorado automaticamente.
-                </div>
-              )}
-              {toolMode === "network" && (
-                <div className="tool-workspace">
-                  <section className="panel">
-              <div className="panel-title"><h2>Descoberta na rede local</h2><span>Busca limitada às interfaces privadas deste computador</span></div>
-              <p>Portas de impressão e capacidades eSCL são indícios de equipamento. Confirme modelo, cliente e medidores antes do cadastro.</p>
-              <button type="button" className="primary-button" onClick={() => void discover()} disabled={discovering}>
-                <Network size={16} aria-hidden="true" />{discovering ? "Buscando..." : "Buscar impressoras e scanners"}
-              </button>
-              {discoveryError && <div className="notice error" role="alert">{discoveryError}</div>}
-              {discovered && <div className="table-scroll"><table>
-                <thead><tr><th>Endereço IP</th><th>Portas de impressão</th><th>Scanner eSCL</th><th>Servidor HTTP</th><th>Estado</th></tr></thead>
-                <tbody>{discovered.map((candidate) => <tr key={candidate.ip}>
-                  <td className="mono">{candidate.ip}</td>
-                  <td>{candidate.print_ports.length ? candidate.print_ports.join(", ") : "Nenhuma"}</td>
-                  <td>{candidate.escl_scanner ? "Capacidades acessíveis" : "Não identificado"}</td>
-                  <td>{candidate.http_server ?? "Não identificado"}</td>
-                  <td>Aguardando validação</td>
-                </tr>)}</tbody>
-              </table></div>}
-              {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão ou scanner eSCL respondeu nesta busca.</div>}
-            </section>
-                  <div className="discovery-settings">
-                <h3>Busca manual por faixa autorizada</h3>
-                <p>Informe até quatro faixas IPv4/CIDR privadas, separadas por vírgula ou linha.
-                  Cada faixa deve caber em /24 e estar integralmente contida nas sub-redes já autorizadas pelo administrador.</p>
-                <label htmlFor="manual-discovery-cidrs">Faixas para esta varredura</label>
-                <textarea id="manual-discovery-cidrs" rows={3} value={rangeDraft}
-                  placeholder="192.168.1.0/24" spellCheck={false} autoComplete="off"
-                  onChange={event => setRangeDraft(event.target.value)} maxLength={256} />
-                <button type="button" className="primary-button" onClick={() => void discoverRanges()}
-                  disabled={rangeDiscovering || !snapshot?.configured || !rangeDraft.trim()}>
-                  <Network size={16} aria-hidden="true" />
-                  {rangeDiscovering ? "Verificando faixas..." : "Buscar apenas nas faixas informadas"}
-                </button>
-                {rangeError && <div className="notice error" role="alert">{rangeError}</div>}
-                <p>Resultados aparecem em Impressoras apenas como candidatos. Esta consulta não altera o cadastro
-                  e não habilita monitoramento. Faixas fora do escopo autorizado continuam bloqueadas pelo serviço.</p>
-              </div>
                   <div className="notice">Busca por portas de impressão/eSCL não é leitura SNMP e não comprova fabricante, modelo, número de série ou contadores. Credenciais SNMP não são expostas nesta tela; a homologação depende de inspeção autorizada com o daemon Rust.</div>
                 </div>
               )}
