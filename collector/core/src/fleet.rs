@@ -88,15 +88,18 @@ pub fn apply(
     if id == 0 {
         return Err(CollectorError::Configuration("equipment ID must be positive".into()));
     }
+    // Validate against a staged clone so rejected actions cannot partially mutate
+    // the caller's view of the local roster.
+    let mut staged = fleet.clone();
     match command {
         FleetCommand::Add { ip, oid, auto_detect_reference, .. } => {
-            if fleet.iter().any(|entry| entry.config.printer_id == id) {
+            if staged.iter().any(|entry| entry.config.printer_id == id) {
                 return Err(CollectorError::Configuration("equipment ID already registered".into()));
             }
-            if fleet.len() >= MAX_FLEET_PRINTERS {
+            if staged.len() >= MAX_FLEET_PRINTERS {
                 return Err(CollectorError::Configuration("printer roster is full".into()));
             }
-            fleet.push(FleetPrinter {
+            staged.push(FleetPrinter {
                 config: PrinterConfig {
                     printer_id: id, ip: IpAddr::V4(*ip),
                     marker_counter_oid: oid.clone(),
@@ -108,7 +111,7 @@ pub fn apply(
             });
         }
         FleetCommand::Monitor { .. } => {
-            let item = fleet.iter_mut().find(|entry| entry.config.printer_id == id)
+            let item = staged.iter_mut().find(|entry| entry.config.printer_id == id)
                 .ok_or_else(|| CollectorError::Configuration("equipment not registered".into()))?;
             let tested_at = tested_at.ok_or_else(|| CollectorError::Configuration(
                 "SNMP meter test must succeed before monitoring".into(),
@@ -117,19 +120,21 @@ pub fn apply(
             item.last_tested_at = Some(tested_at);
         }
         FleetCommand::Disable { .. } => {
-            let item = fleet.iter_mut().find(|entry| entry.config.printer_id == id)
+            let item = staged.iter_mut().find(|entry| entry.config.printer_id == id)
                 .ok_or_else(|| CollectorError::Configuration("equipment not registered".into()))?;
             item.monitored = false;
         }
         FleetCommand::Remove { .. } => {
-            let before = fleet.len();
-            fleet.retain(|entry| entry.config.printer_id != id);
-            if fleet.len() == before {
+            let before = staged.len();
+            staged.retain(|entry| entry.config.printer_id != id);
+            if staged.len() == before {
                 return Err(CollectorError::Configuration("equipment not registered".into()));
             }
         }
     }
-    validate(cfg, fleet)
+    validate(cfg, &staged)?;
+    *fleet = staged;
+    Ok(())
 }
 
 #[cfg(test)]
