@@ -2,7 +2,7 @@
 //! file and is reachable only through a mode-0700 service-owned directory
 //! and a mode-0600 Unix socket. Never bind TCP or expose a browser endpoint.
 use nexa_collector_core::{
-    local_control::{socket_path, ControlRequest, ScheduleControlRequest, ControlResponse, MAX_MESSAGE_BYTES, PROTOCOL_VERSION},
+    local_control::{socket_path, ControlRequest, ScheduleControlRequest, FleetControlRequest, ControlResponse, MAX_MESSAGE_BYTES, PROTOCOL_VERSION},
     CollectorConfig, Outbox,
 };
 use std::{
@@ -56,7 +56,7 @@ fn private_parent(path: &Path) -> io::Result<()> {
 
 pub fn start(
     queue: &Path, cfg: CollectorConfig, key: Zeroizing<String>,
-    shutdown: Arc<AtomicBool>,
+    community: Option<Zeroizing<String>>, shutdown: Arc<AtomicBool>,
 ) -> io::Result<JoinHandle<()>> {
     let path = socket_path(queue);
     private_parent(&path)?;
@@ -98,7 +98,7 @@ pub fn start(
                             reason: Some("Erro no canal local.".into()),
                         }
                     } else if authorized_peer(&stream) {
-                        handle(&mut stream, &queue, &cfg, &key)
+                        handle(&mut stream, &queue, &cfg, &key, community.as_deref())
                     } else {
                         ControlResponse {
                             accepted: false,
@@ -120,6 +120,7 @@ pub fn start(
 
 fn handle(
     stream: &mut UnixStream, queue: &Path, cfg: &CollectorConfig, key: &str,
+    community: Option<&str>,
 ) -> ControlResponse {
     let denied = |reason: &'static str| ControlResponse {
         accepted: false, reason: Some(reason.into()),
@@ -140,11 +141,13 @@ fn handle(
     // Unknown fields, enrollment commands and arbitrary paths are rejected.
     let review = serde_json::from_slice::<ControlRequest>(&input).ok();
     let schedule = serde_json::from_slice::<ScheduleControlRequest>(&input).ok();
-    if review.is_some() == schedule.is_some() {
+    let fleet = serde_json::from_slice::<FleetControlRequest>(&input).ok();
+    if usize::from(review.is_some()) + usize::from(schedule.is_some()) + usize::from(fleet.is_some()) != 1 {
         return denied("Comando local inválido.");
     }
     if review.as_ref().map(|r| r.version)
-        .or_else(|| schedule.as_ref().map(|r| r.version)) != Some(PROTOCOL_VERSION)
+        .or_else(|| schedule.as_ref().map(|r| r.version))
+        .or_else(|| fleet.as_ref().map(|r| r.version)) != Some(PROTOCOL_VERSION)
     {
         return denied("Versão do protocolo não suportada.");
     }
@@ -165,6 +168,11 @@ fn handle(
         match outbox.save_discovery_schedule_override(&cfg.authorized_subnets, &request.schedule) {
             Ok(_) => ControlResponse { accepted: true, reason: None },
             Err(_) => denied("Agenda inválida, faixas fora do escopo autorizado ou limite excedido."),
+        }
+    } else if let Some(request) = fleet {
+        match crate::printer_control::execute(&mut outbox, cfg, &request.command, community) {
+            Ok(_) => ControlResponse { accepted: true, reason: None },
+            Err(reason) => ControlResponse { accepted: false, reason: Some(reason) },
         }
     } else {
         denied("Comando local inválido.")
