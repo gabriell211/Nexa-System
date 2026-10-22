@@ -13,6 +13,7 @@ pub fn execute(
     command: &FleetCommand,
     community: Option<&str>,
 ) -> Result<(), String> {
+    let mut identity = None;
     let proof = if let FleetCommand::Monitor { printer_id } = command {
         let fleet = outbox.printer_fleet(config)
             .map_err(|_| "Lista local de impressoras inválida.".to_owned())?;
@@ -22,11 +23,16 @@ pub fn execute(
             .ok_or_else(|| "Credencial SNMP de leitura não configurada no serviço.".to_owned())?;
         collect_snmp_v2c(&device.config, community.as_bytes())
             .map_err(|_| "O contador SNMP não respondeu com um valor válido. Monitoramento não ativado.".to_owned())?;
+        if let std::net::IpAddr::V4(ip) = device.config.ip {
+            identity = nexa_collector_core::snmp_inventory::inspect_identity_v2c(
+                ip, &config.authorized_subnets, community.as_bytes(),
+            ).ok();
+        }
         Some(Utc::now().to_rfc3339())
     } else {
         None
     };
-    outbox.apply_printer_command(config, command, proof)
+    outbox.apply_printer_command(config, command, proof, identity)
         .map_err(|e| match e {
             nexa_collector_core::CollectorError::Configuration(message) => message,
             _ => "Não foi possível salvar a lista operacional protegida.".into(),
