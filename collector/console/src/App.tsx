@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity, AlertTriangle, ArrowDownUp, CheckCircle2, CircleHelp, Database,
-  HardDrive, LayoutDashboard, Network, Printer, RefreshCcw, Settings2, ShieldCheck,
+  HardDrive, LayoutDashboard, Network, Printer, RefreshCcw, Settings2, ShieldCheck, Usb, Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -123,7 +123,8 @@ type CollectorSnapshot = {
   last_run: string | null;
   error: string | null;
 };
-type Tab = "overview" | "printers" | "quarantine" | "watchdog" | "settings";
+type Tab = "overview" | "printers" | "tools" | "quarantine" | "watchdog" | "settings";
+type ToolMode = "network" | "usb" | null;
 
 function formatDate(value: string | null): string {
   if (!value) return "Nenhuma execução registrada";
@@ -139,6 +140,7 @@ function referenceStatus(value: ReferenceStatus): string {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("overview");
+  const [toolMode, setToolMode] = useState<ToolMode>(null);
   const [snapshot, setSnapshot] = useState<CollectorSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -205,7 +207,6 @@ export default function App() {
       const candidates = await invoke<DiscoveryCandidate[]>("discover_authorized_printers", { cidrs });
       setDiscovered(candidates);
       setDiscoveryError(null);
-      setTab("printers");
     } catch (error) {
       setRangeError(String(error));
     } finally {
@@ -330,6 +331,7 @@ export default function App() {
   const menu: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
     { id: "overview", label: "Visão geral", icon: LayoutDashboard },
     { id: "printers", label: "Impressoras", icon: Printer },
+    { id: "tools", label: "Ferramentas", icon: Wrench },
     { id: "quarantine", label: "Quarentena", icon: AlertTriangle },
     { id: "watchdog", label: "Recuperação", icon: Activity },
     { id: "settings", label: "Configuração", icon: Settings2 },
@@ -367,7 +369,7 @@ export default function App() {
           <div className="heading">
             <div>
               <p className="eyebrow">CONTROLE DA ESTAÇÃO</p>
-              <h1>{tab === "overview" ? "Visão geral" : tab === "printers" ? "Impressoras" : tab === "quarantine" ? "Quarentena" : tab === "watchdog" ? "Recuperação" : "Configurações"}</h1>
+              <h1>{tab === "overview" ? "Visão geral" : tab === "printers" ? "Impressoras" : tab === "tools" ? "Ferramentas" : tab === "quarantine" ? "Quarentena" : tab === "watchdog" ? "Recuperação" : "Configurações"}</h1>
               <p>Informações lidas do arquivo de configuração e da fila local do Nexa Collector.</p>
             </div>
             <button type="button" className="primary-button" onClick={() => void refresh()} disabled={loading}>
@@ -544,25 +546,6 @@ export default function App() {
               <div className="notice">O catálogo não ativa coleta USB nem cadastra equipamentos. OID de rede só é usado quando um ID de modelo é configurado explicitamente e há um único candidato; confirme identidade, unidade e variação do contador no dispositivo real.</div>
             </section>
             <section className="panel">
-              <div className="panel-title"><h2>Descoberta na rede local</h2><span>Busca limitada às interfaces privadas deste computador</span></div>
-              <p>Portas de impressão e capacidades eSCL são indícios de equipamento. Confirme modelo, cliente e medidores antes do cadastro.</p>
-              <button type="button" className="primary-button" onClick={() => void discover()} disabled={discovering}>
-                <Network size={16} aria-hidden="true" />{discovering ? "Buscando..." : "Buscar impressoras e scanners"}
-              </button>
-              {discoveryError && <div className="notice error" role="alert">{discoveryError}</div>}
-              {discovered && <div className="table-scroll"><table>
-                <thead><tr><th>Endereço IP</th><th>Portas de impressão</th><th>Scanner eSCL</th><th>Servidor HTTP</th><th>Estado</th></tr></thead>
-                <tbody>{discovered.map((candidate) => <tr key={candidate.ip}>
-                  <td className="mono">{candidate.ip}</td>
-                  <td>{candidate.print_ports.length ? candidate.print_ports.join(", ") : "Nenhuma"}</td>
-                  <td>{candidate.escl_scanner ? "Capacidades acessíveis" : "Não identificado"}</td>
-                  <td>{candidate.http_server ?? "Não identificado"}</td>
-                  <td>Aguardando validação</td>
-                </tr>)}</tbody>
-              </table></div>}
-              {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão ou scanner eSCL respondeu nesta busca.</div>}
-            </section>
-            <section className="panel">
               <div className="panel-title"><h2>Candidatos da última varredura programada</h2>
                 <span>Relatório persistido na fila local</span></div>
               <p style={{ padding: "0 24px" }}>Última conclusão: {formatDate(snapshot?.discovery_report?.last_completed_at ?? null)}.
@@ -629,7 +612,76 @@ export default function App() {
                 Nenhum candidato disponível nesta varredura. Confira se a agenda foi habilitada pelo administrador.
               </div>}
             </section>
-            <section className="panel">
+
+            </>
+          )}
+
+
+          {tab === "tools" && (
+            <>
+              <section className="tool-selector" aria-label="Ferramentas de descoberta">
+                <button type="button" className={`tool-card ${toolMode === "network" ? "selected" : ""}`}
+                  aria-pressed={toolMode === "network"} onClick={() => setToolMode("network")}>
+                  <Network size={30} aria-hidden="true" />
+                  <strong>Busca de impressoras na rede</strong>
+                  <span>Localize candidatos em sub-redes autorizadas.</span>
+                </button>
+                <button type="button" className={`tool-card ${toolMode === "usb" ? "selected" : ""}`}
+                  aria-pressed={toolMode === "usb"} onClick={() => setToolMode("usb")}>
+                  <Usb size={30} aria-hidden="true" />
+                  <strong>Busca de impressoras USB</strong>
+                  <span>Encontre impressoras, scanners e dispositivos de imagem conectados.</span>
+                </button>
+              </section>
+              {toolMode === null && (
+                <div className="notice" role="status">
+                  Escolha uma ferramenta para iniciar a descoberta. Nenhum dispositivo será cadastrado ou monitorado automaticamente.
+                </div>
+              )}
+              {toolMode === "network" && (
+                <div className="tool-workspace">
+                  <section className="panel">
+              <div className="panel-title"><h2>Descoberta na rede local</h2><span>Busca limitada às interfaces privadas deste computador</span></div>
+              <p>Portas de impressão e capacidades eSCL são indícios de equipamento. Confirme modelo, cliente e medidores antes do cadastro.</p>
+              <button type="button" className="primary-button" onClick={() => void discover()} disabled={discovering}>
+                <Network size={16} aria-hidden="true" />{discovering ? "Buscando..." : "Buscar impressoras e scanners"}
+              </button>
+              {discoveryError && <div className="notice error" role="alert">{discoveryError}</div>}
+              {discovered && <div className="table-scroll"><table>
+                <thead><tr><th>Endereço IP</th><th>Portas de impressão</th><th>Scanner eSCL</th><th>Servidor HTTP</th><th>Estado</th></tr></thead>
+                <tbody>{discovered.map((candidate) => <tr key={candidate.ip}>
+                  <td className="mono">{candidate.ip}</td>
+                  <td>{candidate.print_ports.length ? candidate.print_ports.join(", ") : "Nenhuma"}</td>
+                  <td>{candidate.escl_scanner ? "Capacidades acessíveis" : "Não identificado"}</td>
+                  <td>{candidate.http_server ?? "Não identificado"}</td>
+                  <td>Aguardando validação</td>
+                </tr>)}</tbody>
+              </table></div>}
+              {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão ou scanner eSCL respondeu nesta busca.</div>}
+            </section>
+                  <div className="discovery-settings">
+                <h3>Busca manual por faixa autorizada</h3>
+                <p>Informe até quatro faixas IPv4/CIDR privadas, separadas por vírgula ou linha.
+                  Cada faixa deve caber em /24 e estar integralmente contida nas sub-redes já autorizadas pelo administrador.</p>
+                <label htmlFor="manual-discovery-cidrs">Faixas para esta varredura</label>
+                <textarea id="manual-discovery-cidrs" rows={3} value={rangeDraft}
+                  placeholder="192.168.1.0/24" spellCheck={false} autoComplete="off"
+                  onChange={event => setRangeDraft(event.target.value)} maxLength={256} />
+                <button type="button" className="primary-button" onClick={() => void discoverRanges()}
+                  disabled={rangeDiscovering || !snapshot?.configured || !rangeDraft.trim()}>
+                  <Network size={16} aria-hidden="true" />
+                  {rangeDiscovering ? "Verificando faixas..." : "Buscar apenas nas faixas informadas"}
+                </button>
+                {rangeError && <div className="notice error" role="alert">{rangeError}</div>}
+                <p>Resultados aparecem em Impressoras apenas como candidatos. Esta consulta não altera o cadastro
+                  e não habilita monitoramento. Faixas fora do escopo autorizado continuam bloqueadas pelo serviço.</p>
+              </div>
+                  <div className="notice">Busca por portas de impressão/eSCL não é leitura SNMP e não comprova fabricante, modelo, número de série ou contadores. Credenciais SNMP não são expostas nesta tela; a homologação depende de inspeção autorizada com o daemon Rust.</div>
+                </div>
+              )}
+              {toolMode === "usb" && (
+                <div className="tool-workspace">
+                  <section className="panel">
               <div className="panel-title"><h2>Impressoras e dispositivos USB</h2><span>Descoberta local · Windows</span></div>
               <p>Identifica impressoras e dispositivos de imagem conectados por USB, de qualquer fabricante. A identificação não confirma suporte à leitura de contadores.</p>
               <button type="button" className="primary-button" onClick={() => void discoverUsb()} disabled={usbDiscovering} aria-label="Detectar impressoras USB">
@@ -659,6 +711,8 @@ export default function App() {
               </>}
               <div className="notice">Detecção local somente leitura. Equipamentos não são cadastrados automaticamente e nenhuma medição é transmitida nesta etapa.</div>
             </section>
+                </div>
+              )}
             </>
           )}
 
@@ -791,23 +845,6 @@ export default function App() {
                 {scheduleError && <div role="alert" className="notice error">{scheduleError}</div>}
                 {scheduleNotice && <div role="status" className="notice">{scheduleNotice}</div>}
                 <p>Permissões locais do serviço são obrigatórias. No Windows, a edição da agenda permanece desabilitada nesta etapa. Desativar a agenda impede novas varreduras, mas uma busca já iniciada pode concluir suas conexões.</p>
-              </div>
-              <div className="discovery-settings">
-                <h3>Busca manual por faixa autorizada</h3>
-                <p>Informe até quatro faixas IPv4/CIDR privadas, separadas por vírgula ou linha.
-                  Cada faixa deve caber em /24 e estar integralmente contida nas sub-redes já autorizadas pelo administrador.</p>
-                <label htmlFor="manual-discovery-cidrs">Faixas para esta varredura</label>
-                <textarea id="manual-discovery-cidrs" rows={3} value={rangeDraft}
-                  placeholder="192.168.1.0/24" spellCheck={false} autoComplete="off"
-                  onChange={event => setRangeDraft(event.target.value)} maxLength={256} />
-                <button type="button" className="primary-button" onClick={() => void discoverRanges()}
-                  disabled={rangeDiscovering || !snapshot?.configured || !rangeDraft.trim()}>
-                  <Network size={16} aria-hidden="true" />
-                  {rangeDiscovering ? "Verificando faixas..." : "Buscar apenas nas faixas informadas"}
-                </button>
-                {rangeError && <div className="notice error" role="alert">{rangeError}</div>}
-                <p>Resultados aparecem em Impressoras apenas como candidatos. Esta consulta não altera o cadastro
-                  e não habilita monitoramento. Faixas fora do escopo autorizado continuam bloqueadas pelo serviço.</p>
               </div>
               <div className="notice">Tokens de acesso e comunidades SNMP nunca são carregados ou exibidos nesta interface.</div>
             </section>
