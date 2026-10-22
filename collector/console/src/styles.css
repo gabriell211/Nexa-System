@@ -50,3 +50,27 @@
 .tool-workspace>.panel>.primary-button{margin:14px 24px 24px}
 .tool-workspace>.panel>.notice{margin:16px 24px}
 @media(max-width:700px){.tool-selector{grid-template-columns:1fr}.tool-card{min-height:130px}}
+
+
+/* Operational printer registry. */
+.printer-toolbar{display:flex;align-items:center;gap:18px;padding:18px 24px;flex-wrap:wrap}
+.printer-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.printer-toolbar .primary-button{box-shadow:none}
+.printer-totals{display:flex;flex-direction:column;gap:5px;color:#435574;font-size:12px;white-space:nowrap}
+.printer-filter{margin-left:auto;min-width:190px;max-width:300px;flex:1}
+.printer-filter input,.printer-add-form input:not([type="checkbox"]){width:100%;border:1px solid #cbd8eb;background:white;border-radius:8px;padding:10px 12px;color:#243b5c;font:inherit}
+.printer-register table{min-width:1250px}
+.printer-register th,.printer-register td{white-space:nowrap;padding:12px 14px}
+.printer-register td:last-child{white-space:normal;min-width:175px}
+.printer-register input[type="checkbox"]{width:16px;height:16px;accent-color:#466be6}
+.printer-add-form{display:flex;gap:14px;padding:22px 24px;flex-wrap:wrap;align-items:end;background:#f7faff;border-block:1px solid #e2eaf7}
+.printer-add-form h3,.printer-add-form p{flex-basis:100%;margin:0;color:#3d5274;font-size:12px;line-height:1.6}
+.printer-add-form h3{font-size:15px}
+.printer-add-form>label{display:grid;gap:6px;min-width:180px;flex:1;font-size:12px;font-weight:700;color:#3d5274}
+.printer-add-form .printer-checkbox{display:flex;align-items:center;gap:8px;flex-basis:100%}
+.printer-confirm{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin:0 24px 18px;padding:14px;border:1px solid #e5cf9b;border-radius:9px;background:#fffbf0;font-size:12px}
+.printer-register>.notice{margin:0 24px 18px}
+.printer-details{margin-top:10px;padding:10px;display:grid;gap:7px;background:#f4f7fd;border:1px solid #e2eaf6;border-radius:8px;font-size:11px}
+.printer-details span{overflow-wrap:anywhere}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:700px){.printer-filter{min-width:100%;max-width:none;margin-left:0}.printer-toolbar{padding:15px}.printer-add-form>label{flex-basis:100%}}
