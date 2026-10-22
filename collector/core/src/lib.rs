@@ -3111,3 +3111,56 @@ mod tests {
         assert!(cfg.validate().is_err());
     }
 }
+
+
+#[cfg(test)]
+mod broadcast_persistence_tests {
+    use super::*;
+
+    #[test]
+    fn broadcast_keeps_scheduled_scan_history_and_survives_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("queue.sqlite");
+        let store = Outbox::open(&db_path).unwrap();
+        let scheduled = DiscoveryReport {
+            last_completed_at: Some(Utc::now()),
+            observed_candidates: 1,
+            candidates: vec![discovery::DiscoveryCandidate {
+                ip: "192.168.1.10".parse().unwrap(),
+                print_ports: vec![9100], http_server: None, escl_scanner: false,
+            }],
+            ..DiscoveryReport::default()
+        };
+        store.save_discovery_report(&scheduled).unwrap();
+        let broadcast = DiscoveryReport {
+            last_completed_at: Some(Utc::now()),
+            observed_candidates: 1,
+            candidates: vec![discovery::DiscoveryCandidate {
+                ip: "192.168.1.20".parse().unwrap(),
+                print_ports: vec![], http_server: None, escl_scanner: false,
+            }],
+            ..DiscoveryReport::default()
+        };
+        store.save_broadcast_report(&broadcast).unwrap();
+        drop(store);
+        let reopened = Outbox::open(&db_path).unwrap();
+        assert_eq!(reopened.discovery_report().unwrap().candidates[0].ip,
+            "192.168.1.10".parse::<std::net::Ipv4Addr>().unwrap());
+        assert_eq!(reopened.broadcast_report().unwrap().candidates[0].ip,
+            "192.168.1.20".parse::<std::net::Ipv4Addr>().unwrap());
+        assert_eq!(reopened.discovery_report().unwrap().observed_candidates, 1);
+    }
+
+    #[test]
+    fn refuses_oversized_broadcast_results_without_clobbering_previous() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Outbox::open(dir.path().join("queue.sqlite")).unwrap();
+        let report = DiscoveryReport {
+            last_completed_at: Some(Utc::now()),
+            observed_candidates: 129,
+            ..DiscoveryReport::default()
+        };
+        assert!(db.save_broadcast_report(&report).is_err());
+        assert!(db.broadcast_report().unwrap().last_completed_at.is_none());
+    }
+}
