@@ -237,6 +237,76 @@ export default function App() {
     }
   }, []);
 
+
+  const addPrinter = useCallback(async () => {
+    setPrinterError(null);
+    setPrinterNotice(null);
+    const printer_id = Number(newPrinterId);
+    const parts = newPrinterIp.trim().split(".");
+    const validIp = parts.length === 4 && parts.every(part =>
+      /^\d{1,3}$/.test(part) && Number(part) <= 255
+    );
+    if (!Number.isSafeInteger(printer_id) || printer_id < 1 || !validIp) {
+      setPrinterError("Informe um ID inteiro positivo e um IPv4 válido."); return;
+    }
+    const oid = autoDetectOid ? [] : newPrinterOid.trim().split(".").map(value =>
+      /^\d+$/.test(value) ? Number(value) : NaN
+    );
+    if (!autoDetectOid && (oid.length < 2 || oid.length > 128 ||
+      oid.some(value => !Number.isSafeInteger(value) || value < 0 || value > 4294967295))) {
+      setPrinterError("OID numérico inválido (2 a 128 componentes)."); return;
+    }
+    setPrinterBusy(true);
+    try {
+      const command: PrinterCommand = {
+        action: "add", printer_id, ip: newPrinterIp.trim(), oid,
+        auto_detect_reference: autoDetectOid,
+      };
+      await invoke("printer_action", { command });
+      await refresh();
+      setAddingPrinter(false);
+      setNewPrinterId(""); setNewPrinterIp(""); setNewPrinterOid("");
+      setPrinterNotice("Cadastro salvo. Use Monitorar para testar o contador SNMP real.");
+    } catch (error) { setPrinterError(String(error)); }
+    finally { setPrinterBusy(false); }
+  }, [newPrinterId, newPrinterIp, newPrinterOid, autoDetectOid, refresh]);
+
+  const operatePrinters = useCallback(async (action: "monitor" | "disable" | "remove") => {
+    if (!selectedIds.length) return;
+    setPrinterBusy(true); setPrinterError(null); setPrinterNotice(null);
+    const done: number[] = []; const failed: string[] = [];
+    for (const printer_id of selectedIds) {
+      try {
+        const command: PrinterCommand = { action, printer_id };
+        await invoke("printer_action", { command });
+        done.push(printer_id);
+      } catch (error) { failed.push("#" + printer_id + ": " + String(error)); }
+    }
+    try { await refresh(); } catch { /* refresh reports its own errors */ }
+    setSelectedIds(previous => previous.filter(id => !done.includes(id)));
+    if (failed.length) setPrinterError(failed.join(" | "));
+    if (done.length) setPrinterNotice(done.length + " operação(ões) confirmada(s) pelo serviço local.");
+    setPrinterBusy(false);
+  }, [selectedIds, refresh]);
+
+  const broadcastDiscover = useCallback(async () => {
+    const cidrs = rangeDraft.split(/[\s,;]+/).filter(Boolean);
+    setBroadcastBusy(true); setBroadcastError(null); setBroadcastNotice(null);
+    try {
+      await invoke("discover_broadcast_printers", { cidrs });
+      await refresh();
+      setBroadcastNotice("Broadcast SNMP concluído. Revise os candidatos encontrados na lista abaixo.");
+    } catch (error) { setBroadcastError(String(error)); }
+    finally { setBroadcastBusy(false); }
+  }, [rangeDraft, refresh]);
+
+  const filteredPrinters = (snapshot?.printers ?? []).filter(printer =>
+    [String(printer.printer_id), printer.ip, printer.manufacturer,
+      printer.model, printer.serial, printer.mac]
+      .some(value => (value ?? "").toLocaleLowerCase("pt-BR")
+        .includes(printerFilter.toLocaleLowerCase("pt-BR")))
+  );
+
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
     if (!snapshot?.discovery_schedule) return;
