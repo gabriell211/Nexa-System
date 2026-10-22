@@ -2,7 +2,7 @@
 //! LocalSystem and elevated Builtin Administrators, rejecting remote clients.
 //! Never grants Everyone/Users access or exposes a TCP control endpoint.
 use nexa_collector_core::{
-    local_control::{ControlRequest, ControlResponse, MAX_MESSAGE_BYTES, PROTOCOL_VERSION, WINDOWS_PIPE_NAME},
+    local_control::{ControlRequest, FleetControlRequest, BroadcastControlRequest, ControlResponse, MAX_MESSAGE_BYTES, PROTOCOL_VERSION, WINDOWS_PIPE_NAME},
     CollectorConfig, Outbox,
 };
 use std::{ffi::c_void, io, ptr::{null, null_mut}, path::PathBuf,
@@ -67,7 +67,7 @@ fn create_pipe() -> io::Result<Handle> {
     }
 }
 
-fn handle_connection(pipe: HANDLE, config: &CollectorConfig, queue: &PathBuf, key: &str) {
+fn handle_connection(pipe: HANDLE, config: &CollectorConfig, queue: &PathBuf, key: &str, community: Option<&str>) {
     let accepted = unsafe { ConnectNamedPipe(pipe, null_mut()) };
     if accepted == 0 && unsafe { GetLastError() } != ERROR_PIPE_CONNECTED {
         return;
@@ -95,6 +95,40 @@ fn handle_connection(pipe: HANDLE, config: &CollectorConfig, queue: &PathBuf, ke
                 },
             }
         }
+    } else if let Ok(request) = serde_json::from_slice::<FleetControlRequest>(&buffer[..read as usize]) {
+        if request.version != PROTOCOL_VERSION {
+            ControlResponse { accepted: false, reason: Some("Versão de protocolo inválida.".into()) }
+        } else {
+            match Outbox::open_encrypted_disk_guard(
+                queue, config.max_pending_samples, config.max_pending_payload_bytes,
+                config.max_sqlite_files_bytes, key,
+            ) {
+                Ok(mut outbox) => match crate::printer_control::execute(
+                    &mut outbox, config, &request.command, community,
+                ) {
+                    Ok(_) => ControlResponse { accepted: true, reason: None },
+                    Err(reason) => ControlResponse { accepted: false, reason: Some(reason) },
+                },
+                Err(_) => ControlResponse { accepted: false, reason: Some("Armazenamento protegido indisponível.".into()) },
+            }
+        }
+    } else if let Ok(request) = serde_json::from_slice::<BroadcastControlRequest>(&buffer[..read as usize]) {
+        if request.version != PROTOCOL_VERSION {
+            ControlResponse { accepted: false, reason: Some("Versão de protocolo inválida.".into()) }
+        } else {
+            match Outbox::open_encrypted_disk_guard(
+                queue, config.max_pending_samples, config.max_pending_payload_bytes,
+                config.max_sqlite_files_bytes, key,
+            ) {
+                Ok(outbox) => match crate::broadcast_control::execute(
+                    &outbox, config, &request.cidrs, community,
+                ) {
+                    Ok(_) => ControlResponse { accepted: true, reason: None },
+                    Err(reason) => ControlResponse { accepted: false, reason: Some(reason) },
+                },
+                Err(_) => ControlResponse { accepted: false, reason: Some("Armazenamento protegido indisponível.".into()) },
+            }
+        }
     } else {
         ControlResponse { accepted: false, reason: Some("Comando não permitido.".into()) }
     };
@@ -110,7 +144,7 @@ fn handle_connection(pipe: HANDLE, config: &CollectorConfig, queue: &PathBuf, ke
 
 pub fn start(
     queue: PathBuf, config: CollectorConfig, key: Zeroizing<String>,
-    shutdown: Arc<AtomicBool>,
+    community: Option<Zeroizing<String>>, shutdown: Arc<AtomicBool>,
 ) -> io::Result<JoinHandle<()>> {
     // Create the first instance before returning to detect invalid DACLs,
     // occupied pipe names and unsupported OS capabilities at startup.
@@ -118,7 +152,7 @@ pub fn start(
     Ok(thread::spawn(move || {
         let mut pipe = first;
         while !shutdown.load(Ordering::Relaxed) {
-            handle_connection(pipe.0, &config, &queue, &key);
+            handle_connection(pipe.0, &config, &queue, &key, community.as_ref().map(|secret| secret.as_str()));
             drop(pipe);
             if shutdown.load(Ordering::Relaxed) { break; }
             match create_pipe() {

@@ -2,6 +2,7 @@
 //! Windows control is disabled by default pending field validation.
 //! Messages contain no credentials and are never forwarded to the cloud.
 use crate::candidate_review::ReviewAction;
+use crate::fleet::FleetCommand;
 use crate::DiscoverySchedule;
 use serde::{Deserialize, Serialize};
 use std::{net::Ipv4Addr, path::{Path, PathBuf}};
@@ -14,11 +15,16 @@ pub const WINDOWS_PIPE_NAME: &str = r"\\.\pipe\NexaCollector.Control.v1";
 
 #[cfg(windows)]
 pub fn submit_windows(ip: Ipv4Addr, action: ReviewAction) -> Result<(), String> {
-    use windows_sys::Win32::System::Pipes::CallNamedPipeW;
-    let name: Vec<u16> = WINDOWS_PIPE_NAME.encode_utf16().chain(Some(0)).collect();
     let payload = serde_json::to_vec(&ControlRequest {
         version: PROTOCOL_VERSION, ip, action,
     }).map_err(|_| "Requisição local inválida.".to_owned())?;
+    submit_windows_payload(&payload)
+}
+
+#[cfg(windows)]
+fn submit_windows_payload(payload: &[u8]) -> Result<(), String> {
+    use windows_sys::Win32::System::Pipes::CallNamedPipeW;
+    let name: Vec<u16> = WINDOWS_PIPE_NAME.encode_utf16().chain(Some(0)).collect();
     if payload.len() as u64 > MAX_MESSAGE_BYTES {
         return Err("Requisição local excede o limite.".into());
     }
@@ -31,7 +37,7 @@ pub fn submit_windows(ip: Ipv4Addr, action: ReviewAction) -> Result<(), String> 
             name.as_ptr(),
             payload.as_ptr() as _, payload.len() as u32,
             reply.as_mut_ptr() as _, reply.len() as u32,
-            &mut read, 5000,
+            &mut read, 30_000,
         )
     };
     if ok == 0 {
@@ -70,6 +76,20 @@ pub struct ScheduleControlRequest {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct FleetControlRequest {
+    pub version: u8,
+    pub command: FleetCommand,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BroadcastControlRequest {
+    pub version: u8,
+    pub cidrs: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ControlResponse {
     pub accepted: bool,
     pub reason: Option<String>,
@@ -95,6 +115,38 @@ pub fn submit(
 }
 
 #[cfg(unix)]
+pub fn submit_fleet(queue_path: &Path, command: FleetCommand) -> Result<(), String> {
+    let payload = serde_json::to_vec(&FleetControlRequest {
+        version: PROTOCOL_VERSION, command,
+    }).map_err(|_| "Comando de impressora inválido.".to_owned())?;
+    submit_payload(queue_path, &payload)
+}
+
+#[cfg(windows)]
+pub fn submit_windows_fleet(command: FleetCommand) -> Result<(), String> {
+    let payload = serde_json::to_vec(&FleetControlRequest {
+        version: PROTOCOL_VERSION, command,
+    }).map_err(|_| "Comando de impressora inválido.".to_owned())?;
+    submit_windows_payload(&payload)
+}
+
+#[cfg(unix)]
+pub fn submit_broadcast(queue: &Path, cidrs: Vec<String>) -> Result<(), String> {
+    let payload = serde_json::to_vec(&BroadcastControlRequest {
+        version: PROTOCOL_VERSION, cidrs,
+    }).map_err(|_| "Busca broadcast inválida.".to_owned())?;
+    submit_payload(queue, &payload)
+}
+
+#[cfg(windows)]
+pub fn submit_windows_broadcast(cidrs: Vec<String>) -> Result<(), String> {
+    let payload = serde_json::to_vec(&BroadcastControlRequest {
+        version: PROTOCOL_VERSION, cidrs,
+    }).map_err(|_| "Busca broadcast inválida.".to_owned())?;
+    submit_windows_payload(&payload)
+}
+
+#[cfg(unix)]
 pub fn submit_schedule(queue_path: &Path, schedule: DiscoverySchedule) -> Result<(), String> {
     let payload = serde_json::to_vec(&ScheduleControlRequest {
         version: PROTOCOL_VERSION, schedule,
@@ -107,7 +159,7 @@ fn submit_payload(queue_path: &Path, payload: &[u8]) -> Result<(), String> {
     use std::{io::{Read, Write}, os::unix::net::UnixStream, time::Duration};
     let mut stream = UnixStream::connect(socket_path(queue_path))
         .map_err(|_| "Canal de controle indisponível ou acesso negado. Execute com conta autorizada.".to_owned())?;
-    stream.set_read_timeout(Some(Duration::from_secs(8)))
+    stream.set_read_timeout(Some(Duration::from_secs(24)))
         .map_err(|_| "Não foi possível configurar o timeout do canal local.".to_owned())?;
     stream.set_write_timeout(Some(Duration::from_secs(3)))
         .map_err(|_| "Não foi possível configurar o timeout do canal local.".to_owned())?;
