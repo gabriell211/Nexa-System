@@ -95,6 +95,7 @@ type CollectorSnapshot = {
   authorized_subnets: string[];
   discovery_schedule: DiscoverySchedule | null;
   discovery_report: DiscoveryReport | null;
+  broadcast_report: DiscoveryReport | null;
   candidate_reviews: CandidateReview[];
   candidate_reviews_error: string | null;
   local_control_supported: boolean;
@@ -729,6 +730,44 @@ export default function App() {
                     {broadcastError && <div className="notice error" role="alert">{broadcastError}</div>}
                     {broadcastNotice && <div className="notice" role="status">{broadcastNotice}</div>}
                   </div>
+                  <section className="panel">
+                    <div className="panel-title">
+                      <h2>Resultados da busca por broadcast</h2>
+                      <span>{snapshot?.broadcast_report?.observed_candidates ?? 0} resposta(s) SNMP</span>
+                    </div>
+                    <p>Última execução: {formatDate(snapshot?.broadcast_report?.last_completed_at ?? null)}.
+                      Uma resposta SNMP não significa que o contador está homologado.</p>
+                    <div className="table-scroll"><table>
+                      <thead><tr><th>Endereço IP</th><th>Identificação</th><th>Cadastro</th></tr></thead>
+                      <tbody>{snapshot?.broadcast_report?.candidates.map(candidate => (
+                        <tr key={candidate.ip}>
+                          <td className="mono">{candidate.ip}</td>
+                          <td>Respondendo ao SNMP (fabricante e contador ainda não confirmados)</td>
+                          <td>
+                            <button type="button" className="secondary-button"
+                              disabled={!snapshot?.local_control_supported || snapshot.printers.some(item => item.ip === candidate.ip)}
+                              onClick={() => {
+                                const ids = [...snapshot.printers.map(p => p.printer_id), ...snapshot.usb_scanners.map(p => p.printer_id)];
+                                setNewPrinterId(String(Math.max(0, ...ids) + 1));
+                                setNewPrinterIp(candidate.ip);
+                                setAutoDetectOid(true);
+                                setNewPrinterOid("");
+                                setAddingPrinter(true);
+                                setTab("printers");
+                              }}>
+                              {snapshot.printers.some(item => item.ip === candidate.ip) ? "Já cadastrado" : "Preparar cadastro"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}</tbody>
+                    </table></div>
+                    {snapshot?.broadcast_report?.last_completed_at && !snapshot.broadcast_report.observed_candidates && (
+                      <div className="empty">Nenhum dispositivo respondeu ao broadcast. Utilize a busca detalhada por IP.</div>
+                    )}
+                    {!snapshot?.broadcast_report?.last_completed_at && (
+                      <div className="empty">Nenhuma busca rápida executada ainda.</div>
+                    )}
+                  </section>
             <section className="panel">
               <div className="panel-title"><h2>Candidatos da última varredura programada</h2>
                 <span>Relatório persistido na fila local</span></div>
