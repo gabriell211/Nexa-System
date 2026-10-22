@@ -7,22 +7,6 @@ import { useCallback, useEffect, useState } from "react";
 
 type PrinterInfo = { printer_id: number; ip: string; oid: string; reference_model_id: number | null; auto_detect_reference: boolean };
 type ReferenceStatus = "not_tested" | "approved" | "incompatible";
-type ReferenceModel = {
-  source_model_id: number;
-  manufacturer: string;
-  model: string;
-  network: ReferenceStatus;
-  usb: ReferenceStatus;
-  network_total_oid_candidates: string[];
-};
-type ReferenceSearchResult = {
-  source: string;
-  snapshot_at: string;
-  total_catalog: number;
-  total_matches: number;
-  results: ReferenceModel[];
-  nexa_field_certified: boolean;
-};
 type UsbScannerInfo = { printer_id: number; profile: string };
 type DiscoveryCandidate = { ip: string; print_ports: number[]; http_server: string | null; escl_scanner: boolean };
 type UsbDeviceCandidate = {
@@ -165,28 +149,6 @@ export default function App() {
   const [canonMeter, setCanonMeter] = useState<CanonDrc225Meter | null>(null);
   const [canonReading, setCanonReading] = useState(false);
   const [canonError, setCanonError] = useState<string | null>(null);
-  const [referenceQuery, setReferenceQuery] = useState("");
-  const [referenceInterface, setReferenceInterface] = useState("all");
-  const [referenceResult, setReferenceResult] = useState<ReferenceSearchResult | null>(null);
-  const [referenceSearching, setReferenceSearching] = useState(false);
-  const [referenceError, setReferenceError] = useState<string | null>(null);
-
-  const searchReference = useCallback(async (query: string, interfaceFilter: string) => {
-    setReferenceSearching(true);
-    setReferenceError(null);
-    try {
-      setReferenceResult(await invoke<ReferenceSearchResult>("search_reference_models", {
-        query, interface: interfaceFilter,
-      }));
-    } catch (error) {
-      setReferenceError(String(error));
-    } finally {
-      setReferenceSearching(false);
-    }
-  }, []);
-
-  useEffect(() => { void searchReference("", "all"); }, [searchReference]);
-
   const discover = useCallback(async () => {
     setDiscovering(true);
     setDiscoveryError(null);
@@ -519,31 +481,6 @@ export default function App() {
                 </tbody>
               </table></div>
               {snapshot && snapshot.printers.length + snapshot.usb_scanners.length === 0 && <div className="empty">Nenhum equipamento configurado neste ponto de coleta.</div>}
-            </section>
-            <section className="panel">
-              <div className="panel-title"><h2>Catálogo de referência de modelos</h2>
-                <span>{referenceResult?.total_catalog.toLocaleString("pt-BR") ?? "—"} registros · PrintWayy</span></div>
-              <p className="reference-intro">Estados de rede e USB extraídos do mapeamento local de {referenceResult?.snapshot_at ? formatDate(referenceResult.snapshot_at) : "2026-09-22"}. A aprovação no PrintWayy orienta a configuração, mas não comprova leitura pelo Nexa neste equipamento.</p>
-              <form className="reference-search" onSubmit={(event) => { event.preventDefault(); void searchReference(referenceQuery, referenceInterface); }}>
-                <label>Fabricante ou modelo<input value={referenceQuery} onChange={(event) => setReferenceQuery(event.target.value)} maxLength={120} placeholder="Ex.: OfficeJet 7740" /></label>
-                <label>Interface<select value={referenceInterface} onChange={(event) => setReferenceInterface(event.target.value)}>
-                  <option value="all">Todas</option><option value="network">Rede homologada</option>
-                  <option value="usb">USB homologado</option><option value="both">Rede e USB homologados</option>
-                </select></label>
-                <button className="primary-button" type="submit" disabled={referenceSearching}>{referenceSearching ? "Consultando..." : "Buscar modelos"}</button>
-              </form>
-              {referenceError && <div className="notice error" role="alert">{referenceError}</div>}
-              {referenceResult && <>
-                <p className="reference-count">{referenceResult.total_matches.toLocaleString("pt-BR")} resultado(s); exibindo até 100. Selecione o ID exato no arquivo de configuração para resolver automaticamente um OID total único de rede.</p>
-                <div className="table-scroll"><table><thead><tr><th>ID</th><th>Fabricante</th><th>Modelo</th><th>Rede</th><th>USB</th><th>OID total de rede</th></tr></thead>
-                  <tbody>{referenceResult.results.map((model) => <tr key={model.source_model_id}>
-                    <td className="mono">{model.source_model_id}</td><td>{model.manufacturer}</td><td>{model.model}</td>
-                    <td>{referenceStatus(model.network)}</td><td>{referenceStatus(model.usb)}</td>
-                    <td className="mono">{model.network_total_oid_candidates.length === 1 ? model.network_total_oid_candidates[0] : model.network_total_oid_candidates.length > 1 ? "Ambíguo" : "Sem OID total no pacote"}</td>
-                  </tr>)}</tbody></table></div>
-                {referenceResult.total_matches === 0 && <div className="empty">Nenhum modelo corresponde à busca.</div>}
-              </>}
-              <div className="notice">O catálogo não ativa coleta USB nem cadastra equipamentos. OID de rede só é usado quando um ID de modelo é configurado explicitamente e há um único candidato; confirme identidade, unidade e variação do contador no dispositivo real.</div>
             </section>
             <section className="panel">
               <div className="panel-title"><h2>Candidatos da última varredura programada</h2>
