@@ -237,6 +237,39 @@ fn column(session: &mut SyncSession, base: &'static str, name: &str) -> Result<V
         .take(ROW_LIMIT as usize).collect())
 }
 
+/// Fast, best-effort identity information after a *separate successful*
+/// meter probe. Values are hints, not certified inventory fields.
+pub fn inspect_identity_v2c(
+    ip: Ipv4Addr, authorized_subnets: &[String], community: &[u8],
+) -> Result<crate::fleet::FleetIdentity, String> {
+    authorized_device(ip, authorized_subnets).map_err(str::to_owned)?;
+    if community.is_empty() { return Err("SNMP credential not provided".into()); }
+    let mut session = SyncSession::new_v2c(
+        SocketAddr::from((ip, 161)), community, Some(Duration::from_millis(750)), 0,
+    ).map_err(|_| "SNMP session unavailable")?;
+    let mut fields = Vec::new();
+    for name in ["sysObjectID", "prtGeneralPrinterName", "prtGeneralSerialNumber"] {
+        let Some(item) = mib_registry::OIDS.iter().find(|entry| entry.name == name) else { continue };
+        let values = if item.requires_instance_walk {
+            column(&mut session, item.oid, item.name)
+        } else {
+            scalar(&mut session, item.oid).map(|field| field.into_iter().collect())
+        };
+        if let Ok(mut found) = values { fields.append(&mut found); }
+    }
+    let manufacturer = fields.iter().find(|entry| entry.name == "sysObjectID")
+        .and_then(|entry| match &entry.value {
+            ObservedValue::Oid(oid) => mib_registry::vendor_from_sys_object_id(oid),
+            _ => None,
+        }).map(|name| format!("{name:?}"));
+    Ok(crate::fleet::FleetIdentity {
+        manufacturer,
+        model: first_text(&fields, &["prtGeneralPrinterName"]),
+        serial: first_text(&fields, &["prtGeneralSerialNumber"]),
+        mac: None,
+    })
+}
+
 /// Explicit opt-in diagnostic; does not walk arbitrary device OIDs or
 /// mutate/monitor a printer. Credentials are provided via existing protected
 /// service secret loading, never accepted as command-line arguments.
