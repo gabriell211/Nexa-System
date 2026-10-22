@@ -55,6 +55,7 @@ struct CollectorSnapshot {
     authorized_subnets: Vec<String>,
     discovery_schedule: Option<DiscoverySchedule>,
     discovery_report: Option<DiscoveryReport>,
+    broadcast_report: Option<DiscoveryReport>,
     candidate_reviews: Vec<CandidateReview>,
     candidate_reviews_error: Option<String>,
     local_control_supported: bool,
@@ -87,6 +88,7 @@ fn get_snapshot() -> CollectorSnapshot {
         authorized_subnets: Vec::new(),
         discovery_schedule: None,
         discovery_report: None,
+        broadcast_report: None,
         candidate_reviews: Vec::new(),
         candidate_reviews_error: None,
         local_control_supported: cfg!(unix) || cfg!(windows),
@@ -263,6 +265,12 @@ fn get_snapshot() -> CollectorSnapshot {
                         Ok(report) => snapshot.discovery_report = Some(report),
                         Err(_) => snapshot.error = Some(
                             "Histórico local da varredura está inválido ou inacessível.".into()
+                        ),
+                    }
+                    match outbox.broadcast_report() {
+                        Ok(report) => snapshot.broadcast_report = Some(report),
+                        Err(_) => snapshot.error = Some(
+                            "Histórico local do broadcast está inválido ou inacessível.".into()
                         ),
                     }
                 }
