@@ -346,9 +346,6 @@ async fn review_local_candidate(ip: String, action: String) -> Result<(), String
     }
     #[cfg(windows)]
     {
-        if env::var("NEXA_EXPERIMENTAL_WINDOWS_CONTROL").as_deref() != Ok("1") {
-            return Err("Canal administrativo Windows experimental desativado.".into());
-        }
         tauri::async_runtime::spawn_blocking(move || {
             nexa_collector_core::local_control::submit_windows(ip, action)
         }).await.map_err(|_| "Canal Windows interrompido.".to_owned())?
