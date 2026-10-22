@@ -6,6 +6,14 @@ use std::{collections::HashSet, net::{IpAddr, Ipv4Addr}};
 
 pub const MAX_FLEET_PRINTERS: usize = 500;
 
+#[derive(Clone, Debug)]
+pub struct FleetIdentity {
+    pub manufacturer: Option<String>,
+    pub model: Option<String>,
+    pub serial: Option<String>,
+    pub mac: Option<String>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FleetPrinter {
