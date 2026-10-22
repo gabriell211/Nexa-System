@@ -370,6 +370,10 @@ fn run_application(
     let retry_seconds = stored_retry.seconds_until_retry(Utc::now())?;
     upload_retry.restore(Instant::now(), retry_seconds, stored_retry.consecutive_failures);
     let mut next_poll = Instant::now();
+    // Detect privileged roster changes without restarting the service.
+    // The first live poll is already scheduled immediately.
+    let mut last_fleet_snapshot = serde_json::to_vec(&outbox.printer_fleet(&cfg)?)?;
+
     // The scheduler never registers printers or generates readings. Its
     // non-sensitive candidate report is stored in the existing outbox state.
     // A worker thread keeps slow probes independent from uploads/heartbeats.
@@ -500,6 +504,16 @@ fn run_application(
                     let _ = sender.send(scanned);
                 });
                 discovery_receiver = Some(receiver);
+            }
+        }
+        if !once {
+            if let Ok(current) = outbox.printer_fleet(&cfg) {
+                if let Ok(serialized) = serde_json::to_vec(&current) {
+                    if serialized != last_fleet_snapshot {
+                        last_fleet_snapshot = serialized;
+                        next_poll = Instant::now();
+                    }
+                }
             }
         }
         if Instant::now() >= next_poll {
