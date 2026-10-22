@@ -116,7 +116,7 @@ pub fn discover_broadcast(
     // operation and never attempts a router/network-wide broadcast.
     for target in &nets {
         let on_link = local.iter().any(|iface| {
-            let IfAddr::V4(address) = iface.addr else { return false };
+            let IfAddr::V4(ref address) = iface.addr else { return false };
             if !address.ip.is_private() || address.ip.is_loopback() { return false; }
             let Ok(interface) = Ipv4Net::with_netmask(address.ip, address.netmask)
                 else { return false };
