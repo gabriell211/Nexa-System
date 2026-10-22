@@ -14,6 +14,7 @@ mod progress_watchdog;
 mod recovery_guard;
 mod mail_transport;
 mod printer_control;
+mod broadcast_control;
 
 #[cfg(unix)]
 mod local_control;
