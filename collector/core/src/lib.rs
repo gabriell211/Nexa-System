@@ -1408,10 +1408,10 @@ impl Outbox {
             "SELECT value FROM state WHERE key = 'printer_fleet_v1'",
             [], |row| row.get(0),
         ).optional()?;
-        let records = match raw {
-            Some(json) => serde_json::from_str::<Vec<fleet::FleetPrinter>>(&json)?,
-            None => fleet::from_config(cfg),
-        };
+        // Legacy configuration remains readable without imposing new policy
+        // until an operator explicitly starts managing the roster.
+        let Some(json) = raw else { return Ok(fleet::from_config(cfg)); };
+        let records = serde_json::from_str::<Vec<fleet::FleetPrinter>>(&json)?;
         fleet::validate(cfg, &records)?;
         Ok(records)
     }
