@@ -14,7 +14,7 @@ pub fn execute(
     let candidates = discover_broadcast(
         &cfg.authorized_subnets, cidrs, credential.as_bytes(),
     ).map_err(|error| format!("Busca rápida recusada ou indisponível: {error}"))?;
-    outbox.save_discovery_report(&DiscoveryReport {
+    outbox.save_broadcast_report(&DiscoveryReport {
         last_completed_at: Some(Utc::now()),
         last_error_kind: None,
         observed_candidates: candidates.len(),
