@@ -1400,6 +1400,31 @@ impl Outbox {
         Ok(())
     }
 
+    /// Broadcast observations must not replace scheduled discovery history:
+    /// the scheduler uses discovery_report.last_completed_at to plan its next run.
+    pub fn broadcast_report(&self) -> Result<DiscoveryReport, CollectorError> {
+        let raw: Option<String> = self.connection.query_row(
+            "SELECT value FROM state WHERE key = 'broadcast_report_v1'",
+            [], |row| row.get(0),
+        ).optional()?;
+        raw.map(|value| serde_json::from_str(&value).map_err(CollectorError::from))
+            .transpose()
+            .map(|value| value.unwrap_or_default())
+    }
+
+    pub fn save_broadcast_report(&self, report: &DiscoveryReport) -> Result<(), CollectorError> {
+        if report.candidates.len() > 128 || report.observed_candidates > 128 {
+            return Err(CollectorError::Configuration("broadcast result exceeds response cap".into()));
+        }
+        let serialized = serde_json::to_string(report)?;
+        self.connection.execute(
+            "INSERT INTO state(key, value) VALUES ('broadcast_report_v1', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [&serialized],
+        )?;
+        Ok(())
+    }
+
     /// Current fleet override, or the provisioned legacy roster when no override exists.
     /// A malformed override never silently restores legacy monitoring.
     pub fn printer_fleet(
