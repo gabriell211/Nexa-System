@@ -386,6 +386,31 @@ async fn save_discovery_schedule(schedule: DiscoverySchedule) -> Result<(), Stri
 }
 
 #[tauri::command]
+async fn discover_broadcast_printers(cidrs: Vec<String>) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            let queue = env::var_os("NEXA_COLLECTOR_DB")
+                .ok_or_else(|| "Banco do serviço não configurado.".to_owned())?;
+            nexa_collector_core::local_control::submit_broadcast(
+                std::path::Path::new(&queue), cidrs,
+            )
+        }).await.map_err(|_| "Busca broadcast interrompida.".to_owned())?
+    }
+    #[cfg(windows)]
+    {
+        tauri::async_runtime::spawn_blocking(move || {
+            nexa_collector_core::local_control::submit_windows_broadcast(cidrs)
+        }).await.map_err(|_| "Busca broadcast Windows interrompida.".to_owned())?
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = cidrs;
+        Err("Busca broadcast indisponível neste sistema.".into())
+    }
+}
+
+#[tauri::command]
 async fn printer_action(command: FleetCommand) -> Result<(), String> {
     #[cfg(unix)]
     {
@@ -413,7 +438,7 @@ async fn printer_action(command: FleetCommand) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_snapshot, search_reference_models, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate, save_discovery_schedule, printer_action])
+        .invoke_handler(tauri::generate_handler![get_snapshot, search_reference_models, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate, save_discovery_schedule, printer_action, discover_broadcast_printers])
         .run(tauri::generate_context!())
         .expect("failed to start Nexa Collector Console");
 }
