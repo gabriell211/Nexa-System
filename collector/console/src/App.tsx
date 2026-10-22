@@ -602,6 +602,11 @@ export default function App() {
                     onClick={() => { setRemoveArmed(false); void operatePrinters("remove"); }}>Confirmar</button>
                   <button type="button" className="secondary-button" onClick={() => setRemoveArmed(false)}>Cancelar</button>
                 </div>}
+                {snapshot?.authorized_subnets?.some(cidr => cidr.startsWith("192.0.2.")) &&
+                  <div className="notice warning" role="alert">
+                    A faixa 192.0.2.0/24 é reservada para documentação.
+                    Provisione no serviço as sub-redes privadas reais autorizadas antes de adicionar impressoras.
+                  </div>}
                 {printerError && <div className="notice error" role="alert">{printerError}</div>}
                 {printerNotice && <div className="notice" role="status">{printerNotice}</div>}
                 <div className="table-scroll"><table>
