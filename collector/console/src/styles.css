@@ -32,3 +32,11 @@
   width:17px;height:17px;accent-color:#315cba;cursor:pointer;
 }
 .discovery-settings input:focus-visible {outline:2px solid #4a70e8;outline-offset:2px}
+
+.reference-intro,.reference-count{padding:0 24px;color:#536a93;font-size:12px;line-height:1.6}
+.reference-search{display:flex;flex-wrap:wrap;align-items:end;gap:12px;padding:20px 24px}
+.reference-search label{display:grid;gap:6px;min-width:180px;color:#536a93;font-size:12px;font-weight:700}
+.reference-search input,.reference-search select{padding:10px 12px;border:1px solid #cbd8eb;border-radius:9px;background:#fff;color:#1c3657;font:inherit}
+.reference-search input:focus-visible,.reference-search select:focus-visible{outline:2px solid #4a70e8;outline-offset:2px}
+.reference-search .primary-button{min-height:40px}
+.reference-count{margin:0 0 16px}

@@ -1,6 +1,7 @@
 pub mod recovery_guard;
 pub mod discovery;
 pub mod mib_registry;
+pub mod reference_catalog;
 pub mod snmp_inventory;
 pub mod candidate_review;
 pub mod local_control;
@@ -44,6 +45,10 @@ pub enum CollectorError {
     InvalidAcknowledgement,
     #[error("SNMP read failed")]
     Snmp,
+    #[error("collector mail transport unavailable")]
+    MailTransport,
+    #[error("collector mail is awaiting server acknowledgement")]
+    MailAwaitingAck,
     #[error("outbox reached configured sample limit ({limit}); pending readings are retained")]
     OutboxFull { limit: u64 },
     #[error("outbox retained payload byte budget exceeded ({limit} bytes); pending and quarantined readings are preserved")]
@@ -157,6 +162,8 @@ pub fn upload_error_kind(error: &CollectorError) -> &'static str {
         CollectorError::HttpStatus { status: 500..=599, .. } => "server-unavailable",
         CollectorError::HttpStatus { .. } => "http-rejected",
         CollectorError::Transport(_) => "transport",
+        CollectorError::MailTransport => "mail-transport",
+        CollectorError::MailAwaitingAck => "mail-awaiting-ack",
         CollectorError::InvalidAcknowledgement => "invalid-ack",
         CollectorError::Storage(_) | CollectorError::Io(_) | CollectorError::Json(_)
         | CollectorError::Crypto | CollectorError::EncryptionRequired
@@ -193,7 +200,106 @@ fn retry_after_delta_at(
 pub struct PrinterConfig {
     pub printer_id: u64,
     pub ip: IpAddr,
+    #[serde(default)]
     pub marker_counter_oid: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_model_id: Option<u64>,
+    /// Resolve a bundled PrintWayy direct total OID from live SNMP identity
+    /// at each poll. The IP and backend equipment ID remain explicitly bound.
+    #[serde(default)]
+    pub auto_detect_reference: bool,
+}
+
+impl PrinterConfig {
+    /// Resolve a single total-counter OID from the bundled reference when a
+    /// source model ID is explicitly selected. An explicit OID must agree with
+    /// that source profile, preventing silent fallback to another counter.
+    pub fn effective_counter_oid(&self) -> Result<Vec<u64>, CollectorError> {
+        if self.auto_detect_reference {
+            return Err(CollectorError::Configuration(format!(
+                "printer {} resolves its reference OID from live SNMP identity", self.printer_id
+            )));
+        }
+        let Some(model_id) = self.reference_model_id else {
+            return Ok(self.marker_counter_oid.clone());
+        };
+        let reference_oid = reference_catalog::unique_network_total_oid(model_id)
+            .map_err(|reason| CollectorError::Configuration(format!(
+                "printer {} reference profile unavailable: {reason}", self.printer_id
+            )))?;
+        if !self.marker_counter_oid.is_empty() && self.marker_counter_oid != reference_oid {
+            return Err(CollectorError::Configuration(format!(
+                "printer {} explicit OID conflicts with reference profile", self.printer_id
+            )));
+        }
+        Ok(reference_oid)
+    }
+}
+
+#[cfg(test)]
+mod reference_profile_config_tests {
+    use super::*;
+
+    #[test]
+    fn explicit_model_id_resolves_a_single_network_total_oid() {
+        let printer: PrinterConfig = serde_json::from_value(serde_json::json!({
+            "printer_id": 12,
+            "ip": "10.1.2.3",
+            "reference_model_id": 31946
+        })).unwrap();
+        let oid = printer.effective_counter_oid().unwrap();
+        assert!(oid.len() >= 2);
+        assert!(printer.marker_counter_oid.is_empty());
+
+        let mut conflicting = printer.clone();
+        conflicting.marker_counter_oid = vec![1, 3, 6, 1, 2, 1, 1, 1, 0];
+        assert!(conflicting.effective_counter_oid().is_err());
+
+        let config: CollectorConfig = serde_json::from_value(serde_json::json!({
+            "collector_id": "00000000-0000-4000-8000-000000000001",
+            "api_url": "https://nexa.example",
+            "interval_seconds": 300,
+            "authorized_subnets": ["10.1.2.0/24"],
+            "printers": [
+                {"printer_id": 12, "ip": "10.1.2.3", "reference_model_id": 31946}
+            ]
+        })).unwrap();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn reference_profile_cannot_select_usb_only_or_unmapped_network_model() {
+        let usb_only = reference_catalog::catalog().models.iter()
+            .find(|m| m.usb == reference_catalog::ReferenceStatus::Approved
+                && m.network != reference_catalog::ReferenceStatus::Approved).unwrap();
+        let printer = PrinterConfig {
+            printer_id: 13,
+            ip: "10.1.2.4".parse().unwrap(),
+            marker_counter_oid: Vec::new(),
+            reference_model_id: Some(usb_only.source_model_id),
+            auto_detect_reference: false,
+        };
+        assert!(printer.effective_counter_oid().is_err());
+    }
+
+    #[test]
+    fn automatic_identity_resolution_requires_explicit_asset_binding() {
+        let mut config: CollectorConfig = serde_json::from_value(serde_json::json!({
+            "collector_id": "00000000-0000-4000-8000-000000000001",
+            "api_url": "https://nexa.example",
+            "interval_seconds": 300,
+            "authorized_subnets": ["10.1.2.0/24"],
+            "printers": [{
+                "printer_id": 12, "ip": "10.1.2.3", "auto_detect_reference": true
+            }]
+        })).unwrap();
+        assert!(config.validate().is_ok());
+        config.printers[0].marker_counter_oid = vec![1, 3, 6, 1, 2, 1, 1, 1, 0];
+        assert!(config.validate().is_err());
+        config.printers[0].marker_counter_oid.clear();
+        config.printers[0].ip = "10.2.3.4".parse().unwrap();
+        assert!(config.validate().is_err());
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -264,6 +370,10 @@ fn default_max_sqlite_files_bytes() -> u64 { DEFAULT_MAX_SQLITE_FILES_BYTES }
 pub struct CollectorConfig {
     pub collector_id: Uuid,
     pub api_url: String,
+    #[serde(default)]
+    pub communication_mode: CommunicationMode,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mail: Option<MailConfig>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_url: Option<String>,
     #[serde(skip)]
@@ -284,6 +394,52 @@ pub struct CollectorConfig {
     pub printers: Vec<PrinterConfig>,
     #[serde(default)]
     pub usb_scanners: Vec<UsbScannerConfig>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommunicationMode {
+    #[default]
+    WebServices,
+    Email,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MailConfig {
+    pub address: String,
+    pub recipient: String,
+    pub pop3_host: String,
+    pub pop3_port: u16,
+    pub pop3_implicit_tls: bool,
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_implicit_tls: bool,
+}
+
+fn valid_mail_address(value: &str) -> bool {
+    let Some((local, domain)) = value.split_once('@') else { return false; };
+    !local.is_empty() && domain.contains('.') && value.len() <= 254
+        && value.bytes().all(|b| b.is_ascii_alphanumeric()
+            || matches!(b, b'@' | b'.' | b'_' | b'-' | b'+'))
+}
+
+fn valid_mail_host(value: &str) -> bool {
+    !value.is_empty() && value.len() <= 253
+        && !value.starts_with('.') && !value.ends_with('.')
+        && value.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
+}
+
+impl MailConfig {
+    pub fn validate(&self) -> Result<(), CollectorError> {
+        if !valid_mail_address(&self.address) || !valid_mail_address(&self.recipient)
+            || !valid_mail_host(&self.pop3_host) || !valid_mail_host(&self.smtp_host)
+            || self.pop3_port == 0 || self.smtp_port == 0
+        {
+            return Err(CollectorError::Configuration("invalid mail transport settings".into()));
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -325,7 +481,21 @@ impl CollectorConfig {
                 "max_sqlite_files_bytes must be 1..68719476736".into(),
             ));
         }
-        checked_url(&self.api_url, &["https"])?;
+        if self.communication_mode == CommunicationMode::WebServices || !self.api_url.is_empty() {
+            checked_url(&self.api_url, &["https"])?;
+        }
+        match (self.communication_mode, &self.mail) {
+            (CommunicationMode::WebServices, None) => {}
+            (CommunicationMode::Email, Some(mail)) => {
+                mail.validate()?;
+                if self.proxy_url.is_some() || self.proxy_auth.is_some() {
+                    return Err(CollectorError::Configuration("email mode does not use a web proxy".into()));
+                }
+            }
+            _ => return Err(CollectorError::Configuration(
+                "mail settings must be present only in email communication mode".into()
+            )),
+        }
         if let Some(proxy_url) = &self.proxy_url {
             checked_url(proxy_url, &["http", "https"])?;
         } else if self.proxy_auth.is_some() {
@@ -354,8 +524,17 @@ impl CollectorConfig {
             if !subnets.iter().any(|net| net.contains(&printer.ip)) {
                 return Err(CollectorError::Configuration(format!("printer {} is not within authorized subnets", printer.printer_id)));
             }
-            if printer.marker_counter_oid.len() < 2 || printer.marker_counter_oid.len() > 128 {
-                return Err(CollectorError::Configuration(format!("printer {} requires an explicitly verified meter OID", printer.printer_id)));
+            if printer.auto_detect_reference {
+                if printer.reference_model_id.is_some() || !printer.marker_counter_oid.is_empty() {
+                    return Err(CollectorError::Configuration(format!(
+                        "printer {} automatic reference detection cannot be combined with an explicit OID or model ID", printer.printer_id
+                    )));
+                }
+            } else {
+                let oid = printer.effective_counter_oid()?;
+                if oid.len() < 2 || oid.len() > 128 {
+                    return Err(CollectorError::Configuration(format!("printer {} requires a meter OID or a reference profile with one total OID", printer.printer_id)));
+                }
             }
         }
         for scanner in &self.usb_scanners {
@@ -1370,7 +1549,31 @@ pub fn collect_snmp_v2c(
     let endpoint = SocketAddr::new(printer.ip, 161);
     let mut session = SyncSession::new_v2c(endpoint, community, Some(Duration::from_secs(3)), 0)
         .map_err(|_| CollectorError::Snmp)?;
-    let oid = Oid::from(printer.marker_counter_oid.as_slice()).map_err(|_| CollectorError::Snmp)?;
+    let effective_oid = if printer.auto_detect_reference {
+        let mut names = Vec::new();
+        // Fixed, read-only identity probes. Failed fields are skipped so
+        // devices with only sysDescr or Printer-MIB can still be identified.
+        for arcs in [
+            &[1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 16, 1][..], // prtGeneralPrinterName.1
+            &[1, 3, 6, 1, 2, 1, 1, 1, 0][..],          // sysDescr.0
+        ] {
+            let identity_oid = Oid::from(arcs).map_err(|_| CollectorError::Snmp)?;
+            if let Ok(mut pdu) = session.get(&identity_oid) {
+                if let Some((_, Value::OctetString(bytes))) = pdu.varbinds.next() {
+                    let name: String = String::from_utf8_lossy(bytes)
+                        .chars().filter(|c| !c.is_control()).take(256).collect();
+                    if !name.trim().is_empty() { names.push(name); }
+                }
+            }
+        }
+        reference_catalog::unique_network_total_for_identity(&names)
+            .map_err(|reason| CollectorError::Configuration(format!(
+                "printer {} automatic reference detection: {reason}", printer.printer_id
+            )))?
+    } else {
+        printer.effective_counter_oid()?
+    };
+    let oid = Oid::from(effective_oid.as_slice()).map_err(|_| CollectorError::Snmp)?;
     let mut pdu = session.get(&oid).map_err(|_| CollectorError::Snmp)?;
     let counter = match pdu.varbinds.next().map(|(_, value)| value) {
         Some(Value::Counter64(v)) => Some(v),
@@ -2277,6 +2480,7 @@ mod tests {
         let mut cfg = CollectorConfig {
             collector_id: Uuid::new_v4(),
             api_url: "https://nexa.example".into(),
+            communication_mode: CommunicationMode::WebServices, mail: None,
             proxy_url: None, proxy_auth: None,
             interval_seconds: 300,
             heartbeat_interval_seconds: 60,
@@ -2299,11 +2503,14 @@ mod tests {
     fn disallows_outside_authorized_cidr() {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
+            communication_mode: CommunicationMode::WebServices, mail: None,
             proxy_url: None, proxy_auth: None,
             interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000, max_pending_payload_bytes: 64 * 1024 * 1024, max_sqlite_files_bytes: 512 * 1024 * 1024, authorized_subnets: vec!["192.168.1.0/24".into()],
             printers: vec![PrinterConfig {
                 printer_id: 1, ip: "10.1.1.10".parse().unwrap(),
                 marker_counter_oid: vec![1,3,6,1,2,1,43,10,2,1,4,1,1],
+                reference_model_id: None,
+                auto_detect_reference: false,
             }],
             discovery_schedule: DiscoverySchedule::default(),
             usb_scanners: vec![],
@@ -2315,6 +2522,7 @@ mod tests {
     fn validates_heartbeat_separately_from_meter_polling() {
         let mut cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
+            communication_mode: CommunicationMode::WebServices, mail: None,
             proxy_url: None, proxy_auth: None,
             interval_seconds: 1800, heartbeat_interval_seconds: 60, max_pending_samples: 50_000,
             max_pending_payload_bytes: 64 * 1024 * 1024,
@@ -2344,6 +2552,7 @@ mod tests {
     fn usb_profile_requires_exact_binding_and_unique_backend_id() {
         let mut cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "https://nexa.example".into(),
+            communication_mode: CommunicationMode::WebServices, mail: None,
             proxy_url: None, proxy_auth: None,
             interval_seconds: 300, heartbeat_interval_seconds: 60,
             max_pending_samples: 50_000, max_pending_payload_bytes: 64 * 1024 * 1024,
@@ -2368,6 +2577,8 @@ mod tests {
         cfg.printers.push(PrinterConfig {
             printer_id: 7, ip: "192.0.2.10".parse().unwrap(),
             marker_counter_oid: vec![1, 3, 6, 1, 2, 1],
+            reference_model_id: None,
+            auto_detect_reference: false,
         });
         assert!(cfg.validate().is_err());
     }
@@ -2542,6 +2753,28 @@ mod tests {
         assert!(cfg.validate().is_ok());
         let pause = heartbeat_sleep_seconds(60, id);
         assert!((60..=66).contains(&pause));
+    }
+
+    #[test]
+    fn email_mode_requires_mail_settings_but_not_an_api_url() {
+        let mut cfg: CollectorConfig = serde_json::from_value(serde_json::json!({
+            "collector_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+            "api_url": "", "communication_mode": "email",
+            "mail": {
+                "address": "agent@example.com", "recipient": "inbox@example.com",
+                "pop3_host": "pop.example.com", "pop3_port": 995,
+                "pop3_implicit_tls": true,
+                "smtp_host": "smtp.example.com", "smtp_port": 587,
+                "smtp_implicit_tls": false
+            },
+            "interval_seconds": 300, "printers": []
+        })).unwrap();
+        assert!(cfg.validate().is_ok());
+        cfg.proxy_url = Some("http://proxy.example.com:8080".into());
+        assert!(cfg.validate().is_err());
+        cfg.proxy_url = None;
+        cfg.communication_mode = CommunicationMode::WebServices;
+        assert!(cfg.validate().is_err());
     }
 
     #[test]
@@ -2785,6 +3018,7 @@ mod tests {
     fn rejects_insecure_server_endpoint() {
         let cfg = CollectorConfig {
             collector_id: Uuid::new_v4(), api_url: "http://example.test".into(),
+            communication_mode: CommunicationMode::WebServices, mail: None,
             proxy_url: None, proxy_auth: None,
             interval_seconds: 300, heartbeat_interval_seconds: 60, max_pending_samples: 50_000,
             max_pending_payload_bytes: 64 * 1024 * 1024,

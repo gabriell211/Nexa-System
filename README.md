@@ -379,7 +379,7 @@ O monitor agendado `nexa:alerts:check-telemetry` analisa ausência de **novas le
 
 ## Objetivo e referência funcional
 
-O produto é inspirado no **escopo funcional publicamente documentado** do PrintWayy Dragon, com marca, interface, código, ativos e arquitetura próprios. Não se pretende copiar código-fonte, imagens, identidade visual, dados privados, credenciais nem endpoints internos de terceiros. Busca-se **paridade de processos de negócio**, com melhorias de confiabilidade e experiência de uso.
+O produto é inspirado no **escopo funcional publicamente documentado** do PrintWayy Dragon, com marca, interface, código, ativos e arquitetura próprios. Não se pretende copiar código-fonte, imagens, identidade visual, credenciais nem endpoints internos de terceiros. Por solicitação do responsável pelo projeto, o Collector inclui um [snapshot local de referência de modelos, estados de rede/USB e OIDs candidatos de total](docs/PRINTWAYY-INSTALLER-REFERENCE-2026-10-22.md), sem notas internas do pacote original. Esses estados não são homologação Nexa. Busca-se **paridade de processos de negócio**, com melhorias de confiabilidade e experiência de uso.
 
 **Atenção à cobertura:** o site público e a Central de Ajuda permitem mapear muitos comportamentos, mas **não comprovam 100% das telas, permissões e regras internas de uma conta autenticada**. Itens não verificáveis estão assinalados como *pendentes de validação real*, nunca como recursos existentes. O inventário abaixo é uma meta de produto, não prova de implementação.
 

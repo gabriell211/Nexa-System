@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::io;
+use crate::reference_catalog::{self, ReferenceStatus};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -23,6 +24,11 @@ pub struct UsbDeviceCandidate {
     pub device_type: UsbDeviceType,
     /// VID:PID only, never a USB serial number.
     pub vid_pid: Option<String>,
+    /// Name-only reference lookup. This is not proof that the USB meter works.
+    #[serde(default)]
+    pub reference_model_ids: Vec<u64>,
+    #[serde(default)]
+    pub reference_usb_status: Option<ReferenceStatus>,
 }
 
 fn is_usb_instance_id(instance_id: &str) -> bool {
@@ -74,6 +80,11 @@ fn parse_candidates(json: &str) -> io::Result<Vec<UsbDeviceCandidate>> {
                 "USB vendor/product identification does not match Windows PnP",
             ));
         }
+    }
+    for device in &mut devices {
+        let (ids, status) = reference_catalog::usb_status_for_friendly_name(&device.friendly_name);
+        device.reference_model_ids = ids;
+        device.reference_usb_status = status;
     }
     devices.sort_by_key(|device| device.instance_id.to_ascii_uppercase());
     devices.dedup_by(|a, b| a.instance_id.eq_ignore_ascii_case(&b.instance_id));
@@ -176,6 +187,15 @@ mod tests {
         assert_eq!(devices.len(), 1);
         assert_eq!(devices[0].device_type, UsbDeviceType::Scanner);
         assert_eq!(devices[0].vid_pid.as_deref(), Some("1083:1658"));
+    }
+
+    #[test]
+    fn reference_status_is_recomputed_from_device_name() {
+        let devices = parse_candidates(
+            r#"[{"friendly_name":"Generic USB Printer","instance_id":"USB\\VID_1234&PID_5678\\UNIT1","status":"OK","device_type":"printer","vid_pid":"1234:5678","reference_model_ids":[31946],"reference_usb_status":"approved"}]"#,
+        ).unwrap();
+        assert!(devices[0].reference_model_ids.is_empty());
+        assert_eq!(devices[0].reference_usb_status, None);
     }
 
     #[test]

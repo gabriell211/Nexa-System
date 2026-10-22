@@ -8,7 +8,7 @@ use std::{
     sync::{atomic::{AtomicBool, Ordering}, Arc},
     time::Duration,
 };
-use nexa_collector_core::{CollectorConfig, DiscoverySchedule};
+use nexa_collector_core::{CollectorConfig, CommunicationMode, DiscoverySchedule, MailConfig};
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 use windows_service::{
@@ -56,7 +56,8 @@ fn provision_at(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     bytes.zeroize();
     let body = Zeroizing::new(String::from_utf16(&units)?);
     let fields: Vec<&str> = body.split('\n').map(|value| value.trim_end_matches('\r')).collect();
-    if fields.len() != 7 || !fields[6].is_empty() {
+    if !((fields.len() == 7 && fields[6].is_empty())
+        || (fields.len() == 18 && fields[17].is_empty())) {
         return Err("installer request has invalid fields".into());
     }
     let collector_id = Uuid::parse_str(fields[0]).map_err(|_| "collector ID is invalid")?;
@@ -65,16 +66,55 @@ fn provision_at(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     if token.len() != 64 || !token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("collector key must contain 64 hexadecimal characters".into());
     }
+    let extra = fields.len() == 18;
+    let mode = match if extra { fields[6] } else { "" } {
+        "" | "web_services" => CommunicationMode::WebServices,
+        "email" => CommunicationMode::Email,
+        _ => return Err("communication mode is invalid".into()),
+    };
     let proxy_url = if fields[3].is_empty() { None } else { Some(fields[3].to_owned()) };
+    let proxy_domain = if extra { fields[7] } else { "" };
     let proxy_auth = !fields[4].is_empty() || !fields[5].is_empty();
     if proxy_auth && (fields[4].is_empty() || fields[5].is_empty() || proxy_url.is_none()) {
         return Err("proxy username, password and URL must be supplied together".into());
     }
+    if !proxy_domain.is_empty() && !proxy_auth {
+        return Err("proxy domain requires username and password".into());
+    }
+    if proxy_domain.contains(['\\', '/', ':', '@']) {
+        return Err("proxy domain contains invalid characters".into());
+    }
+    let mail = if mode == CommunicationMode::Email {
+        if !extra || proxy_url.is_some() || proxy_auth || !proxy_domain.is_empty() {
+            return Err("email mode cannot use a web proxy".into());
+        }
+        if fields[9].is_empty() || fields[9].len() > 1024 {
+            return Err("email password is required".into());
+        }
+        let tls = |value: &str| -> Result<bool, Box<dyn std::error::Error>> {
+            match value { "1" => Ok(true), "0" => Ok(false), _ => Err("invalid mail SSL option".into()) }
+        };
+        Some(MailConfig {
+            address: fields[8].to_owned(), recipient: fields[10].to_owned(),
+            pop3_host: fields[11].to_owned(),
+            pop3_port: fields[12].parse().map_err(|_| "invalid POP3 port")?,
+            pop3_implicit_tls: tls(fields[13])?,
+            smtp_host: fields[14].to_owned(),
+            smtp_port: fields[15].parse().map_err(|_| "invalid SMTP port")?,
+            smtp_implicit_tls: tls(fields[16])?,
+        })
+    } else {
+        if extra && fields[8..17].iter().any(|field| !field.is_empty()) {
+            return Err("mail settings require email mode".into());
+        }
+        None
+    };
     let mut config = if config_path.exists() {
         nexa_collector_core::read_config(&config_path)?
     } else {
         CollectorConfig {
             collector_id, api_url: fields[2].to_owned(), proxy_url: None, proxy_auth: None,
+            communication_mode: CommunicationMode::WebServices, mail: None,
             interval_seconds: 1800, heartbeat_interval_seconds: 60,
             max_pending_samples: 50_000, max_pending_payload_bytes: 64 * 1024 * 1024,
             max_sqlite_files_bytes: 512 * 1024 * 1024,
@@ -84,14 +124,17 @@ fn provision_at(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
     };
     config.collector_id = collector_id;
     config.api_url = fields[2].to_owned();
+    config.communication_mode = mode;
+    config.mail = mail;
     config.proxy_url = proxy_url;
     config.validate()?;
     let config_json = serde_json::to_vec_pretty(&config)?;
     let key = Zeroizing::new(format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
     let user_path = credentials.join("NEXA_PROXY_USERNAME");
     let password_path = credentials.join("NEXA_PROXY_PASSWORD");
-    if user_path.exists() || password_path.exists() {
-        return Err("existing proxy credentials require manual recovery".into());
+    let mail_password_path = credentials.join("NEXA_MAIL_PASSWORD");
+    if user_path.exists() || password_path.exists() || mail_password_path.exists() {
+        return Err("existing communication credentials require manual recovery".into());
     }
 
     let mut created = Vec::new();
@@ -104,10 +147,19 @@ fn provision_at(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         write_new(&token_path, token.as_bytes())?;
         created.push(token_path.clone());
         if proxy_auth {
-            write_new(&user_path, fields[4].as_bytes())?;
+            let username = if proxy_domain.is_empty() {
+                fields[4].to_owned()
+            } else {
+                format!("{proxy_domain}\\{}", fields[4])
+            };
+            write_new(&user_path, username.as_bytes())?;
             created.push(user_path.clone());
             write_new(&password_path, fields[5].as_bytes())?;
             created.push(password_path.clone());
+        }
+        if mode == CommunicationMode::Email {
+            write_new(&mail_password_path, fields[9].as_bytes())?;
+            created.push(mail_password_path.clone());
         }
         if config_path.exists() {
             let backup = root.join("config.before-install.json");
@@ -235,6 +287,17 @@ mod tests {
         fs::write(root.join("credentials/install-request.utf16"), bytes).unwrap();
     }
 
+    fn mail_request(root: &std::path::Path, password: &str) {
+        fs::create_dir_all(root.join("credentials")).unwrap();
+        let payload = format!(
+            "{}\r\n{}\r\nhttps://nexa.example.com\r\n\r\n\r\n\r\nemail\r\n\r\nagent@example.com\r\n{}\r\ninbox@example.com\r\npop.example.com\r\n995\r\n1\r\nsmtp.example.com\r\n587\r\n0\r\n",
+            "f47ac10b-58cc-4372-a567-0e02b2c3d479", "ab".repeat(32), password,
+        );
+        let mut bytes = vec![0xff, 0xfe];
+        for unit in payload.encode_utf16() { bytes.extend_from_slice(&unit.to_le_bytes()); }
+        fs::write(root.join("credentials/install-request.utf16"), bytes).unwrap();
+    }
+
     #[test]
     fn provisions_portal_identity_proxy_and_private_credentials() {
         let dir = tempfile::tempdir().unwrap();
@@ -265,6 +328,34 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("NexaCollector");
         request(&root, "invalid");
+        assert!(provision_at(root.clone()).is_err());
+        assert!(!root.join("config.json").exists());
+        assert!(!root.join("credentials/NEXA_COLLECTOR_TOKEN").exists());
+    }
+
+    #[test]
+    fn provisions_email_mode_with_private_password_and_no_web_proxy() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("NexaCollector");
+        mail_request(&root, "mail-secret");
+        provision_at(root.clone()).unwrap();
+        let cfg = nexa_collector_core::read_config(root.join("config.json")).unwrap();
+        assert_eq!(cfg.communication_mode, CommunicationMode::Email);
+        let mail = cfg.mail.unwrap();
+        assert_eq!(mail.address, "agent@example.com");
+        assert_eq!(mail.recipient, "inbox@example.com");
+        assert!(mail.pop3_implicit_tls);
+        assert!(!mail.smtp_implicit_tls);
+        assert_eq!(fs::read_to_string(root.join("credentials/NEXA_MAIL_PASSWORD")).unwrap(), "mail-secret");
+        assert!(!fs::read_to_string(root.join("config.json")).unwrap().contains("mail-secret"));
+        assert!(!root.join("credentials/install-request.utf16").exists());
+    }
+
+    #[test]
+    fn invalid_mail_mode_preserves_unprovisioned_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("NexaCollector");
+        mail_request(&root, "");
         assert!(provision_at(root.clone()).is_err());
         assert!(!root.join("config.json").exists());
         assert!(!root.join("credentials/NEXA_COLLECTOR_TOKEN").exists());

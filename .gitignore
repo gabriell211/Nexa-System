@@ -4,6 +4,7 @@
 **/node_modules/
 collector/target/
 collector/console/src-tauri/gen/
+collector/console/src-tauri/binaries/
 collector/console/src-tauri/icons/android/
 collector/console/src-tauri/icons/ios/
 **/dist/

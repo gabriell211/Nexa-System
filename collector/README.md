@@ -35,11 +35,44 @@ Xerox e **Brother** (PEN `2435`, `BROTHER-MIB`). A MIB privada Brother
 servem como identificação, não como prova de contador. Rode `nexa-collector-daemon --mib-catalog` para obter JSON
 sem ligar-se a qualquer impressora ou consultar credenciais.
 
-A base não configura automaticamente `marker_counter_oid`, não
+A base MIB pública não configura automaticamente `marker_counter_oid`, não
 faz WALK SNMP e não ativa coleta/faturamento. Os índices são dinâmicos,
 e fabricante não significa modelo/firmware homologado. Verifique as
 fontes e os requisitos de teste em
 [`docs/NEXA-MIB-OID-CATALOG-2026-10-16.md`](../docs/NEXA-MIB-OID-CATALOG-2026-10-16.md).
+
+## Catálogo de referência PrintWayy e seleção de OID total
+
+O snapshot local `Mapping.pdmap` de 22/09/2026 foi interpretado e incorporado
+como catálogo de referência de **2.142 modelos**, com estados independentes
+para rede e USB. Consulte tudo com `nexa-collector-daemon --reference-catalog`,
+ou filtre com `--reference-search "OfficeJet 7740" network`. A aba
+**Impressoras** do Console oferece a mesma busca. O catálogo preserva IDs de
+registros duplicados, sem consolidar estados conflitantes.
+
+Após vincular um equipamento físico ao `printer_id` do backend e autorizar seu
+IP/CIDR, o operador pode informar `reference_model_id` no item de `printers`
+em `config.json`, deixando `marker_counter_oid` ausente. Para modelos com rede
+aprovada e um único OID candidato de total, o daemon resolve esse OID e passa
+a coletar automaticamente no intervalo configurado. Exemplo de item:
+
+```json
+{"printer_id": 123, "ip": "192.168.1.50", "reference_model_id": 31946}
+```
+
+Para um equipamento já vinculado, `"auto_detect_reference": true` no lugar
+de `reference_model_id` faz o daemon consultar o nome do modelo via SNMP em
+cada ciclo e escolher o OID total apenas se todos os nomes reconhecidos
+concordarem em um único perfil de rede aprovado. Sem identidade inequívoca,
+nenhuma leitura é enfileirada. A descoberta USB agora cruza o nome PnP com
+o catálogo e exibe o estado PrintWayy no Console quando o fabricante e o
+modelo coincidem sem conflito. Isso ainda não executa protocolos USB.
+
+São 1.583 perfis de rede com essa resolução. Os demais exigem adaptação de
+protocolo ou desambiguação. O status no PrintWayy **não equivale à homologação
+no Nexa**: valide modelo, firmware, unidade e variação do contador em campo.
+O catálogo USB é consultável, mas não acrescenta leitores USB ao daemon.
+Detalhes, contagens e limitações: [análise do instalador](../docs/PRINTWAYY-INSTALLER-REFERENCE-2026-10-22.md).
 
 
 A **interface desktop usa Tauri 2.12 + React 19 + TypeScript**. A coleta roda no **daemon Rust separado**. Fechar o console não deve encerrar o daemon, desde que o serviço tenha sido iniciado pelo sistema operacional.
@@ -426,14 +459,18 @@ Execute em PowerShell (sem símbolo $ inicial nos comandos) com Rust MSVC, Node 
 O instalador NSIS em `collector/console/src-tauri/windows/installer-hooks.nsh`:
 
 - Empacota Console e `nexa-collector-daemon.exe`, registra serviço `NexaCollector` no Windows SCM sob `NT AUTHORITY\LocalService` e o inicia após vincular o agente.
-- Solicita o ID e a chave do Collector emitidos no portal administrativo, a URL HTTPS da API e, se necessário, o proxy HTTP/HTTPS com usuário e senha. O proxy é usado nas chamadas de heartbeat e envio de medições; a senha fica em `credentials\`, fora de `config.json`.
+- Solicita o ID e a chave do Collector emitidos no portal administrativo. O modo **Internet (Web Services)** usa a URL HTTPS da API Nexa e pode usar proxy com servidor, porta, usuário, senha e domínio. O modo **E-mail** usa endereço e senha da caixa do agente, destinatário do servidor Nexa, POP3 e SMTP com portas e SSL implícito ou TLS obrigatório por upgrade. A senha fica em `credentials\`, fora de `config.json`.
 - Prepara `%ProgramData%\NexaCollector` com `config.json`, `data\` e `credentials\`; protege o banco de dados, as credenciais e os arquivos do serviço com ACLs. Gera uma chave aleatória para a fila criptografada e preserva os dados de instalações anteriores.
 - Configura recuperação contra falhas de processo. Na desinstalação, remove o serviço e preserva a fila criptografada, credenciais e configuração.
 - Recusa instalar sobre um serviço já existente para evitar corromper instalações ativas; uma rotina auditada de atualização/rollback será necessária.
 
-**Provisionamento:** o Setup recebe os valores do portal e grava a vinculação em arquivos protegidos, sem colocar credenciais nos argumentos ou no registro SCM. O serviço inicia com uma configuração vazia de equipamentos e envia heartbeat. Depois, um administrador deve configurar os equipamentos, as sub-redes autorizadas e os OIDs homologados em `config.json`. Quando houver impressoras SNMP, deve instalar `NEXA_SNMP_COMMUNITY` em `credentials\` antes de reiniciar o serviço com essa configuração. Instalações silenciosas (`/S`) recebem `NEXA_INSTALL_COLLECTOR_ID`, `NEXA_INSTALL_TOKEN`, `NEXA_INSTALL_API_URL` e, opcionalmente, `NEXA_INSTALL_PROXY_URL`, `NEXA_INSTALL_PROXY_USERNAME` e `NEXA_INSTALL_PROXY_PASSWORD` no ambiente do processo instalador.
+**Provisionamento:** o Setup recebe os valores do portal e grava a vinculação em arquivos protegidos, sem colocar credenciais nos argumentos ou no registro SCM. O serviço inicia com uma configuração vazia de equipamentos e envia heartbeat. Depois, um administrador deve configurar os equipamentos, as sub-redes autorizadas e os OIDs homologados em `config.json`. Quando houver impressoras SNMP, deve instalar `NEXA_SNMP_COMMUNITY` em `credentials\` antes de reiniciar o serviço com essa configuração. Instalações silenciosas (`/S`) recebem `NEXA_INSTALL_COLLECTOR_ID`, `NEXA_INSTALL_TOKEN`, `NEXA_INSTALL_COMMUNICATION_MODE` (`web_services` ou `email`) e os campos do modo escolhido no ambiente do instalador. Para Web Services: `NEXA_INSTALL_API_URL` e, opcionalmente, `NEXA_INSTALL_PROXY_URL`, `NEXA_INSTALL_PROXY_USERNAME`, `NEXA_INSTALL_PROXY_PASSWORD`, `NEXA_INSTALL_PROXY_DOMAIN`. Para e-mail: `NEXA_INSTALL_MAIL_ADDRESS`, `NEXA_INSTALL_MAIL_PASSWORD`, `NEXA_INSTALL_MAIL_RECIPIENT`, `NEXA_INSTALL_POP3_HOST`, `NEXA_INSTALL_POP3_PORT`, `NEXA_INSTALL_POP3_SSL` (`1` ou `0`), `NEXA_INSTALL_SMTP_HOST`, `NEXA_INSTALL_SMTP_PORT`, `NEXA_INSTALL_SMTP_SSL` (`1` ou `0`). A URL da API é opcional no modo e-mail.
 
-**Limites:** bundle NSIS e checagens de segurança do CI não substituem teste real de instalação/desinstalação no Windows, revisão de ACL, assinatura do executável, atualização/rollback e ensaio de hardware. Não distribuir em produção sem esses critérios.
+**Transporte por e-mail:** a caixa do agente envia as leituras cifradas por SMTP. A rotina `php artisan nexa:collector:receive-mail` no backend lê a caixa POP3 Nexa, valida a identidade do agente, persiste as leituras pelas mesmas regras da API e envia um ACK cifrado. A fila local só remove as amostras após ler e autenticar esse ACK no POP3 do agente. O scheduler executa a rotina a cada minuto, com trava contra sobreposição. Configure no backend `NEXA_COLLECTOR_MAIL_INBOX_ENABLED=true`, `NEXA_COLLECTOR_MAIL_INBOX_ADDRESS`, `NEXA_COLLECTOR_MAIL_INBOX_PASSWORD`, `NEXA_COLLECTOR_MAIL_POP3_HOST`, `NEXA_COLLECTOR_MAIL_POP3_PORT`, `NEXA_COLLECTOR_MAIL_POP3_IMPLICIT_TLS` e um `MAIL_MAILER` real, com `MAIL_FROM_ADDRESS` válido. Use uma caixa dedicada, sem outras mensagens, e mantenha as credenciais no cofre da implantação. `curl.exe` deve estar disponível no Windows do agente. Se a caixa ou o servidor de e-mail não estiverem configurados, as leituras permanecem na fila local.
+
+O campo domínio do proxy forma o usuário `DOMINIO\\usuario` para autenticação Basic. Proxies que exigem NTLM, Kerberos ou Negotiate ainda precisam de integração e ensaio específicos; o campo visual sozinho não os habilita.
+
+**Limites:** bundle NSIS e checagens de segurança do CI não substituem teste real de instalação/desinstalação no Windows, revisão de ACL, assinatura do executável, atualização/rollback, entrega SMTP/POP3 com caixas reais e ensaio de hardware. Não distribuir em produção sem esses critérios. Mensagens retidas por mais de 14 dias deixam de atender à janela atual de aceitação da API; é necessário acompanhamento operacional da fila e da caixa de entrada.
 
 ## Serviço nativo macOS — entrega 27 (launchd)
 

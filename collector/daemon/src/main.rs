@@ -1,6 +1,7 @@
 use nexa_collector_core::{
     collect_snmp_v2c, heartbeat_sleep_seconds, read_config, send_heartbeat, send_heartbeat_with_watchdog, upload_pending,
     upload_error_kind, CollectorConfig, CollectorError, DiscoveryReport, DiscoverySchedule, Outbox, ProxyAuth, UploadRetryPolicy, WatchdogHeartbeat,
+    CommunicationMode,
 };
 use chrono::{Duration as ChronoDuration, Utc};
 use std::{
@@ -11,6 +12,7 @@ use zeroize::Zeroizing;
 
 mod progress_watchdog;
 mod recovery_guard;
+mod mail_transport;
 
 #[cfg(unix)]
 mod local_control;
@@ -51,6 +53,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             "brother_private_identification_oids": nexa_collector_core::mib_registry::BROTHER_PRIVATE_OIDS,
         });
         println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
+    if args.len() == 2 && args[1] == "--reference-catalog" {
+        // Complete offline snapshot. These are PrintWayy source statuses and
+        // candidate OIDs; reading the catalog never enables Nexa monitoring.
+        println!("{}", serde_json::to_string_pretty(nexa_collector_core::reference_catalog::catalog())?);
+        return Ok(());
+    }
+    if (args.len() == 3 || args.len() == 4) && args[1] == "--reference-search" {
+        let filter = args.get(3).map(String::as_str).unwrap_or("all");
+        let result = nexa_collector_core::reference_catalog::search(&args[2], filter, 100)
+            .map_err(|reason| std::io::Error::new(std::io::ErrorKind::InvalidInput, reason))?;
+        println!("{}", serde_json::to_string_pretty(&result)?);
         return Ok(());
     }
     if args.len() == 2 && args[1] == "--discover-usb" {
@@ -265,6 +280,10 @@ fn run_application(
     // Separate supervised communication loop: long SNMP scans, empty meter
     // batches and backlogged uploads must not delay agent health checks.
     let token = load_secret("NEXA_COLLECTOR_TOKEN", windows_service_mode, macos_launchd_mode)?;
+    let mail_password = if cfg.communication_mode == CommunicationMode::Email {
+        Some(load_secret("NEXA_MAIL_PASSWORD", windows_service_mode, macos_launchd_mode)?
+            .ok_or("email mode requires a protected mailbox password")?)
+    } else { None };
     let snmp_community = if cfg.printers.is_empty() {
         None
     } else {
@@ -283,13 +302,19 @@ fn run_application(
     };
     if once {
         if let Some(ref secret) = token {
-            if send_heartbeat(&cfg, secret).is_err() {
+            let result = match mail_password.as_deref() {
+                Some(password) => mail_transport::heartbeat(&cfg, secret, password, None, Path::new(&args[2])),
+                None => send_heartbeat(&cfg, secret),
+            };
+            if result.is_err() {
                 eprintln!("Heartbeat unavailable; no device state inferred");
             }
         }
     } else {
         let heartbeat_cfg = cfg.clone();
         let heartbeat_token = token.clone();
+        let heartbeat_mail_password = mail_password.clone();
+        let heartbeat_queue_path = args[2].clone();
         let heartbeat_shutdown = Arc::clone(&shutdown);
         let heartbeat_progress = progress.clone();
         let heartbeat_guard = recovery_guard.clone();
@@ -307,7 +332,11 @@ fn run_application(
                             None
                         }
                     };
-                    if send_heartbeat_with_watchdog(&heartbeat_cfg, secret, diagnostics).is_err() {
+                    let result = match heartbeat_mail_password.as_deref() {
+                        Some(password) => mail_transport::heartbeat(&heartbeat_cfg, secret, password, diagnostics, Path::new(&heartbeat_queue_path)),
+                        None => send_heartbeat_with_watchdog(&heartbeat_cfg, secret, diagnostics),
+                    };
+                    if result.is_err() {
                         eprintln!("Heartbeat unavailable; collector identity or network must be checked");
                     }
                 } else {
@@ -558,7 +587,7 @@ fn run_application(
         }
 
         if let Some(ref secret) = token {
-            attempt_upload(&cfg, secret, &mut outbox, &mut upload_retry)?;
+            attempt_upload(&cfg, secret, mail_password.as_ref().map(|value| value.as_str()), Path::new(&args[2]), &mut outbox, &mut upload_retry)?;
         } else if once {
             eprintln!("Collector token not configured; queued samples retained");
         }
@@ -589,6 +618,8 @@ fn run_application(
 fn attempt_upload(
     cfg: &CollectorConfig,
     token: &str,
+    mail_password: Option<&str>,
+    queue_path: &Path,
     outbox: &mut Outbox,
     policy: &mut UploadRetryPolicy,
 ) -> Result<(), CollectorError> {
@@ -596,7 +627,11 @@ fn attempt_upload(
         return Ok(());
     }
     let quarantined_before = outbox.quarantined_count()?;
-    match upload_pending(cfg, token, outbox) {
+    let result = match mail_password {
+        Some(password) => mail_transport::upload_pending(cfg, token, password, outbox, queue_path),
+        None => upload_pending(cfg, token, outbox),
+    };
+    match result {
         Ok(acked) => {
             let quarantined_after = outbox.quarantined_count()?;
             if quarantined_after > quarantined_before {

@@ -2209,10 +2209,13 @@ dependencies = [
 name = "nexa-collector-daemon"
 version = "0.1.2"
 dependencies = [
+ "aes-gcm",
+ "base64 0.22.1",
  "chrono",
  "nexa-collector-core",
  "serde",
  "serde_json",
+ "sha2",
  "signal-hook",
  "tempfile",
  "uuid",

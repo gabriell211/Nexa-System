@@ -2,6 +2,14 @@
 declare(strict_types=1);
 
 return [
+    'collector_mail_inbox' => [
+        'enabled' => (bool) env('NEXA_COLLECTOR_MAIL_INBOX_ENABLED', false),
+        'address' => (string) env('NEXA_COLLECTOR_MAIL_INBOX_ADDRESS', ''),
+        'password' => (string) env('NEXA_COLLECTOR_MAIL_INBOX_PASSWORD', ''),
+        'pop3_host' => (string) env('NEXA_COLLECTOR_MAIL_POP3_HOST', ''),
+        'pop3_port' => (int) env('NEXA_COLLECTOR_MAIL_POP3_PORT', 995),
+        'pop3_implicit_tls' => (bool) env('NEXA_COLLECTOR_MAIL_POP3_IMPLICIT_TLS', true),
+    ],
     'collector_heartbeat'=>[
         // Heartbeat is independent of SNMP polling and successful upload.
         'max_silence_seconds'=>(int)env('NEXA_HEARTBEAT_MAX_SILENCE_SECONDS',180),

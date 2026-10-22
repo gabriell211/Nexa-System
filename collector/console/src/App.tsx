@@ -5,7 +5,24 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-type PrinterInfo = { printer_id: number; ip: string; oid: string };
+type PrinterInfo = { printer_id: number; ip: string; oid: string; reference_model_id: number | null; auto_detect_reference: boolean };
+type ReferenceStatus = "not_tested" | "approved" | "incompatible";
+type ReferenceModel = {
+  source_model_id: number;
+  manufacturer: string;
+  model: string;
+  network: ReferenceStatus;
+  usb: ReferenceStatus;
+  network_total_oid_candidates: string[];
+};
+type ReferenceSearchResult = {
+  source: string;
+  snapshot_at: string;
+  total_catalog: number;
+  total_matches: number;
+  results: ReferenceModel[];
+  nexa_field_certified: boolean;
+};
 type UsbScannerInfo = { printer_id: number; profile: string };
 type DiscoveryCandidate = { ip: string; print_ports: number[]; http_server: string | null; escl_scanner: boolean };
 type UsbDeviceCandidate = {
@@ -14,6 +31,8 @@ type UsbDeviceCandidate = {
   status: string;
   device_type: "printer" | "scanner" | "imaging";
   vid_pid: string | null;
+  reference_model_ids: number[];
+  reference_usb_status: ReferenceStatus | null;
 };
 type CanonDrc225Meter = {
   meter_scan_total: string;
@@ -79,6 +98,7 @@ type CollectorSnapshot = {
   configured: boolean;
   collector_id: string | null;
   endpoint: string | null;
+  communication_mode: string | null;
   interval_seconds: number | null;
   authorized_subnets: string[];
   discovery_schedule: DiscoverySchedule | null;
@@ -112,6 +132,11 @@ function formatDate(value: string | null): string {
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" }).format(timestamp);
 }
 
+function referenceStatus(value: ReferenceStatus): string {
+  return value === "approved" ? "Homologado no PrintWayy"
+    : value === "incompatible" ? "Incompatível no PrintWayy" : "Não testado no PrintWayy";
+}
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("overview");
   const [snapshot, setSnapshot] = useState<CollectorSnapshot | null>(null);
@@ -138,6 +163,27 @@ export default function App() {
   const [canonMeter, setCanonMeter] = useState<CanonDrc225Meter | null>(null);
   const [canonReading, setCanonReading] = useState(false);
   const [canonError, setCanonError] = useState<string | null>(null);
+  const [referenceQuery, setReferenceQuery] = useState("");
+  const [referenceInterface, setReferenceInterface] = useState("all");
+  const [referenceResult, setReferenceResult] = useState<ReferenceSearchResult | null>(null);
+  const [referenceSearching, setReferenceSearching] = useState(false);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+
+  const searchReference = useCallback(async (query: string, interfaceFilter: string) => {
+    setReferenceSearching(true);
+    setReferenceError(null);
+    try {
+      setReferenceResult(await invoke<ReferenceSearchResult>("search_reference_models", {
+        query, interface: interfaceFilter,
+      }));
+    } catch (error) {
+      setReferenceError(String(error));
+    } finally {
+      setReferenceSearching(false);
+    }
+  }, []);
+
+  useEffect(() => { void searchReference("", "all"); }, [searchReference]);
 
   const discover = useCallback(async () => {
     setDiscovering(true);
@@ -459,7 +505,7 @@ export default function App() {
                   {snapshot?.printers.map((printer) => (
                     <tr key={`ip-${printer.printer_id}`}>
                       <td>#{printer.printer_id}</td><td>{printer.ip}</td>
-                      <td className="mono">SNMP: {printer.oid}</td><td>Contador depende de homologação do OID</td>
+                        <td className="mono">SNMP: {printer.oid}{printer.reference_model_id ? ` · Ref. #${printer.reference_model_id}` : ""}</td><td>{printer.auto_detect_reference ? "Nome SNMP comparado a cada coleta; contador depende de validação" : "Contador depende de validação no Nexa"}</td>
                     </tr>
                   ))}
                   {snapshot?.usb_scanners.map((scanner) => (
@@ -471,6 +517,31 @@ export default function App() {
                 </tbody>
               </table></div>
               {snapshot && snapshot.printers.length + snapshot.usb_scanners.length === 0 && <div className="empty">Nenhum equipamento configurado neste ponto de coleta.</div>}
+            </section>
+            <section className="panel">
+              <div className="panel-title"><h2>Catálogo de referência de modelos</h2>
+                <span>{referenceResult?.total_catalog.toLocaleString("pt-BR") ?? "—"} registros · PrintWayy</span></div>
+              <p className="reference-intro">Estados de rede e USB extraídos do mapeamento local de {referenceResult?.snapshot_at ? formatDate(referenceResult.snapshot_at) : "2026-09-22"}. A aprovação no PrintWayy orienta a configuração, mas não comprova leitura pelo Nexa neste equipamento.</p>
+              <form className="reference-search" onSubmit={(event) => { event.preventDefault(); void searchReference(referenceQuery, referenceInterface); }}>
+                <label>Fabricante ou modelo<input value={referenceQuery} onChange={(event) => setReferenceQuery(event.target.value)} maxLength={120} placeholder="Ex.: OfficeJet 7740" /></label>
+                <label>Interface<select value={referenceInterface} onChange={(event) => setReferenceInterface(event.target.value)}>
+                  <option value="all">Todas</option><option value="network">Rede homologada</option>
+                  <option value="usb">USB homologado</option><option value="both">Rede e USB homologados</option>
+                </select></label>
+                <button className="primary-button" type="submit" disabled={referenceSearching}>{referenceSearching ? "Consultando..." : "Buscar modelos"}</button>
+              </form>
+              {referenceError && <div className="notice error" role="alert">{referenceError}</div>}
+              {referenceResult && <>
+                <p className="reference-count">{referenceResult.total_matches.toLocaleString("pt-BR")} resultado(s); exibindo até 100. Selecione o ID exato no arquivo de configuração para resolver automaticamente um OID total único de rede.</p>
+                <div className="table-scroll"><table><thead><tr><th>ID</th><th>Fabricante</th><th>Modelo</th><th>Rede</th><th>USB</th><th>OID total de rede</th></tr></thead>
+                  <tbody>{referenceResult.results.map((model) => <tr key={model.source_model_id}>
+                    <td className="mono">{model.source_model_id}</td><td>{model.manufacturer}</td><td>{model.model}</td>
+                    <td>{referenceStatus(model.network)}</td><td>{referenceStatus(model.usb)}</td>
+                    <td className="mono">{model.network_total_oid_candidates.length === 1 ? model.network_total_oid_candidates[0] : model.network_total_oid_candidates.length > 1 ? "Ambíguo" : "Sem OID total no pacote"}</td>
+                  </tr>)}</tbody></table></div>
+                {referenceResult.total_matches === 0 && <div className="empty">Nenhum modelo corresponde à busca.</div>}
+              </>}
+              <div className="notice">O catálogo não ativa coleta USB nem cadastra equipamentos. OID de rede só é usado quando um ID de modelo é configurado explicitamente e há um único candidato; confirme identidade, unidade e variação do contador no dispositivo real.</div>
             </section>
             <section className="panel">
               <div className="panel-title"><h2>Descoberta na rede local</h2><span>Busca limitada às interfaces privadas deste computador</span></div>
@@ -566,12 +637,13 @@ export default function App() {
               </button>
               {usbError && <div className="notice error" role="alert">{usbError}</div>}
               {usbDevices && <div className="table-scroll"><table>
-                <thead><tr><th>Dispositivo</th><th>Tipo</th><th>VID:PID</th><th>Windows</th><th>Contadores</th></tr></thead>
+                <thead><tr><th>Dispositivo</th><th>Tipo</th><th>VID:PID</th><th>Windows</th><th>Ref. PrintWayy</th><th>Contadores Nexa</th></tr></thead>
                 <tbody>{usbDevices.map((candidate) => <tr key={candidate.instance_id}>
                   <td>{candidate.friendly_name}</td>
                   <td>{candidate.device_type === "printer" ? "Impressora" : candidate.device_type === "scanner" ? "Scanner" : "Dispositivo de imagem"}</td>
                   <td className="mono">{candidate.vid_pid ?? "Não informado"}</td>
                   <td>{candidate.status}</td>
+                  <td>{candidate.reference_usb_status ? `${referenceStatus(candidate.reference_usb_status)} · ID ${candidate.reference_model_ids.join(", ")}` : "Sem correspondência inequívoca pelo nome"}</td>
                   <td>{candidate.device_type === "scanner" && candidate.vid_pid === "1083:1658" && candidate.friendly_name.toUpperCase() === "CANON DR-C225 USB" ? "Total Canon: leitura local experimental" : "Leitura não homologada"}</td>
                 </tr>)}</tbody>
               </table></div>}
@@ -678,7 +750,8 @@ export default function App() {
             <section className="panel">
               <div className="panel-title"><h2>Configuração atual</h2><span>Faixas definidas pelo administrador</span></div>
               <div className="config-rows">
-                <Info icon={Network} label="Endpoint da API" value={snapshot?.endpoint ?? "Não configurado"} />
+                <Info icon={Network} label="Comunicação com o servidor" value={snapshot?.communication_mode ?? "Não configurada"} />
+                <Info icon={Network} label="Destino das leituras" value={snapshot?.endpoint || "Não configurado"} />
                 <Info icon={Activity} label="Intervalo de coleta" value={snapshot?.interval_seconds ? snapshot.interval_seconds + " segundos" : "Não configurado"} />
                 <Info icon={Database} label="Capacidade da fila" value={snapshot?.queue_capacity ? `${snapshot.queue_capacity.toLocaleString("pt-BR")} amostras` : "Não configurado"} />
                 <Info icon={HardDrive} label="Orçamento JSON armazenado" value={snapshot?.payload_bytes_limit ? `${snapshot.payload_bytes_limit.toLocaleString("pt-BR")} bytes` : "Não configurado"} />

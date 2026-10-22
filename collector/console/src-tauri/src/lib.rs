@@ -3,9 +3,10 @@ use nexa_collector_core::{
     canon_drc225::{self, CanonDrc225Meter},
     candidate_review::{CandidateReview, ReviewAction},
     discovery::{self, DiscoveryCandidate},
+    reference_catalog::{self, ReferenceSearchResult},
     usb_devices::{self, UsbDeviceCandidate},
     recovery_guard::{RecoveryGuard, WatchdogSnapshot},
-    read_config, DeliveryDiagnostics, DiscoveryReport, DiscoverySchedule, Outbox, QuarantinedReading, SqliteFootprint,
+    read_config, CommunicationMode, DeliveryDiagnostics, DiscoveryReport, DiscoverySchedule, Outbox, QuarantinedReading, SqliteFootprint,
 };
 use serde::Serialize;
 use std::env;
@@ -27,6 +28,8 @@ struct PrinterInfo {
     printer_id: u64,
     ip: String,
     oid: String,
+    reference_model_id: Option<u64>,
+    auto_detect_reference: bool,
 }
 
 #[derive(Serialize)]
@@ -40,6 +43,7 @@ struct CollectorSnapshot {
     configured: bool,
     collector_id: Option<String>,
     endpoint: Option<String>,
+    communication_mode: Option<String>,
     interval_seconds: Option<u64>,
     authorized_subnets: Vec<String>,
     discovery_schedule: Option<DiscoverySchedule>,
@@ -71,6 +75,7 @@ fn get_snapshot() -> CollectorSnapshot {
         configured: false,
         collector_id: None,
         endpoint: None,
+        communication_mode: None,
         interval_seconds: None,
         authorized_subnets: Vec::new(),
         discovery_schedule: None,
@@ -109,7 +114,14 @@ fn get_snapshot() -> CollectorSnapshot {
             Ok(config) => {
                 snapshot.configured = true;
                 snapshot.collector_id = Some(config.collector_id.to_string());
-                snapshot.endpoint = Some(config.api_url);
+                snapshot.communication_mode = Some(match config.communication_mode {
+                    CommunicationMode::WebServices => "Internet (Web Services)",
+                    CommunicationMode::Email => "E-mail (SMTP + POP3)",
+                }.into());
+                snapshot.endpoint = Some(match &config.mail {
+                    Some(mail) => mail.recipient.clone(),
+                    None => config.api_url.clone(),
+                });
                 snapshot.interval_seconds = Some(config.interval_seconds);
                 snapshot.authorized_subnets = config.authorized_subnets.clone();
                 snapshot.discovery_schedule = Some(config.discovery_schedule.clone());
@@ -119,7 +131,11 @@ fn get_snapshot() -> CollectorSnapshot {
                 snapshot.printers = config.printers.into_iter().map(|p| PrinterInfo {
                     printer_id: p.printer_id,
                     ip: p.ip.to_string(),
-                    oid: p.marker_counter_oid.iter().map(u64::to_string).collect::<Vec<_>>().join("."),
+                    oid: if p.auto_detect_reference { "Detectado por SNMP".into() } else {
+                        p.effective_counter_oid().unwrap_or_default().iter().map(u64::to_string).collect::<Vec<_>>().join(".")
+                    },
+                    reference_model_id: p.reference_model_id,
+                    auto_detect_reference: p.auto_detect_reference,
                 }).collect();
                 snapshot.usb_scanners = config.usb_scanners.into_iter().map(|s| UsbScannerInfo {
                     printer_id: s.printer_id,
@@ -231,6 +247,11 @@ fn get_snapshot() -> CollectorSnapshot {
 }
 
 #[tauri::command]
+fn search_reference_models(query: String, interface: String) -> Result<ReferenceSearchResult, String> {
+    reference_catalog::search(&query, &interface, 100).map_err(str::to_owned)
+}
+
+#[tauri::command]
 async fn discover_local_printers() -> Result<Vec<DiscoveryCandidate>, String> {
     tauri::async_runtime::spawn_blocking(discovery::discover_local)
         .await.map_err(|_| "A busca local foi interrompida.".to_owned())?
@@ -332,7 +353,7 @@ async fn save_discovery_schedule(schedule: DiscoverySchedule) -> Result<(), Stri
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_snapshot, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate, save_discovery_schedule])
+        .invoke_handler(tauri::generate_handler![get_snapshot, search_reference_models, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate, save_discovery_schedule])
         .run(tauri::generate_context!())
         .expect("failed to start Nexa Collector Console");
 }

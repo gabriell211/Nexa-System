@@ -4,20 +4,52 @@
 Var NexaId
 Var NexaToken
 Var NexaApi
+Var NexaMode
 Var NexaProxy
+Var NexaProxyHost
+Var NexaProxyPort
+Var NexaUseProxy
 Var NexaProxyUser
 Var NexaProxyPassword
+Var NexaProxyDomain
+Var NexaMailAddress
+Var NexaMailPassword
+Var NexaMailRecipient
+Var NexaPop3Host
+Var NexaPop3Port
+Var NexaPop3Ssl
+Var NexaSmtpHost
+Var NexaSmtpPort
+Var NexaSmtpSsl
 Var NexaIdInput
 Var NexaTokenInput
 Var NexaApiInput
+Var NexaWebRadio
+Var NexaMailRadio
 Var NexaProxyInput
+Var NexaProxyPortInput
+Var NexaUseProxyInput
 Var NexaProxyUserInput
 Var NexaProxyPasswordInput
+Var NexaProxyDomainInput
+Var NexaMailAddressInput
+Var NexaMailPasswordInput
+Var NexaMailRecipientInput
+Var NexaPop3HostInput
+Var NexaPop3PortInput
+Var NexaPop3SslInput
+Var NexaSmtpHostInput
+Var NexaSmtpPortInput
+Var NexaSmtpSslInput
 
 ; Tauri includes hooks before its standard pages. Existing bindings and
 ; unattended installs skip this page; unattended provisioning uses environment
 ; variables inherited by the installer process, never command-line secrets.
 Page custom NexaProvisionPage NexaProvisionLeave
+Page custom NexaCommunicationPage NexaCommunicationLeave
+Page custom NexaProxyPage NexaProxyLeave
+Page custom NexaMailIncomingPage NexaMailIncomingLeave
+Page custom NexaMailOutgoingPage NexaMailOutgoingLeave
 
 Function NexaProvisionPage
   IfSilent 0 +2
@@ -29,8 +61,8 @@ Function NexaProvisionPage
   ${If} $0 == error
     Abort
   ${EndIf}
-  !insertmacro MUI_HEADER_TEXT "Vincular Collector" "Use o ID e a chave exibidos uma unica vez no portal administrativo."
-  ${NSD_CreateLabel} 0 0 100% 16u "Dados do cliente e da rede. O proxy e opcional."
+  !insertmacro MUI_HEADER_TEXT "Chave do cliente Nexa" "Use a chave exibida uma unica vez no portal administrativo."
+  ${NSD_CreateLabel} 0 0 100% 16u "Vincule este agente com o ID e a chave proprios do Nexa."
   Pop $0
   ${NSD_CreateLabel} 0 18u 100% 10u "ID do Collector"
   Pop $0
@@ -40,32 +72,12 @@ Function NexaProvisionPage
   Pop $0
   ${NSD_CreatePassword} 0 55u 100% 12u "$NexaToken"
   Pop $NexaTokenInput
-  ${NSD_CreateLabel} 0 70u 100% 10u "URL HTTPS da API Nexa"
-  Pop $0
-  ${NSD_CreateText} 0 81u 100% 12u "$NexaApi"
-  Pop $NexaApiInput
-  ${NSD_CreateLabel} 0 96u 100% 10u "Proxy HTTP/HTTPS (opcional, ex.: http://proxy:8080)"
-  Pop $0
-  ${NSD_CreateText} 0 107u 100% 12u "$NexaProxy"
-  Pop $NexaProxyInput
-  ${NSD_CreateLabel} 0 122u 100% 10u "Usuario do proxy (opcional)"
-  Pop $0
-  ${NSD_CreateText} 0 133u 100% 12u "$NexaProxyUser"
-  Pop $NexaProxyUserInput
-  ${NSD_CreateLabel} 0 148u 100% 10u "Senha do proxy (opcional)"
-  Pop $0
-  ${NSD_CreatePassword} 0 159u 100% 12u "$NexaProxyPassword"
-  Pop $NexaProxyPasswordInput
   nsDialogs::Show
 FunctionEnd
 
 Function NexaProvisionLeave
   ${NSD_GetText} $NexaIdInput $NexaId
   ${NSD_GetText} $NexaTokenInput $NexaToken
-  ${NSD_GetText} $NexaApiInput $NexaApi
-  ${NSD_GetText} $NexaProxyInput $NexaProxy
-  ${NSD_GetText} $NexaProxyUserInput $NexaProxyUser
-  ${NSD_GetText} $NexaProxyPasswordInput $NexaProxyPassword
   StrLen $0 $NexaId
   ${If} $0 != 36
     MessageBox MB_ICONSTOP|MB_OK "Informe o ID de 36 caracteres exibido no portal administrativo." /SD IDOK
@@ -76,19 +88,121 @@ Function NexaProvisionLeave
     MessageBox MB_ICONSTOP|MB_OK "Informe a chave de 64 caracteres exibida no portal administrativo." /SD IDOK
     Abort
   ${EndIf}
-  StrCpy $0 $NexaApi 8
-  ${If} $0 != "https://"
-    MessageBox MB_ICONSTOP|MB_OK "Informe a URL da API Nexa com HTTPS." /SD IDOK
+FunctionEnd
+
+Function NexaCommunicationPage
+  IfSilent 0 +2
+    Abort
+  IfFileExists "$COMMONPROGRAMDATA\NexaCollector\credentials\NEXA_COLLECTOR_TOKEN" 0 +2
+    Abort
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
     Abort
   ${EndIf}
-  ${If} $NexaProxy != ""
-    StrCpy $0 $NexaProxy 7
-    StrCpy $1 $NexaProxy 8
-    ${If} $0 != "http://"
-    ${AndIf} $1 != "https://"
-      MessageBox MB_ICONSTOP|MB_OK "O endereco do proxy deve comecar com http:// ou https://." /SD IDOK
+  !insertmacro MUI_HEADER_TEXT "Comunicacao com o servidor Nexa" "Selecione como o Collector enviara as leituras."
+  ${NSD_CreateRadioButton} 0 9u 100% 13u "Internet (Web Services)"
+  Pop $NexaWebRadio
+  ${NSD_CreateRadioButton} 0 27u 100% 13u "E-mail"
+  Pop $NexaMailRadio
+  ${If} $NexaMode == "email"
+    ${NSD_Check} $NexaMailRadio
+  ${Else}
+    ${NSD_Check} $NexaWebRadio
+  ${EndIf}
+  ${NSD_CreateCheckbox} 0 52u 100% 13u "Utilizar servidor proxy (somente Web Services)"
+  Pop $NexaUseProxyInput
+  ${If} $NexaUseProxy == "1"
+    ${NSD_Check} $NexaUseProxyInput
+  ${EndIf}
+  ${NSD_CreateLabel} 0 83u 100% 13u "URL HTTPS da API Nexa (necessaria para Web Services)"
+  Pop $0
+  ${NSD_CreateText} 0 100u 100% 13u "$NexaApi"
+  Pop $NexaApiInput
+  nsDialogs::Show
+FunctionEnd
+
+Function NexaCommunicationLeave
+  ${NSD_GetState} $NexaMailRadio $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $NexaMode "email"
+  ${Else}
+    StrCpy $NexaMode "web_services"
+  ${EndIf}
+  ${NSD_GetState} $NexaUseProxyInput $NexaUseProxy
+  ${NSD_GetText} $NexaApiInput $NexaApi
+  ${If} $NexaUseProxy != "1"
+    StrCpy $NexaProxy ""
+    StrCpy $NexaProxyUser ""
+    StrCpy $NexaProxyPassword ""
+    StrCpy $NexaProxyDomain ""
+  ${EndIf}
+  ${If} $NexaMode == "web_services"
+  ${OrIf} $NexaApi != ""
+    StrCpy $0 $NexaApi 8
+    ${If} $0 != "https://"
+      MessageBox MB_ICONSTOP|MB_OK "Informe a URL da API Nexa com HTTPS." /SD IDOK
       Abort
     ${EndIf}
+  ${EndIf}
+FunctionEnd
+
+Function NexaProxyPage
+  IfSilent 0 +2
+    Abort
+  ${If} $NexaMode == "email"
+    Abort
+  ${EndIf}
+  ${If} $NexaUseProxy != "1"
+    Abort
+  ${EndIf}
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+  !insertmacro MUI_HEADER_TEXT "Comunicacao com o servidor Nexa" "Internet (Web Services) e proxy."
+  ${NSD_CreateLabel} 0 3u 100% 13u "Servidor proxy (sem http://)"
+  Pop $0
+  ${NSD_CreateText} 0 19u 100% 13u "$NexaProxyHost"
+  Pop $NexaProxyInput
+  ${NSD_CreateLabel} 0 37u 100% 13u "Porta"
+  Pop $0
+  ${NSD_CreateText} 0 53u 30% 13u "$NexaProxyPort"
+  Pop $NexaProxyPortInput
+  ${NSD_CreateLabel} 0 71u 100% 13u "Usuario do proxy"
+  Pop $0
+  ${NSD_CreateText} 0 87u 100% 13u "$NexaProxyUser"
+  Pop $NexaProxyUserInput
+  ${NSD_CreateLabel} 0 105u 100% 13u "Senha do proxy"
+  Pop $0
+  ${NSD_CreatePassword} 0 121u 100% 13u "$NexaProxyPassword"
+  Pop $NexaProxyPasswordInput
+  ${NSD_CreateLabel} 0 139u 100% 13u "Dominio do usuario (opcional)"
+  Pop $0
+  ${NSD_CreateText} 0 155u 100% 13u "$NexaProxyDomain"
+  Pop $NexaProxyDomainInput
+  nsDialogs::Show
+FunctionEnd
+
+Function NexaProxyLeave
+  ${NSD_GetText} $NexaProxyInput $NexaProxyHost
+  ${NSD_GetText} $NexaProxyPortInput $NexaProxyPort
+  ${NSD_GetText} $NexaProxyUserInput $NexaProxyUser
+  ${NSD_GetText} $NexaProxyPasswordInput $NexaProxyPassword
+  ${NSD_GetText} $NexaProxyDomainInput $NexaProxyDomain
+  ${If} $NexaUseProxy == ${BST_CHECKED}
+    ${If} $NexaProxyHost == ""
+    ${OrIf} $NexaProxyPort == ""
+      MessageBox MB_ICONSTOP|MB_OK "Informe servidor e porta do proxy." /SD IDOK
+      Abort
+    ${EndIf}
+    StrCpy $NexaProxy "http://$NexaProxyHost:$NexaProxyPort"
+  ${Else}
+    StrCpy $NexaProxy ""
+    StrCpy $NexaProxyUser ""
+    StrCpy $NexaProxyPassword ""
+    StrCpy $NexaProxyDomain ""
   ${EndIf}
   ${If} $NexaProxyUser != ""
   ${OrIf} $NexaProxyPassword != ""
@@ -98,6 +212,107 @@ Function NexaProvisionLeave
       MessageBox MB_ICONSTOP|MB_OK "Para autenticar no proxy, informe URL, usuario e senha." /SD IDOK
       Abort
     ${EndIf}
+  ${EndIf}
+  ${If} $NexaProxyDomain != ""
+  ${AndIf} $NexaProxyUser == ""
+    MessageBox MB_ICONSTOP|MB_OK "Informe o usuario junto com o dominio do proxy." /SD IDOK
+    Abort
+  ${EndIf}
+FunctionEnd
+
+Function NexaMailIncomingPage
+  IfSilent 0 +2
+    Abort
+  ${If} $NexaMode != "email"
+    Abort
+  ${EndIf}
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+  !insertmacro MUI_HEADER_TEXT "E-mail: recebimento" "Caixa do agente Nexa para receber confirmacoes."
+  ${NSD_CreateLabel} 0 3u 100% 13u "Endereco de e-mail do agente"
+  Pop $0
+  ${NSD_CreateText} 0 19u 100% 13u "$NexaMailAddress"
+  Pop $NexaMailAddressInput
+  ${NSD_CreateLabel} 0 37u 100% 13u "Senha do e-mail (nao sera gravada no config.json)"
+  Pop $0
+  ${NSD_CreatePassword} 0 53u 100% 13u "$NexaMailPassword"
+  Pop $NexaMailPasswordInput
+  ${NSD_CreateLabel} 0 71u 100% 13u "Servidor POP3"
+  Pop $0
+  ${NSD_CreateText} 0 87u 100% 13u "$NexaPop3Host"
+  Pop $NexaPop3HostInput
+  ${NSD_CreateLabel} 0 105u 100% 13u "Porta POP3"
+  Pop $0
+  ${NSD_CreateText} 0 121u 30% 13u "$NexaPop3Port"
+  Pop $NexaPop3PortInput
+  ${NSD_CreateCheckbox} 0 143u 100% 13u "SSL implicito (ex.: 995); desmarcado exige STLS"
+  Pop $NexaPop3SslInput
+  ${If} $NexaPop3Ssl != "0"
+    ${NSD_Check} $NexaPop3SslInput
+  ${EndIf}
+  nsDialogs::Show
+FunctionEnd
+
+Function NexaMailIncomingLeave
+  ${NSD_GetText} $NexaMailAddressInput $NexaMailAddress
+  ${NSD_GetText} $NexaMailPasswordInput $NexaMailPassword
+  ${NSD_GetText} $NexaPop3HostInput $NexaPop3Host
+  ${NSD_GetText} $NexaPop3PortInput $NexaPop3Port
+  ${NSD_GetState} $NexaPop3SslInput $NexaPop3Ssl
+  ${If} $NexaMailAddress == ""
+  ${OrIf} $NexaMailPassword == ""
+  ${OrIf} $NexaPop3Host == ""
+  ${OrIf} $NexaPop3Port == ""
+    MessageBox MB_ICONSTOP|MB_OK "Informe e-mail, senha, servidor e porta POP3." /SD IDOK
+    Abort
+  ${EndIf}
+FunctionEnd
+
+Function NexaMailOutgoingPage
+  IfSilent 0 +2
+    Abort
+  ${If} $NexaMode != "email"
+    Abort
+  ${EndIf}
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+  !insertmacro MUI_HEADER_TEXT "E-mail: envio" "Destino das leituras e servidor SMTP do agente."
+  ${NSD_CreateLabel} 0 3u 100% 13u "E-mail de entrada do servidor Nexa"
+  Pop $0
+  ${NSD_CreateText} 0 19u 100% 13u "$NexaMailRecipient"
+  Pop $NexaMailRecipientInput
+  ${NSD_CreateLabel} 0 37u 100% 13u "Servidor SMTP"
+  Pop $0
+  ${NSD_CreateText} 0 53u 100% 13u "$NexaSmtpHost"
+  Pop $NexaSmtpHostInput
+  ${NSD_CreateLabel} 0 71u 100% 13u "Porta SMTP"
+  Pop $0
+  ${NSD_CreateText} 0 87u 30% 13u "$NexaSmtpPort"
+  Pop $NexaSmtpPortInput
+  ${NSD_CreateCheckbox} 0 111u 100% 13u "SSL implicito (ex.: 465); desmarcado exige STARTTLS"
+  Pop $NexaSmtpSslInput
+  ${If} $NexaSmtpSsl != "0"
+    ${NSD_Check} $NexaSmtpSslInput
+  ${EndIf}
+  nsDialogs::Show
+FunctionEnd
+
+Function NexaMailOutgoingLeave
+  ${NSD_GetText} $NexaMailRecipientInput $NexaMailRecipient
+  ${NSD_GetText} $NexaSmtpHostInput $NexaSmtpHost
+  ${NSD_GetText} $NexaSmtpPortInput $NexaSmtpPort
+  ${NSD_GetState} $NexaSmtpSslInput $NexaSmtpSsl
+  ${If} $NexaMailRecipient == ""
+  ${OrIf} $NexaSmtpHost == ""
+  ${OrIf} $NexaSmtpPort == ""
+    MessageBox MB_ICONSTOP|MB_OK "Informe destino Nexa, servidor e porta SMTP." /SD IDOK
+    Abort
   ${EndIf}
 FunctionEnd
 
@@ -195,15 +410,42 @@ FunctionEnd
     ReadEnvStr $NexaProxy NEXA_INSTALL_PROXY_URL
     ReadEnvStr $NexaProxyUser NEXA_INSTALL_PROXY_USERNAME
     ReadEnvStr $NexaProxyPassword NEXA_INSTALL_PROXY_PASSWORD
+    ReadEnvStr $NexaProxyDomain NEXA_INSTALL_PROXY_DOMAIN
+    ReadEnvStr $NexaMode NEXA_INSTALL_COMMUNICATION_MODE
+    ReadEnvStr $NexaMailAddress NEXA_INSTALL_MAIL_ADDRESS
+    ReadEnvStr $NexaMailPassword NEXA_INSTALL_MAIL_PASSWORD
+    ReadEnvStr $NexaMailRecipient NEXA_INSTALL_MAIL_RECIPIENT
+    ReadEnvStr $NexaPop3Host NEXA_INSTALL_POP3_HOST
+    ReadEnvStr $NexaPop3Port NEXA_INSTALL_POP3_PORT
+    ReadEnvStr $NexaPop3Ssl NEXA_INSTALL_POP3_SSL
+    ReadEnvStr $NexaSmtpHost NEXA_INSTALL_SMTP_HOST
+    ReadEnvStr $NexaSmtpPort NEXA_INSTALL_SMTP_PORT
+    ReadEnvStr $NexaSmtpSsl NEXA_INSTALL_SMTP_SSL
   nexa_write_request:
+    ${If} $NexaMode == "email"
+      StrCpy $NexaProxy ""
+      StrCpy $NexaProxyUser ""
+      StrCpy $NexaProxyPassword ""
+      StrCpy $NexaProxyDomain ""
+    ${Else}
+      StrCpy $NexaMailAddress ""
+      StrCpy $NexaMailPassword ""
+      StrCpy $NexaMailRecipient ""
+      StrCpy $NexaPop3Host ""
+      StrCpy $NexaPop3Port ""
+      StrCpy $NexaPop3Ssl ""
+      StrCpy $NexaSmtpHost ""
+      StrCpy $NexaSmtpPort ""
+      StrCpy $NexaSmtpSsl ""
+    ${EndIf}
     FileOpen $9 "$COMMONPROGRAMDATA\NexaCollector\credentials\install-request.utf16" w
     IfErrors nexa_request_failed
-    FileWriteUTF16LE /BOM $9 "$NexaId$\r$\n$NexaToken$\r$\n$NexaApi$\r$\n$NexaProxy$\r$\n$NexaProxyUser$\r$\n$NexaProxyPassword$\r$\n"
+    FileWriteUTF16LE /BOM $9 "$NexaId$\r$\n$NexaToken$\r$\n$NexaApi$\r$\n$NexaProxy$\r$\n$NexaProxyUser$\r$\n$NexaProxyPassword$\r$\n$NexaMode$\r$\n$NexaProxyDomain$\r$\n$NexaMailAddress$\r$\n$NexaMailPassword$\r$\n$NexaMailRecipient$\r$\n$NexaPop3Host$\r$\n$NexaPop3Port$\r$\n$NexaPop3Ssl$\r$\n$NexaSmtpHost$\r$\n$NexaSmtpPort$\r$\n$NexaSmtpSsl$\r$\n"
     IfErrors nexa_request_failed_close
     FileClose $9
     ExecWait '"$INSTDIR\nexa-collector-daemon.exe" --provision-windows' $0
     ${If} $0 != "0"
-      MessageBox MB_ICONSTOP|MB_OK "Falha ao validar o ID, a chave, a URL ou o proxy. Revise os dados no portal e execute o instalador novamente." /SD IDOK
+      MessageBox MB_ICONSTOP|MB_OK "Falha ao validar os dados de vinculacao ou comunicacao. Revise os campos e execute o instalador novamente." /SD IDOK
       SetErrorLevel 22
       !insertmacro NEXA_DIAGNOSTIC 22
       IfSilent 0 +2
