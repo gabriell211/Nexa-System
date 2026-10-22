@@ -220,7 +220,7 @@ mod tests {
         drop(outbox);
 
         let stopping = Arc::new(AtomicBool::new(false));
-        let handle = start(&queue, config.clone(), key.clone(), Arc::clone(&stopping)).unwrap();
+        let handle = start(&queue, config.clone(), key.clone(), None, Arc::clone(&stopping)).unwrap();
         let socket = socket_path(&queue);
         assert_eq!(fs::metadata(&socket).unwrap().permissions().mode() & 0o777, 0o600);
         submit(&queue, ip, ReviewAction::Save).unwrap();
@@ -255,7 +255,7 @@ mod tests {
         drop(store);
 
         let stop = Arc::new(AtomicBool::new(false));
-        let server = start(&queue, cfg, key, Arc::clone(&stop)).unwrap();
+        let server = start(&queue, cfg, key, None, Arc::clone(&stop)).unwrap();
         let mut client = UnixStream::connect(socket_path(&queue)).unwrap();
         client.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
 
@@ -296,7 +296,7 @@ mod tests {
         ).unwrap();
         drop(store);
         let stop = Arc::new(AtomicBool::new(false));
-        let server = start(&queue, cfg.clone(), key.clone(), Arc::clone(&stop)).unwrap();
+        let server = start(&queue, cfg.clone(), key.clone(), None, Arc::clone(&stop)).unwrap();
         let desired = DiscoverySchedule {
             enabled: true, interval_hours: 6, cidrs: vec!["10.20.1.0/24".into()],
         };
