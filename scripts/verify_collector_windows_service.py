@@ -55,6 +55,15 @@ assert 'tauri_build::WindowsAttributes::new().app_manifest(' in build
 assert '#[cfg(windows)]' in build and '#[cfg(not(windows))]' in build
 
 installer = (root / "collector/console/src-tauri/windows/installer-hooks.nsh").read_text(encoding="utf-8")
+# Missing optional ReadEnvStr values must not contaminate request I/O checks.
+request_writer = installer.split("nexa_write_request:", 1)[1].split("nexa_provisioned:", 1)[0]
+assert re.search(
+    r'ClearErrors\s+FileOpen \$9 "\$COMMONPROGRAMDATA\\NexaCollector\\credentials\\install-request\.utf16" w\s+IfErrors nexa_request_open_failed\s+ClearErrors\s+FileWriteUTF16LE /BOM',
+    request_writer,
+), "File I/O checks must clear errors left by optional environment lookups"
+assert "IfErrors nexa_request_write_failed" in request_writer
+assert 'Delete "$COMMONPROGRAMDATA\NexaCollector\credentials\install-request.utf16"' in request_writer
+assert "SetErrorLevel 30" in request_writer
 message_boxes = [line for line in installer.splitlines() if line.lstrip().startswith("MessageBox ")]
 assert message_boxes and all(" /SD IDOK" in line for line in message_boxes), "Silent install must never wait for a dialog"
 hooks = installer.split("!macro NSIS_HOOK_PREINSTALL", 1)[1]

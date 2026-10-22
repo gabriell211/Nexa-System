@@ -438,10 +438,14 @@ FunctionEnd
       StrCpy $NexaSmtpPort ""
       StrCpy $NexaSmtpSsl ""
     ${EndIf}
+    ; ReadEnvStr sets errors when optional environment variables are absent.
+    ; Reset the flag so only the following I/O operation can fail the install.
+    ClearErrors
     FileOpen $9 "$COMMONPROGRAMDATA\NexaCollector\credentials\install-request.utf16" w
-    IfErrors nexa_request_failed
+    IfErrors nexa_request_open_failed
+    ClearErrors
     FileWriteUTF16LE /BOM $9 "$NexaId$\r$\n$NexaToken$\r$\n$NexaApi$\r$\n$NexaProxy$\r$\n$NexaProxyUser$\r$\n$NexaProxyPassword$\r$\n$NexaMode$\r$\n$NexaProxyDomain$\r$\n$NexaMailAddress$\r$\n$NexaMailPassword$\r$\n$NexaMailRecipient$\r$\n$NexaPop3Host$\r$\n$NexaPop3Port$\r$\n$NexaPop3Ssl$\r$\n$NexaSmtpHost$\r$\n$NexaSmtpPort$\r$\n$NexaSmtpSsl$\r$\n"
-    IfErrors nexa_request_failed_close
+    IfErrors nexa_request_write_failed
     FileClose $9
     ExecWait '"$INSTDIR\nexa-collector-daemon.exe" --provision-windows' $0
     ${If} $0 != "0"
@@ -453,9 +457,17 @@ FunctionEnd
       Abort "Nexa Collector provisioning failed"
     ${EndIf}
     Goto nexa_provisioned
-  nexa_request_failed_close:
+  nexa_request_write_failed:
     FileClose $9
-  nexa_request_failed:
+    ; Erase any partially written request containing credentials.
+    Delete "$COMMONPROGRAMDATA\NexaCollector\credentials\install-request.utf16"
+    MessageBox MB_ICONSTOP|MB_OK "Falha na gravacao dos dados protegidos do Collector." /SD IDOK
+    SetErrorLevel 30
+    !insertmacro NEXA_DIAGNOSTIC 30
+    IfSilent 0 +2
+      Quit
+    Abort "Nexa Collector protected request write failure"
+  nexa_request_open_failed:
     MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel gravar os dados protegidos do Collector." /SD IDOK
     SetErrorLevel 23
     !insertmacro NEXA_DIAGNOSTIC 23
