@@ -98,7 +98,7 @@ pub fn start(
                             reason: Some("Erro no canal local.".into()),
                         }
                     } else if authorized_peer(&stream) {
-                        handle(&mut stream, &queue, &cfg, &key, community.as_deref())
+                        handle(&mut stream, &queue, &cfg, &key, community.as_ref().map(|secret| secret.as_str()))
                     } else {
                         ControlResponse {
                             accepted: false,
