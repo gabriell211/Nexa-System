@@ -2,6 +2,7 @@
 //! Windows control is disabled by default pending field validation.
 //! Messages contain no credentials and are never forwarded to the cloud.
 use crate::candidate_review::ReviewAction;
+use crate::fleet::FleetCommand;
 use crate::DiscoverySchedule;
 use serde::{Deserialize, Serialize};
 use std::{net::Ipv4Addr, path::{Path, PathBuf}};
@@ -19,6 +20,11 @@ pub fn submit_windows(ip: Ipv4Addr, action: ReviewAction) -> Result<(), String> 
     let payload = serde_json::to_vec(&ControlRequest {
         version: PROTOCOL_VERSION, ip, action,
     }).map_err(|_| "Requisição local inválida.".to_owned())?;
+    submit_windows_payload(&payload)
+}
+
+#[cfg(windows)]
+fn submit_windows_payload(payload: &[u8]) -> Result<(), String> {
     if payload.len() as u64 > MAX_MESSAGE_BYTES {
         return Err("Requisição local excede o limite.".into());
     }
@@ -70,6 +76,13 @@ pub struct ScheduleControlRequest {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct FleetControlRequest {
+    pub version: u8,
+    pub command: FleetCommand,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ControlResponse {
     pub accepted: bool,
     pub reason: Option<String>,
@@ -92,6 +105,22 @@ pub fn submit(
         version: PROTOCOL_VERSION, ip, action,
     }).map_err(|_| "Requisição local inválida.".to_owned())?;
     submit_payload(queue_path, &payload)
+}
+
+#[cfg(unix)]
+pub fn submit_fleet(queue_path: &Path, command: FleetCommand) -> Result<(), String> {
+    let payload = serde_json::to_vec(&FleetControlRequest {
+        version: PROTOCOL_VERSION, command,
+    }).map_err(|_| "Comando de impressora inválido.".to_owned())?;
+    submit_payload(queue_path, &payload)
+}
+
+#[cfg(windows)]
+pub fn submit_windows_fleet(command: FleetCommand) -> Result<(), String> {
+    let payload = serde_json::to_vec(&FleetControlRequest {
+        version: PROTOCOL_VERSION, command,
+    }).map_err(|_| "Comando de impressora inválido.".to_owned())?;
+    submit_windows_payload(&payload)
 }
 
 #[cfg(unix)]
