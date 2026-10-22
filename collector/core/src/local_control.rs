@@ -83,6 +83,13 @@ pub struct FleetControlRequest {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct BroadcastControlRequest {
+    pub version: u8,
+    pub cidrs: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct ControlResponse {
     pub accepted: bool,
     pub reason: Option<String>,
@@ -124,6 +131,22 @@ pub fn submit_windows_fleet(command: FleetCommand) -> Result<(), String> {
 }
 
 #[cfg(unix)]
+pub fn submit_broadcast(queue: &Path, cidrs: Vec<String>) -> Result<(), String> {
+    let payload = serde_json::to_vec(&BroadcastControlRequest {
+        version: PROTOCOL_VERSION, cidrs,
+    }).map_err(|_| "Busca broadcast inválida.".to_owned())?;
+    submit_payload(queue, &payload)
+}
+
+#[cfg(windows)]
+pub fn submit_windows_broadcast(cidrs: Vec<String>) -> Result<(), String> {
+    let payload = serde_json::to_vec(&BroadcastControlRequest {
+        version: PROTOCOL_VERSION, cidrs,
+    }).map_err(|_| "Busca broadcast inválida.".to_owned())?;
+    submit_windows_payload(&payload)
+}
+
+#[cfg(unix)]
 pub fn submit_schedule(queue_path: &Path, schedule: DiscoverySchedule) -> Result<(), String> {
     let payload = serde_json::to_vec(&ScheduleControlRequest {
         version: PROTOCOL_VERSION, schedule,
@@ -136,7 +159,7 @@ fn submit_payload(queue_path: &Path, payload: &[u8]) -> Result<(), String> {
     use std::{io::{Read, Write}, os::unix::net::UnixStream, time::Duration};
     let mut stream = UnixStream::connect(socket_path(queue_path))
         .map_err(|_| "Canal de controle indisponível ou acesso negado. Execute com conta autorizada.".to_owned())?;
-    stream.set_read_timeout(Some(Duration::from_secs(8)))
+    stream.set_read_timeout(Some(Duration::from_secs(24)))
         .map_err(|_| "Não foi possível configurar o timeout do canal local.".to_owned())?;
     stream.set_write_timeout(Some(Duration::from_secs(3)))
         .map_err(|_| "Não foi possível configurar o timeout do canal local.".to_owned())?;
