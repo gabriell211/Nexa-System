@@ -62,7 +62,7 @@ assert re.search(
     request_writer,
 ), "File I/O checks must clear errors left by optional environment lookups"
 assert "IfErrors nexa_request_write_failed" in request_writer
-assert 'Delete "$COMMONPROGRAMDATA\NexaCollector\credentials\install-request.utf16"' in request_writer
+assert r'Delete "$COMMONPROGRAMDATA\NexaCollector\credentials\install-request.utf16"' in request_writer
 assert "SetErrorLevel 30" in request_writer
 message_boxes = [line for line in installer.splitlines() if line.lstrip().startswith("MessageBox ")]
 assert message_boxes and all(" /SD IDOK" in line for line in message_boxes), "Silent install must never wait for a dialog"
