@@ -13,6 +13,7 @@ use zeroize::Zeroizing;
 mod progress_watchdog;
 mod recovery_guard;
 mod mail_transport;
+mod printer_control;
 
 #[cfg(unix)]
 mod local_control;
@@ -284,12 +285,11 @@ fn run_application(
         Some(load_secret("NEXA_MAIL_PASSWORD", windows_service_mode, macos_launchd_mode)?
             .ok_or("email mode requires a protected mailbox password")?)
     } else { None };
-    let snmp_community = if cfg.printers.is_empty() {
-        None
-    } else {
-        load_secret("NEXA_SNMP_COMMUNITY", windows_service_mode, macos_launchd_mode)?
-    };
-    if supervised_mode && (token.is_none() || (!cfg.printers.is_empty() && snmp_community.is_none())) {
+    // Managed printers may be added while the service is running.
+    // Load the protected credential even when the initial JSON has no printers.
+    let snmp_community = load_secret("NEXA_SNMP_COMMUNITY", windows_service_mode, macos_launchd_mode)?;
+    let has_active_snmp = outbox.printer_fleet(&cfg)?.iter().any(|item| item.monitored);
+    if supervised_mode && (token.is_none() || (has_active_snmp && snmp_community.is_none())) {
         return Err("supervised collector requires token and configured SNMP credentials".into());
     }
     // Separate progress checkpoints: the heartbeat worker can no longer be
@@ -402,7 +402,7 @@ fn run_application(
         match local_control::start(
             Path::new(&args[2]), cfg.clone(),
             db_key.clone().ok_or("encrypted service storage required for local control")?,
-            Arc::clone(&shutdown),
+            snmp_community.clone(), Arc::clone(&shutdown),
         ) {
             Ok(handle) => Some(handle),
             Err(error) => {
@@ -414,13 +414,11 @@ fn run_application(
         None
     };
     #[cfg(windows)]
-    let _windows_control = if windows_service_mode && !once
-        && env::var("NEXA_EXPERIMENTAL_WINDOWS_CONTROL").as_deref() == Ok("1")
-    {
+    let _windows_control = if windows_service_mode && !once {
         match windows_local_control::start(
             Path::new(&args[2]).to_path_buf(), cfg.clone(),
             db_key.clone().ok_or("Windows protected database key required")?,
-            Arc::clone(&shutdown),
+            snmp_community.clone(), Arc::clone(&shutdown),
         ) {
             Ok(handle) => Some(handle),
             Err(error) => {
@@ -510,7 +508,17 @@ fn run_application(
             } else if outbox.at_capacity()? {
                 eprintln!("Outbox count/payload budget saturated; new SNMP samples deferred");
             } else if let Some(ref community) = snmp_community {
-                for printer in &cfg.printers {
+                // Read committed service-owned roster each collection interval;
+                // an invalid/tampered override must never fall back to old devices.
+                let fleet = match outbox.printer_fleet(&cfg) {
+                    Ok(records) => records,
+                    Err(_) => {
+                        eprintln!("Operational printer roster invalid: SNMP polling disabled until repaired");
+                        Vec::new()
+                    }
+                };
+                for entry in fleet.iter().filter(|entry| entry.monitored) {
+                    let printer = &entry.config;
                     if shutdown.load(Ordering::Relaxed) { break; }
                     if outbox.at_capacity()? {
                         eprintln!("Outbox full; remaining printers deferred");
