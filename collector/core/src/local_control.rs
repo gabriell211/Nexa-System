@@ -15,8 +15,6 @@ pub const WINDOWS_PIPE_NAME: &str = r"\\.\pipe\NexaCollector.Control.v1";
 
 #[cfg(windows)]
 pub fn submit_windows(ip: Ipv4Addr, action: ReviewAction) -> Result<(), String> {
-    use windows_sys::Win32::System::Pipes::CallNamedPipeW;
-    let name: Vec<u16> = WINDOWS_PIPE_NAME.encode_utf16().chain(Some(0)).collect();
     let payload = serde_json::to_vec(&ControlRequest {
         version: PROTOCOL_VERSION, ip, action,
     }).map_err(|_| "Requisição local inválida.".to_owned())?;
@@ -25,6 +23,8 @@ pub fn submit_windows(ip: Ipv4Addr, action: ReviewAction) -> Result<(), String> 
 
 #[cfg(windows)]
 fn submit_windows_payload(payload: &[u8]) -> Result<(), String> {
+    use windows_sys::Win32::System::Pipes::CallNamedPipeW;
+    let name: Vec<u16> = WINDOWS_PIPE_NAME.encode_utf16().chain(Some(0)).collect();
     if payload.len() as u64 > MAX_MESSAGE_BYTES {
         return Err("Requisição local excede o limite.".into());
     }
@@ -37,7 +37,7 @@ fn submit_windows_payload(payload: &[u8]) -> Result<(), String> {
             name.as_ptr(),
             payload.as_ptr() as _, payload.len() as u32,
             reply.as_mut_ptr() as _, reply.len() as u32,
-            &mut read, 5000,
+            &mut read, 30_000,
         )
     };
     if ok == 0 {
