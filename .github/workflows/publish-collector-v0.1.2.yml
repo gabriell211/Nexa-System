@@ -20,6 +20,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
       && github.event.workflow_run.event == 'push'
       && github.event.workflow_run.head_branch == 'main'
+      && github.event.workflow_run.head_sha == '93d7055b8b72e8fe095109d4660728a304e82812'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
