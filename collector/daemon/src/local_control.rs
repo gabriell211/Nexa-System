@@ -2,7 +2,7 @@
 //! file and is reachable only through a mode-0700 service-owned directory
 //! and a mode-0600 Unix socket. Never bind TCP or expose a browser endpoint.
 use nexa_collector_core::{
-    local_control::{socket_path, ControlRequest, ScheduleControlRequest, FleetControlRequest, ControlResponse, MAX_MESSAGE_BYTES, PROTOCOL_VERSION},
+    local_control::{socket_path, ControlRequest, ScheduleControlRequest, FleetControlRequest, BroadcastControlRequest, ControlResponse, MAX_MESSAGE_BYTES, PROTOCOL_VERSION},
     CollectorConfig, Outbox,
 };
 use std::{
@@ -142,12 +142,14 @@ fn handle(
     let review = serde_json::from_slice::<ControlRequest>(&input).ok();
     let schedule = serde_json::from_slice::<ScheduleControlRequest>(&input).ok();
     let fleet = serde_json::from_slice::<FleetControlRequest>(&input).ok();
-    if usize::from(review.is_some()) + usize::from(schedule.is_some()) + usize::from(fleet.is_some()) != 1 {
+    let broadcast = serde_json::from_slice::<BroadcastControlRequest>(&input).ok();
+    if usize::from(review.is_some()) + usize::from(schedule.is_some()) + usize::from(fleet.is_some()) + usize::from(broadcast.is_some()) != 1 {
         return denied("Comando local inválido.");
     }
     if review.as_ref().map(|r| r.version)
         .or_else(|| schedule.as_ref().map(|r| r.version))
-        .or_else(|| fleet.as_ref().map(|r| r.version)) != Some(PROTOCOL_VERSION)
+        .or_else(|| fleet.as_ref().map(|r| r.version))
+        .or_else(|| broadcast.as_ref().map(|r| r.version)) != Some(PROTOCOL_VERSION)
     {
         return denied("Versão do protocolo não suportada.");
     }
@@ -171,6 +173,11 @@ fn handle(
         }
     } else if let Some(request) = fleet {
         match crate::printer_control::execute(&mut outbox, cfg, &request.command, community) {
+            Ok(_) => ControlResponse { accepted: true, reason: None },
+            Err(reason) => ControlResponse { accepted: false, reason: Some(reason) },
+        }
+    } else if let Some(request) = broadcast {
+        match crate::broadcast_control::execute(&outbox, cfg, &request.cidrs, community) {
             Ok(_) => ControlResponse { accepted: true, reason: None },
             Err(reason) => ControlResponse { accepted: false, reason: Some(reason) },
         }
