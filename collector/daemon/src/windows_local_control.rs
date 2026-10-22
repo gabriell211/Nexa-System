@@ -152,7 +152,7 @@ pub fn start(
     Ok(thread::spawn(move || {
         let mut pipe = first;
         while !shutdown.load(Ordering::Relaxed) {
-            handle_connection(pipe.0, &config, &queue, &key, community.as_deref());
+            handle_connection(pipe.0, &config, &queue, &key, community.as_ref().map(|secret| secret.as_str()));
             drop(pipe);
             if shutdown.load(Ordering::Relaxed) { break; }
             match create_pipe() {
