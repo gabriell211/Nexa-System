@@ -249,6 +249,9 @@ fn get_snapshot() -> CollectorSnapshot {
                             Ok(fleet) => {
                                 snapshot.printers = fleet.into_iter().map(|entry: FleetPrinter| {
                                     let p = entry.config;
+                                    let catalog_approved = catalog_auto_supported(
+                                        &p, entry.manufacturer.as_deref(), entry.model.as_deref(),
+                                    );
                                     PrinterInfo {
                                         printer_id: p.printer_id,
                                         ip: p.ip.to_string(),
@@ -261,9 +264,7 @@ fn get_snapshot() -> CollectorSnapshot {
                                         serial: entry.serial, mac: entry.mac,
                                         reference_model_id: p.reference_model_id,
                                         auto_detect_reference: p.auto_detect_reference,
-                                        catalog_auto_supported: catalog_auto_supported(
-                                            &p, entry.manufacturer.as_deref(), entry.model.as_deref(),
-                                        ),
+                                        catalog_auto_supported: catalog_approved,
                                     }
                                 }).collect();
                             }
