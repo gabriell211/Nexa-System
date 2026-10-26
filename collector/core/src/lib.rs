@@ -2676,7 +2676,8 @@ mod tests {
                 print_ports: vec![9100],
                 http_server: Some("Printer HTTP".into()),
                 escl_scanner: false,
-            }],
+                            reference: None,
+}],
         };
         {
             let store = Outbox::open_bounded(&path, 10).unwrap();
@@ -2707,7 +2708,8 @@ mod tests {
                     print_ports: vec![9100],
                     http_server: Some("Printer service".into()),
                     escl_scanner: false,
-                }],
+                                    reference: None,
+}],
             }).unwrap();
             assert!(store.review_candidate("192.168.20.45".parse().unwrap(),
                 candidate_review::ReviewAction::Save).is_err());
@@ -2743,7 +2745,8 @@ mod tests {
             observed_candidates: 1,
             candidates: vec![discovery::DiscoveryCandidate {
                 ip: address, print_ports: vec![631], http_server: None, escl_scanner: false,
-            }],
+                            reference: None,
+}],
         };
         store.save_discovery_report(&report).unwrap();
         assert!(store.review_candidate(address, candidate_review::ReviewAction::Save).is_err());
@@ -3128,7 +3131,8 @@ mod broadcast_persistence_tests {
             candidates: vec![discovery::DiscoveryCandidate {
                 ip: "192.168.1.10".parse().unwrap(),
                 print_ports: vec![9100], http_server: None, escl_scanner: false,
-            }],
+                            reference: None,
+}],
             ..DiscoveryReport::default()
         };
         store.save_discovery_report(&scheduled).unwrap();
@@ -3138,7 +3142,8 @@ mod broadcast_persistence_tests {
             candidates: vec![discovery::DiscoveryCandidate {
                 ip: "192.168.1.20".parse().unwrap(),
                 print_ports: vec![], http_server: None, escl_scanner: false,
-            }],
+                            reference: None,
+}],
             ..DiscoveryReport::default()
         };
         store.save_broadcast_report(&broadcast).unwrap();
