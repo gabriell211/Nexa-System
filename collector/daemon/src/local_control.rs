@@ -222,7 +222,8 @@ mod tests {
             observed_candidates: 1,
             candidates: vec![DiscoveryCandidate {
                 ip, print_ports: vec![9100], http_server: None, escl_scanner: false,
-            }],
+                            reference: None,
+}],
         }).unwrap();
         drop(outbox);
 

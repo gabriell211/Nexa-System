@@ -1,4 +1,4 @@
-name: Publish Nexa Collector v0.1.4
+name: Publish Nexa Collector v0.1.5
 
 on:
   workflow_run:
@@ -10,12 +10,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: nexa-collector-v0.1.4-publish
+  group: nexa-collector-v0.1.5-publish
   cancel-in-progress: false
 
 jobs:
   publish:
-    name: Release v0.1.4 verified installer packages
+    name: Release v0.1.5 verified installer packages
     if: >-
       github.event.workflow_run.conclusion == 'success'
       && github.event.workflow_run.event == 'push'
@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 20
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v0.1.4
+      RELEASE_TAG: v0.1.5
       SOURCE_RUN: ${{ github.event.workflow_run.id }}
       SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
@@ -38,8 +38,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(jq -r .version collector/console/src-tauri/tauri.conf.json)" = "0.1.4"
-          grep -Fxq 'version = "0.1.4"' collector/Cargo.toml
+          test "$(jq -r .version collector/console/src-tauri/tauri.conf.json)" = "0.1.5"
+          grep -Fxq 'version = "0.1.5"' collector/Cargo.toml
           run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN")"
           test "$(jq -r .name <<<"$run")" = "Nexa validation"
           test "$(jq -r .conclusion <<<"$run")" = success
@@ -74,11 +74,11 @@ jobs:
             cp -- "$file" "release/$dest"
             test "$(stat -c%s "release/$dest")" -gt 102400
           }
-          stage_one incoming/windows '*-setup.exe' 'Nexa.Collector_0.1.4_x64-setup.exe'
-          stage_one incoming/linux '*.deb' 'Nexa-Collector-0.1.4-linux-x64.deb'
-          stage_one incoming/linux '*.rpm' 'Nexa-Collector-0.1.4-linux-x64.rpm'
-          stage_one incoming/intel '*.pkg' 'NexaCollector-0.1.4-x86_64-unsigned.pkg'
-          stage_one incoming/arm '*.pkg' 'NexaCollector-0.1.4-arm64-unsigned.pkg'
+          stage_one incoming/windows '*-setup.exe' 'Nexa.Collector_0.1.5_x64-setup.exe'
+          stage_one incoming/linux '*.deb' 'Nexa-Collector-0.1.5-linux-x64.deb'
+          stage_one incoming/linux '*.rpm' 'Nexa-Collector-0.1.5-linux-x64.rpm'
+          stage_one incoming/intel '*.pkg' 'NexaCollector-0.1.5-x86_64-unsigned.pkg'
+          stage_one incoming/arm '*.pkg' 'NexaCollector-0.1.5-arm64-unsigned.pkg'
           (cd release && sha256sum -- *.exe *.deb *.rpm *.pkg > SHA256SUMS.txt)
           test "$(wc -l < release/SHA256SUMS.txt)" -eq 5
 
@@ -86,13 +86,13 @@ jobs:
         shell: bash
         run: |
           cat > RELEASE_NOTES.md <<'NOTES'
-          ## Nexa Collector v0.1.4 — gestão de impressoras e descoberta assistida
+          ## Nexa Collector v0.1.5 — reconhecimento automático pelo catálogo, sem digitar OID
 
-          **Atualização sobre v0.1.3:** incorpora o gerenciamento local de impressoras (Adicionar, Monitorar, Desativar e Remover), validação de IP/CIDR e OID com acesso administrativo, inspeção SNMP de equipamentos vinculados, busca rápida por broadcast SNMPv2c em redes autorizadas e melhorias na descoberta USB e na interface do Console. Inclui correções de concorrência e persistência dos resultados de descoberta.
+          **Atualização sobre v0.1.4:** o cadastro de impressoras de rede não solicita mais OID; a resolução utiliza automaticamente a identidade SNMP e o catálogo embarcado. As varreduras programadas e por broadcast enriquecem candidatos com fabricante, modelo e perfil de referência quando a resposta SNMP é inequívoca. Um modelo sem OID total único ou sem correspondência aparece como Não homologada para coleta automática. No cadastro, o agente consulta a identidade e registra o modelo reconhecido, sem ativar o monitoramento por conta própria. A detecção USB mantém a indicação de estado de referência por nome de dispositivo, mas leitura USB universal não está implementada.
 
           **Instaladores:** Windows x64 (NSIS Setup.exe), Linux x64 (DEB e RPM), macOS Intel x86_64 e Apple Silicon arm64 (PKG). Cinco pacotes nativos, acompanhados de SHA256SUMS.txt. CI verifica builds e testes Rust/React, empacotamento, instalações smoke e desinstalação Windows.
 
-          **Limitações:** prévia técnica NÃO assinada, NÃO homologada fisicamente em todos os modelos e NÃO pronta para faturamento por contadores sem homologação em campo. Descoberta não equivale a cadastro autorizado; Monitorar exige vínculo, OID e leitura SNMP real válidos. O Windows pode exigir elevação e vinculação prévia com credenciais protegidas. Controles administrativos experimentais dependem de permissões e não devem ser habilitados indiscriminadamente.
+          **Limitações:** prévia técnica NÃO assinada, NÃO homologada fisicamente em todos os modelos e NÃO pronta para faturamento por contadores sem homologação em campo. Descoberta não equivale a cadastro autorizado; Monitorar exige vínculo com equipamento do cliente e leitura SNMP real válida. O programa não solicita OID ao técnico. O Windows pode exigir elevação e vinculação prévia com credenciais protegidas. Controles administrativos experimentais dependem de permissões e não devem ser habilitados indiscriminadamente.
 
           **Instalação segura:** preserve os dados existentes em ProgramData/serviço ao atualizar. No Windows, desinstale a versão anterior antes de instalar a nova, conforme o procedimento atual de distribuição. Não desative SmartScreen/Gatekeeper nem compartilhe tokens de vinculação em chamados ou logs.
 
@@ -105,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" \
-            --target "$SOURCE_SHA" --title "Nexa Collector v0.1.4 — correção de provisionamento NSIS" \
+            --target "$SOURCE_SHA" --title "Nexa Collector v0.1.5 — detecção automática sem OID manual" \
             --notes-file RELEASE_NOTES.md --prerelease
           release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
           test "$(jq -r .draft <<<"$release")" = false

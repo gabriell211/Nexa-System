@@ -155,6 +155,7 @@ pub fn discover_broadcast(
     }
     Ok(found.into_iter().map(|ip| DiscoveryCandidate {
         ip, print_ports: Vec::new(), http_server: None, escl_scanner: false,
+        reference: None,
     }).collect())
 }
 

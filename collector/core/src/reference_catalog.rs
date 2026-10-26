@@ -152,6 +152,63 @@ pub fn unique_network_total_for_identity(observed: &[String]) -> Result<Vec<u64>
         .ok_or("reference total-counter OID is malformed")
 }
 
+/// Identify a referenced network model even when the source has no usable
+/// total-counter OID. Reference approval is not Nexa hardware certification.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct NetworkReferenceMatch {
+    pub manufacturer: String,
+    pub model: String,
+    pub reference_model_ids: Vec<u64>,
+    pub network_status: Option<ReferenceStatus>,
+    pub total_counter_oid: Option<String>,
+}
+
+/// Require matching manufacturer + model from live SNMP identity. Conflicting
+/// source rows or different model names are retained as unknown, never approved.
+pub fn network_reference_for_identity(observed: &[String]) -> Option<NetworkReferenceMatch> {
+    let mut matches = Vec::new();
+    for identity in observed {
+        let candidates = strongest_name_matches(std::slice::from_ref(identity));
+        matches.extend(candidates.into_iter().filter(|entry| {
+            observed.iter().any(|text|
+                folded_match_length(text, &entry.manufacturer, 2).is_some()
+            )
+        }));
+    }
+    matches.sort_by_key(|entry| entry.source_model_id);
+    matches.dedup_by_key(|entry| entry.source_model_id);
+    let first = *matches.first()?;
+    // Do not merge similarly named models from different vendors or versions.
+    if matches.iter().any(|entry| {
+        !entry.model.eq_ignore_ascii_case(&first.model)
+            || !entry.manufacturer.eq_ignore_ascii_case(&first.manufacturer)
+    }) {
+        return None;
+    }
+    let status = matches.iter().all(|entry| entry.network == first.network)
+        .then_some(first.network);
+    let unique_oid = if status == Some(ReferenceStatus::Approved) {
+        let oids: BTreeSet<&str> = matches.iter()
+            .filter_map(|entry| match entry.network_total_oid_candidates.as_slice() {
+                [only] => Some(only.as_str()),
+                _ => None,
+            }).collect();
+        (oids.len() == 1
+            && matches.iter().all(|entry| entry.network_total_oid_candidates.len() == 1))
+            .then(|| oids.into_iter().next().unwrap().to_owned())
+            .filter(|oid| crate::mib_registry::parse_oid(oid).is_some())
+    } else {
+        None
+    };
+    Some(NetworkReferenceMatch {
+        manufacturer: first.manufacturer.clone(),
+        model: first.model.clone(),
+        reference_model_ids: matches.into_iter().map(|entry| entry.source_model_id).collect(),
+        network_status: status,
+        total_counter_oid: unique_oid,
+    })
+}
+
 /// Returns only an unambiguous total-counter OID for a model approved for
 /// network monitoring in the source snapshot. The operator still binds the
 /// correct physical device and backend equipment ID in CollectorConfig.
@@ -289,6 +346,25 @@ mod tests {
         assert_eq!(search("", "network", 1).unwrap().total_matches, 1_898);
         assert_eq!(search("", "usb", 1).unwrap().total_matches, 920);
         assert!(search("", "all", 201).is_err());
+    }
+
+    #[test]
+    fn all_approved_network_models_are_detectable_without_inventing_meters() {
+        let epson = network_reference_for_identity(&["EPSON L6270 Series".into()]).unwrap();
+        assert_eq!(epson.reference_model_ids, vec![31_946]);
+        assert_eq!(epson.network_status, Some(ReferenceStatus::Approved));
+        assert!(epson.total_counter_oid.is_some());
+
+        let hp = network_reference_for_identity(&["HP OfficeJet 7740".into()]).unwrap();
+        assert_eq!(hp.network_status, Some(ReferenceStatus::Approved));
+        assert_eq!(hp.reference_model_ids, vec![31_215]);
+        assert_eq!(hp.total_counter_oid, None);
+
+        assert!(network_reference_for_identity(&["L6270 Series".into()]).is_none());
+        assert!(network_reference_for_identity(&["Unrecognized device".into()]).is_none());
+        assert!(network_reference_for_identity(&[
+            "EPSON L6270 Series".into(), "HP OfficeJet 7740".into(),
+        ]).is_none());
     }
 
     #[test]

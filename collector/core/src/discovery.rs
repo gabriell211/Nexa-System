@@ -30,6 +30,10 @@ pub struct DiscoveryCandidate {
     /// A read-only eSCL capability response identifies a scanner endpoint.
     /// It does not prove a successful scan or expose page counters.
     pub escl_scanner: bool,
+    /// Optional identification from protected read-only SNMP probes. Older
+    /// persisted reports lack this field and remain backwards compatible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<crate::reference_catalog::NetworkReferenceMatch>,
 }
 
 /// Clamp large interfaces to the host's own /24, and skip public, loopback and
@@ -185,6 +189,7 @@ fn probe_candidate(ip: Ipv4Addr, ports: &[u16]) -> Option<DiscoveryCandidate> {
         print_ports,
         http_server: http_server(ip),
         escl_scanner,
+        reference: None,
     })
 }
 
@@ -343,6 +348,14 @@ mod tests {
         assert!(
             local_scan_net("10.1.1.1".parse().unwrap(), "255.0.255.0".parse().unwrap()).is_none()
         );
+    }
+
+    #[test]
+    fn legacy_discovery_reports_without_catalog_identity_still_load() {
+        let original = r#"{"ip":"192.168.15.20","print_ports":[9100],"http_server":null,"escl_scanner":false}"#;
+        let parsed: DiscoveryCandidate = serde_json::from_str(original).unwrap();
+        assert!(parsed.reference.is_none());
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), original);
     }
 
     #[test]

@@ -237,6 +237,68 @@ fn column(session: &mut SyncSession, base: &'static str, name: &str) -> Result<V
         .take(ROW_LIMIT as usize).collect())
 }
 
+/// Identify a discovered private device against the complete installed
+/// reference catalog. No meter is read, no device is enrolled, and unresolved
+/// or conflicting models remain unrecognized.
+pub fn identify_reference_v2c(
+    ip: Ipv4Addr, allowed: &[String], community: &[u8],
+) -> Option<crate::reference_catalog::NetworkReferenceMatch> {
+    authorized_device(ip, allowed).ok()?;
+    if community.is_empty() { return None; }
+    let mut session = SyncSession::new_v2c(
+        SocketAddr::from((ip, 161)), community, Some(Duration::from_millis(500)), 0,
+    ).ok()?;
+    let mut names = Vec::new();
+    for arcs in [
+        &[1, 3, 6, 1, 2, 1, 43, 5, 1, 1, 16, 1][..], // prtGeneralPrinterName.1
+        &[1, 3, 6, 1, 2, 1, 1, 1, 0][..],           // sysDescr.0
+    ] {
+        if let Ok(oid) = Oid::from(arcs) {
+            if let Ok(mut response) = session.get(&oid) {
+                if let Some((_, Value::OctetString(bytes))) = response.varbinds.next() {
+                    let text = bounded_text(bytes);
+                    if !text.trim().is_empty() { names.push(text); }
+                }
+            }
+        }
+    }
+    crate::reference_catalog::network_reference_for_identity(&names)
+}
+
+/// Enrich bounded, authorized discoveries in parallel, never sending the
+/// read-only SNMP community to the frontend. No scans outside allowed CIDRs.
+pub fn enrich_candidates_with_references(
+    candidates: &mut [crate::discovery::DiscoveryCandidate],
+    allowed: &[String], community: &[u8],
+) {
+    use std::sync::{atomic::{AtomicUsize, Ordering}, Mutex};
+    if community.is_empty() { return; }
+    let limit = candidates.len().min(200);
+    let cursor = AtomicUsize::new(0);
+    let evidence = Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        for _ in 0..limit.min(8) {
+            let cursor = &cursor;
+            let evidence = &evidence;
+            let selected = &candidates[..limit];
+            scope.spawn(move || loop {
+                let index = cursor.fetch_add(1, Ordering::Relaxed);
+                let Some(candidate) = selected.get(index) else { break };
+                if let Some(reference) = identify_reference_v2c(candidate.ip, allowed, community) {
+                    if let Ok(mut matches) = evidence.lock() {
+                        matches.push((index, reference));
+                    }
+                }
+            });
+        }
+    });
+    if let Ok(matches) = evidence.into_inner() {
+        for (index, reference) in matches {
+            candidates[index].reference = Some(reference);
+        }
+    }
+}
+
 /// Fast, best-effort identity information after a *separate successful*
 /// meter probe. Values are hints, not certified inventory fields.
 pub fn inspect_identity_v2c(

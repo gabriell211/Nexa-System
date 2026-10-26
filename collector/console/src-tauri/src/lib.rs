@@ -37,6 +37,7 @@ struct PrinterInfo {
     mac: Option<String>,
     reference_model_id: Option<u64>,
     auto_detect_reference: bool,
+    catalog_auto_supported: bool,
 }
 
 #[derive(Serialize)]
@@ -75,6 +76,26 @@ struct CollectorSnapshot {
     watchdog: Option<WatchdogSnapshot>,
     watchdog_error: Option<String>,
     error: Option<String>,
+}
+
+fn catalog_auto_supported(
+    printer: &nexa_collector_core::PrinterConfig,
+    manufacturer: Option<&str>, model: Option<&str>,
+) -> bool {
+    if let Some(model_id) = printer.reference_model_id {
+        return reference_catalog::unique_network_total_oid(model_id).is_ok();
+    }
+    if !printer.auto_detect_reference { return false; }
+    let observed = match (manufacturer, model) {
+        (Some(vendor), Some(name)) => vec![format!("{vendor} {name}")],
+        (None, Some(name)) => vec![name.to_owned()],
+        _ => return false,
+    };
+    reference_catalog::network_reference_for_identity(&observed)
+        .is_some_and(|reference| {
+            reference.network_status == Some(reference_catalog::ReferenceStatus::Approved)
+                && reference.total_counter_oid.is_some()
+        })
 }
 
 #[tauri::command]
@@ -147,6 +168,7 @@ fn get_snapshot() -> CollectorSnapshot {
                     },
                     reference_model_id: p.reference_model_id,
                     auto_detect_reference: p.auto_detect_reference,
+                    catalog_auto_supported: catalog_auto_supported(p, None, None),
                 }).collect();
                 snapshot.usb_scanners = config.usb_scanners.iter().map(|s| UsbScannerInfo {
                     printer_id: s.printer_id,
@@ -227,6 +249,9 @@ fn get_snapshot() -> CollectorSnapshot {
                             Ok(fleet) => {
                                 snapshot.printers = fleet.into_iter().map(|entry: FleetPrinter| {
                                     let p = entry.config;
+                                    let catalog_approved = catalog_auto_supported(
+                                        &p, entry.manufacturer.as_deref(), entry.model.as_deref(),
+                                    );
                                     PrinterInfo {
                                         printer_id: p.printer_id,
                                         ip: p.ip.to_string(),
@@ -239,6 +264,7 @@ fn get_snapshot() -> CollectorSnapshot {
                                         serial: entry.serial, mac: entry.mac,
                                         reference_model_id: p.reference_model_id,
                                         auto_detect_reference: p.auto_detect_reference,
+                                        catalog_auto_supported: catalog_approved,
                                     }
                                 }).collect();
                             }

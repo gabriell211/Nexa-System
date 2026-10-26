@@ -497,10 +497,18 @@ fn run_application(
                 let (sender, receiver) = mpsc::channel();
                 let authorized = cfg.authorized_subnets.clone();
                 let requested = active_schedule.cidrs.clone();
+                let community = snmp_community.clone();
                 thread::spawn(move || {
                     let scanned = nexa_collector_core::discovery::discover_authorized_ranges(
                         &authorized, &requested,
-                    );
+                    ).map(|mut candidates| {
+                        if let Some(secret) = community.as_ref() {
+                            nexa_collector_core::snmp_inventory::enrich_candidates_with_references(
+                                &mut candidates, &authorized, secret.as_bytes(),
+                            );
+                        }
+                        candidates
+                    });
                     let _ = sender.send(scanned);
                 });
                 discovery_receiver = Some(receiver);

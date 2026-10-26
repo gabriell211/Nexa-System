@@ -1460,8 +1460,10 @@ impl Outbox {
             None => fleet::from_config(cfg),
         };
         fleet::apply(cfg, &mut records, command, tested_at)?;
-        if let (fleet::FleetCommand::Monitor { printer_id }, Some(identity)) = (command, identity) {
-            if let Some(record) = records.iter_mut().find(|entry| entry.config.printer_id == *printer_id) {
+        // Preserve catalog identity on Add without enabling the printer.
+        if let Some(identity) = identity {
+            let printer_id = command.printer_id();
+            if let Some(record) = records.iter_mut().find(|entry| entry.config.printer_id == printer_id) {
                 record.manufacturer = identity.manufacturer;
                 record.model = identity.model;
                 record.serial = identity.serial;
@@ -2676,7 +2678,8 @@ mod tests {
                 print_ports: vec![9100],
                 http_server: Some("Printer HTTP".into()),
                 escl_scanner: false,
-            }],
+                            reference: None,
+}],
         };
         {
             let store = Outbox::open_bounded(&path, 10).unwrap();
@@ -2707,7 +2710,8 @@ mod tests {
                     print_ports: vec![9100],
                     http_server: Some("Printer service".into()),
                     escl_scanner: false,
-                }],
+                                    reference: None,
+}],
             }).unwrap();
             assert!(store.review_candidate("192.168.20.45".parse().unwrap(),
                 candidate_review::ReviewAction::Save).is_err());
@@ -2743,7 +2747,8 @@ mod tests {
             observed_candidates: 1,
             candidates: vec![discovery::DiscoveryCandidate {
                 ip: address, print_ports: vec![631], http_server: None, escl_scanner: false,
-            }],
+                            reference: None,
+}],
         };
         store.save_discovery_report(&report).unwrap();
         assert!(store.review_candidate(address, candidate_review::ReviewAction::Save).is_err());
@@ -3128,7 +3133,8 @@ mod broadcast_persistence_tests {
             candidates: vec![discovery::DiscoveryCandidate {
                 ip: "192.168.1.10".parse().unwrap(),
                 print_ports: vec![9100], http_server: None, escl_scanner: false,
-            }],
+                            reference: None,
+}],
             ..DiscoveryReport::default()
         };
         store.save_discovery_report(&scheduled).unwrap();
@@ -3138,7 +3144,8 @@ mod broadcast_persistence_tests {
             candidates: vec![discovery::DiscoveryCandidate {
                 ip: "192.168.1.20".parse().unwrap(),
                 print_ports: vec![], http_server: None, escl_scanner: false,
-            }],
+                            reference: None,
+}],
             ..DiscoveryReport::default()
         };
         store.save_broadcast_report(&broadcast).unwrap();
