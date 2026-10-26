@@ -36,9 +36,14 @@ for key, filename in {
     # an empty fleet can start and be enrolled securely after installation.
     if key == "NEXA_SNMP_COMMUNITY":
         assert 'load_optional_snmp_secret(windows_service_mode, macos_launchd_mode)' in daemon
-        assert 'const NAME: &str = "NEXA_SNMP_COMMUNITY"' in daemon
-        assert 'Path::new(&root).join(NAME)' in daemon
-        assert 'load_secret(NAME, windows_service_mode, macos_launchd_mode)' in daemon
+        # SNMP is optional until a monitored printer is enrolled. Windows,
+        # macOS and systemd must look for their protected credential file,
+        # never fall back to environment values if that file is absent.
+        assert 'load_optional_secret("NEXA_SNMP_COMMUNITY", windows_service_mode, macos_launchd_mode)' in daemon
+        assert 'fn load_optional_secret(' in daemon
+        assert 'return read_optional_secret_file(&path);' in daemon
+        assert 'return read_optional_secret_file(&Path::new(&root).join(name));' in daemon
+        assert 'load_secret(name, false, false)' in daemon
     else:
         assert f'load_secret("{key}", windows_service_mode, macos_launchd_mode)' in daemon, key
 
