@@ -10,6 +10,7 @@ type PrinterInfo = {
   monitored: boolean; last_tested_at: string | null;
   manufacturer: string | null; model: string | null; serial: string | null; mac: string | null;
   reference_model_id: number | null; auto_detect_reference: boolean;
+  catalog_auto_supported: boolean;
 };
 type PrinterCommand =
   | { action: "add"; printer_id: number; ip: string; oid: number[]; auto_detect_reference: boolean }
@@ -136,12 +137,10 @@ function formatDate(value: string | null): string {
 
 function networkCatalogStatus(candidate: DiscoveryCandidate): string {
   const reference = candidate.reference;
-  if (!reference) return "Modelo não reconhecido via SNMP";
-  if (!reference.network_status) return "Referência conflitante: revisar";
-  if (reference.network_status !== "approved") return referenceStatus(reference.network_status);
+  if (!reference || reference.network_status !== "approved") return "Não homologada";
   return reference.total_counter_oid
-    ? "Aprovado na referência · OID total identificado"
-    : "Aprovado na referência · sem OID total único";
+    ? "Homologada no catálogo · leitura automática disponível"
+    : "Homologada no catálogo · contador automático indisponível";
 }
 
 function referenceStatus(value: ReferenceStatus): string {
@@ -186,8 +185,6 @@ export default function App() {
   const [expandedPrinter, setExpandedPrinter] = useState<number | null>(null);
   const [newPrinterId, setNewPrinterId] = useState("");
   const [newPrinterIp, setNewPrinterIp] = useState("");
-  const [newPrinterOid, setNewPrinterOid] = useState("");
-  const [autoDetectOid, setAutoDetectOid] = useState(true);
   const [broadcastBusy, setBroadcastBusy] = useState(false);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
   const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null);
@@ -268,27 +265,20 @@ export default function App() {
     if (!Number.isSafeInteger(printer_id) || printer_id < 1 || !validIp) {
       setPrinterError("Informe um ID inteiro positivo e um IPv4 válido."); return;
     }
-    const oid = autoDetectOid ? [] : newPrinterOid.trim().split(".").map(value =>
-      /^\d+$/.test(value) ? Number(value) : NaN
-    );
-    if (!autoDetectOid && (oid.length < 2 || oid.length > 128 ||
-      oid.some(value => !Number.isSafeInteger(value) || value < 0 || value > 4294967295))) {
-      setPrinterError("OID numérico inválido (2 a 128 componentes)."); return;
-    }
     setPrinterBusy(true);
     try {
       const command: PrinterCommand = {
-        action: "add", printer_id, ip: newPrinterIp.trim(), oid,
-        auto_detect_reference: autoDetectOid,
+        action: "add", printer_id, ip: newPrinterIp.trim(), oid: [],
+        auto_detect_reference: true,
       };
       await invoke("printer_action", { command });
       await refresh();
       setAddingPrinter(false);
-      setNewPrinterId(""); setNewPrinterIp(""); setNewPrinterOid("");
+      setNewPrinterId(""); setNewPrinterIp("");
       setPrinterNotice("Cadastro salvo. Use Monitorar para testar o contador SNMP real.");
     } catch (error) { setPrinterError(String(error)); }
     finally { setPrinterBusy(false); }
-  }, [newPrinterId, newPrinterIp, newPrinterOid, autoDetectOid, refresh]);
+  }, [newPrinterId, newPrinterIp, refresh]);
 
   const operatePrinters = useCallback(async (action: "monitor" | "disable" | "remove") => {
     if (!selectedIds.length) return;
@@ -603,12 +593,8 @@ export default function App() {
                     onChange={event => setNewPrinterId(event.target.value)} /></label>
                   <label>IPv4 <input required value={newPrinterIp} maxLength={15} placeholder="192.168.15.45"
                     onChange={event => setNewPrinterIp(event.target.value)} /></label>
-                  <label>OID total <input value={newPrinterOid} maxLength={300} disabled={autoDetectOid}
-                    placeholder="1.3.6.1.2.1.43.10.2.1.4.1.1"
-                    onChange={event => setNewPrinterOid(event.target.value)} /></label>
-                  <label className="printer-checkbox"><input type="checkbox" checked={autoDetectOid}
-                    onChange={event => setAutoDetectOid(event.target.checked)} />
-                    Detectar o OID por identidade SNMP, somente quando inequívoca</label>
+                  <p>Detecção automática pelo catálogo. Se o modelo não tiver perfil de leitura válido,
+                    aparecerá como <strong>Não homologada</strong>, sem solicitar OID.</p>
                   <div className="printer-buttons">
                     <button type="submit" className="primary-button" disabled={printerBusy}>Salvar cadastro</button>
                     <button type="button" className="secondary-button" onClick={() => setAddingPrinter(false)}>Cancelar</button>
@@ -649,7 +635,7 @@ export default function App() {
                     <td>{printer.monitored ? "Sim" : "Não"}</td>
                     <td>{!printer.monitored ? "Desativada" : printer.last_tested_at
                       ? "SNMP validado" : "Ativa (sem teste registrado)"}</td>
-                    <td>Rede</td><td>Não homologado no Nexa</td>
+                    <td>Rede</td><td>{printer.catalog_auto_supported ? "Homologada no catálogo" : "Não homologada"}</td>
                     <td className="mono">{printer.ip}</td>
                     <td>{printer.manufacturer ?? "Não identificado"}</td>
                     <td>{printer.model ?? "Não identificado"}</td>
@@ -772,8 +758,6 @@ export default function App() {
                                 // An IP address never authorizes or creates a backend equipment ID.
                                 setNewPrinterId("");
                                 setNewPrinterIp(candidate.ip);
-                                setAutoDetectOid(true);
-                                setNewPrinterOid("");
                                 setAddingPrinter(true);
                                 setTab("printers");
                               }}>
@@ -855,7 +839,7 @@ export default function App() {
                   ? "As decisões exigem acesso ao canal privado do serviço. Em caso de acesso negado, utilize uma conta do sistema operacional autorizada."
                   : "A edição por Console está bloqueada neste sistema até existir transporte nativo com permissões homologadas."}
                 {" "}Salvar/ignorar não homologa contadores, não reserva IP e não ativa monitoramento.
-                Verifique modelo, número de série e OID antes de habilitar qualquer equipamento.
+                O agente identifica o modelo automaticamente pelo catálogo; equipamentos não reconhecidos aparecem como Não homologada e não têm coleta ativada.
               </div>
               {!snapshot?.discovery_report?.candidates.length && <div className="empty">
                 Nenhum candidato disponível nesta varredura. Confira se a agenda foi habilitada pelo administrador.
@@ -880,7 +864,9 @@ export default function App() {
                   <td>{candidate.device_type === "printer" ? "Impressora" : candidate.device_type === "scanner" ? "Scanner" : "Dispositivo de imagem"}</td>
                   <td className="mono">{candidate.vid_pid ?? "Não informado"}</td>
                   <td>{candidate.status}</td>
-                  <td>{candidate.reference_usb_status ? `${referenceStatus(candidate.reference_usb_status)} · ID ${candidate.reference_model_ids.join(", ")}` : "Sem correspondência inequívoca pelo nome"}</td>
+                  <td>{candidate.reference_usb_status === "approved"
+                    ? `Homologada no catálogo USB · ID ${candidate.reference_model_ids.join(", ")}`
+                    : "Não homologada"}</td>
                   <td>{candidate.device_type === "scanner" && candidate.vid_pid === "1083:1658" && candidate.friendly_name.toUpperCase() === "CANON DR-C225 USB" ? "Total Canon: leitura local experimental" : "Leitura não homologada"}</td>
                 </tr>)}</tbody>
               </table></div>}
