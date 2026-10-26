@@ -647,8 +647,37 @@ jobs:
           if ($installed.StartName -notmatch 'LocalService|LOCAL SERVICE') {
             throw "Service is running under unexpected account $($installed.StartName)"
           }
-            if ($installed.StartMode -ne 'Auto') { throw 'Provisioned service must start automatically' }
-            if ($installed.State -ne 'Running') { throw 'Provisioned service did not start' }
+          if ($installed.StartMode -ne 'Auto') { throw 'Provisioned service must start automatically' }
+          # "sc start" may succeed while the service is START_PENDING. The
+          # daemon only declares RUNNING after opening its encrypted store and
+          # loading protected credentials. Wait for that readiness explicitly.
+          $deadline = (Get-Date).AddSeconds(75)
+          while ($installed.State -ne 'Running' -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 2
+            $installed = Get-CimInstance Win32_Service -Filter "Name = 'NexaCollector'"
+            if ($null -eq $installed) { throw 'NexaCollector disappeared during startup' }
+          }
+          if ($installed.State -ne 'Running') {
+            Write-Host "NexaCollector did not reach RUNNING: state=$($installed.State), ExitCode=$($installed.ExitCode), ServiceSpecificExitCode=$($installed.ServiceSpecificExitCode)"
+            & "$env:WINDIR\System32\sc.exe" queryex NexaCollector
+            Get-WinEvent -FilterHashtable @{
+              LogName = 'System'
+              ProviderName = 'Service Control Manager'
+              StartTime = (Get-Date).AddMinutes(-10)
+            } -ErrorAction SilentlyContinue |
+              Where-Object { $_.Message -match 'NexaCollector' } |
+              Select-Object -First 10 TimeCreated, Id, Message |
+              Format-List | Out-String | Write-Host
+            throw 'Provisioned service failed to reach RUNNING after 75 seconds'
+          }
+          # A transient RUNNING state followed by immediate exit is also a
+          # failed install, rather than a reason to publish a broken binary.
+          Start-Sleep -Seconds 2
+          $stable = Get-CimInstance Win32_Service -Filter "Name = 'NexaCollector'"
+          if ($null -eq $stable -or $stable.State -ne 'Running') {
+            & "$env:WINDIR\System32\sc.exe" queryex NexaCollector
+            throw 'Provisioned service exited shortly after startup'
+          }
           $directory = Join-Path $env:ProgramData 'NexaCollector'
             $configFile = Join-Path $directory 'config.json'
             if (-not (Test-Path $configFile)) { throw 'Provisioned config missing' }
