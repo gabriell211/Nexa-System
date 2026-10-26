@@ -627,6 +627,12 @@ export default function App() {
                     onClick={() => { setRemoveArmed(false); void operatePrinters("remove"); }}>Confirmar</button>
                   <button type="button" className="secondary-button" onClick={() => setRemoveArmed(false)}>Cancelar</button>
                 </div>}
+                {snapshot?.windows_service_status && snapshot.windows_service_status !== "Em execução" && (
+                  <div className="notice warning" role="alert">
+                    Serviço Windows NexaCollector: {snapshot.windows_service_status}. Os botões administrativos não funcionam sem o serviço ativo.
+                    Verifique a instalação em Serviços do Windows ou com sc.exe query NexaCollector.
+                  </div>
+                )}
                 {snapshot?.authorized_subnets?.some(cidr => cidr.startsWith("192.0.2.")) &&
                   <div className="notice warning" role="alert">
                     A faixa 192.0.2.0/24 é reservada para documentação.

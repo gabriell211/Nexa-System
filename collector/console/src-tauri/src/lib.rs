@@ -269,6 +269,12 @@ fn get_snapshot() -> CollectorSnapshot {
                 snapshot.sample_configuration =
                     config.collector_id.to_string() == "00000000-0000-4000-8000-000000000000"
                     || config.api_url.contains("nexa.example.com");
+                // A demo/customized Console must never send administrative
+                // mutations to a separately installed production daemon.
+                if snapshot.sample_configuration || (cfg!(windows)
+                    && snapshot.windows_service_status.as_deref() != Some("Em execução")) {
+                    snapshot.local_control_supported = false;
+                }
                 snapshot.collector_id = Some(config.collector_id.to_string());
                 snapshot.communication_mode = Some(match config.communication_mode {
                     CommunicationMode::WebServices => "Internet (Web Services)",

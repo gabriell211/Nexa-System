@@ -41,7 +41,13 @@ fn submit_windows_payload(payload: &[u8]) -> Result<(), String> {
         )
     };
     if ok == 0 {
-        return Err("Canal administrativo indisponível ou acesso negado. Use sessão elevada.".into());
+        let code = std::io::Error::last_os_error().raw_os_error();
+        return Err(match code {
+            Some(2 | 232 | 233) => "Serviço NexaCollector não está atendendo no canal local. Confirme em Serviços do Windows se está em execução.".into(),
+            Some(5) => "Acesso negado ao canal protegido. Execute o Nexa Collector como administrador.".into(),
+            Some(121 | 231) => "Canal ocupado ou sem resposta. Verifique o estado do NexaCollector e tente novamente.".into(),
+            _ => format!("Não foi possível conectar ao serviço NexaCollector (erro Windows {}).", code.unwrap_or(-1)),
+        });
     }
     if read as u64 > MAX_MESSAGE_BYTES {
         return Err("Resposta local acima do limite.".into());
