@@ -11,9 +11,14 @@ pub fn execute(
 ) -> Result<(), String> {
     let credential = community.filter(|value| !value.is_empty())
         .ok_or_else(|| "Credencial SNMP protegida não configurada no serviço.".to_owned())?;
-    let candidates = discover_broadcast(
+    let mut candidates = discover_broadcast(
         &cfg.authorized_subnets, cidrs, credential.as_bytes(),
     ).map_err(|error| format!("Busca rápida recusada ou indisponível: {error}"))?;
+    // The existing protected service channel holds the credential; the
+    // Console receives model/OID reference evidence, never the secret.
+    nexa_collector_core::snmp_inventory::enrich_candidates_with_references(
+        &mut candidates, &cfg.authorized_subnets, credential.as_bytes(),
+    );
     outbox.save_broadcast_report(&DiscoveryReport {
         last_completed_at: Some(Utc::now()),
         last_error_kind: None,

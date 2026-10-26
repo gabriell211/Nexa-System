@@ -1,5 +1,14 @@
 # Nexa Collector — cliente e limites de homologação
 
+## Reconhecimento automático de modelos já mapeados (rede + USB)
+
+O catálogo embarcado tem **2.142 modelos**, dos quais **1.898 aprovados para rede** e **920 aprovados para USB** na fonte de referência. A detecção USB no Windows já identifica o status de referência por fabricante/modelo no nome PnP, mas não implica leitura do contador USB; sem driver/provider específico, o contador permanece indisponível.
+
+Nas **varreduras de rede programadas** (quando a agenda é habilitada pelo administrador) e na **busca SNMP broadcast** (acionada pelo operador), o daemon agora cruza automaticamente candidatos de IP privado autorizado com o catálogo, usando `prtGeneralPrinterName.1` e `sysDescr.0` via SNMPv2c somente leitura com a credencial protegida do serviço. Até 200 candidatos por relatório recebem inspeção em paralelo, com no máximo oito consultas simultâneas e timeout por operação. O relatório identifica fabricante, modelo, IDs da referência, status de rede e OID total **apenas quando for único**. Os **1.583 perfis** com OID único podem ser resolvidos por identidade inequívoca durante a coleta, e os outros modelos aprovados podem aparecer como reconhecidos, mas sem leitura automática segura.
+
+A busca manual TCP/eSCL do Console continua mostrando candidatos por IP/porta, sem expor a credencial SNMP nem afirmar identificação de modelo. Os relatórios programados e de broadcast possuem identificação SNMP, se a credencial for válida e o dispositivo responder. Respostas sem identidade suficiente, perfis duplicados conflitantes, modelos não aprovados, IP fora da rede autorizada ou dispositivos que não respondem permanecem pendentes de revisão. A detecção **não cadastra o dispositivo no cliente**, **não ativa o monitoramento** nem certifica contador para faturamento. Cadastro requer ID previamente existente no backend e ação explícita Monitorar após teste real. Nenhuma credencial SNMP é enviada à UI.
+
+
 ## Cadastro operacional de impressoras (implementação incremental, PR #73)
 
 A aba **Impressoras** permite selecionar equipamentos de rede e executar **Adicionar**, **Monitorar**, **Desativar** e **Remover**. As operações não são apenas mudanças de estado na interface: o Console envia comandos tipados pelo canal local protegido ao daemon, que valida ID, IP, CIDR provisionado e OID antes de persistir a lista em `state.printer_fleet_v1` do SQLite. Operações são transacionais. A lista tem limite de 500 equipamentos por ponto de coleta e é retomada após reinício; o daemon lê as alterações e antecipa a próxima coleta, enquanto amostras históricas permanecem na outbox.

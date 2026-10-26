@@ -16,7 +16,14 @@ type PrinterCommand =
   | { action: "monitor" | "disable" | "remove"; printer_id: number };
 type ReferenceStatus = "not_tested" | "approved" | "incompatible";
 type UsbScannerInfo = { printer_id: number; profile: string };
-type DiscoveryCandidate = { ip: string; print_ports: number[]; http_server: string | null; escl_scanner: boolean };
+type NetworkReferenceMatch = {
+  manufacturer: string; model: string; reference_model_ids: number[];
+  network_status: ReferenceStatus | null; total_counter_oid: string | null;
+};
+type DiscoveryCandidate = {
+  ip: string; print_ports: number[]; http_server: string | null;
+  escl_scanner: boolean; reference?: NetworkReferenceMatch | null;
+};
 type UsbDeviceCandidate = {
   friendly_name: string;
   instance_id: string;
@@ -71,7 +78,8 @@ function sameObservedEvidence(a: DiscoveryCandidate, b: DiscoveryCandidate): boo
   return a.ip === b.ip
     && a.escl_scanner === b.escl_scanner
     && a.http_server === b.http_server
-    && a.print_ports.join(",") === b.print_ports.join(",");
+    && a.print_ports.join(",") === b.print_ports.join(",")
+    && JSON.stringify(a.reference ?? null) === JSON.stringify(b.reference ?? null);
 }
 function candidateReviewStatus(candidate: DiscoveryCandidate, reviews: CandidateReview[]): string {
   const reviewed = reviews.find(item => item.candidate.ip === candidate.ip);
@@ -124,6 +132,16 @@ function formatDate(value: string | null): string {
   const timestamp = new Date(value);
   if (Number.isNaN(timestamp.getTime())) return "Data inválida";
   return new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "medium" }).format(timestamp);
+}
+
+function networkCatalogStatus(candidate: DiscoveryCandidate): string {
+  const reference = candidate.reference;
+  if (!reference) return "Modelo não reconhecido via SNMP";
+  if (!reference.network_status) return "Referência conflitante: revisar";
+  if (reference.network_status !== "approved") return referenceStatus(reference.network_status);
+  return reference.total_counter_oid
+    ? "Aprovado na referência · OID total identificado"
+    : "Aprovado na referência · sem OID total único";
 }
 
 function referenceStatus(value: ReferenceStatus): string {
@@ -690,13 +708,14 @@ export default function App() {
               </button>
               {discoveryError && <div className="notice error" role="alert">{discoveryError}</div>}
               {discovered && <div className="table-scroll"><table>
-                <thead><tr><th>Endereço IP</th><th>Portas de impressão</th><th>Scanner eSCL</th><th>Servidor HTTP</th><th>Estado</th></tr></thead>
+                <thead><tr><th>Endereço IP</th><th>Portas de impressão</th><th>Scanner eSCL</th><th>Servidor HTTP</th><th>Modelo</th><th>Estado</th></tr></thead>
                 <tbody>{discovered.map((candidate) => <tr key={candidate.ip}>
                   <td className="mono">{candidate.ip}</td>
                   <td>{candidate.print_ports.length ? candidate.print_ports.join(", ") : "Nenhuma"}</td>
                   <td>{candidate.escl_scanner ? "Capacidades acessíveis" : "Não identificado"}</td>
                   <td>{candidate.http_server ?? "Não identificado"}</td>
-                  <td>Aguardando validação</td>
+                  <td>{candidate.reference ? `${candidate.reference.manufacturer} ${candidate.reference.model}` : "Aguardando consulta protegida"}</td>
+                  <td>{candidate.reference ? networkCatalogStatus(candidate) : "Aguardando validação"}</td>
                 </tr>)}</tbody>
               </table></div>}
               {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão ou scanner eSCL respondeu nesta busca.</div>}
@@ -738,17 +757,20 @@ export default function App() {
                     <p>Última execução: {formatDate(snapshot?.broadcast_report?.last_completed_at ?? null)}.
                       Uma resposta SNMP não significa que o contador está homologado.</p>
                     <div className="table-scroll"><table>
-                      <thead><tr><th>Endereço IP</th><th>Identificação</th><th>Cadastro</th></tr></thead>
+                      <thead><tr><th>Endereço IP</th><th>Identificação do catálogo</th><th>Cadastro</th></tr></thead>
                       <tbody>{snapshot?.broadcast_report?.candidates.map(candidate => (
                         <tr key={candidate.ip}>
                           <td className="mono">{candidate.ip}</td>
-                          <td>Respondendo ao SNMP (fabricante e contador ainda não confirmados)</td>
+                          <td>{candidate.reference
+                            ? <><strong>{candidate.reference.manufacturer} {candidate.reference.model}</strong>
+                                <div>{networkCatalogStatus(candidate)} · IDs {candidate.reference.reference_model_ids.join(", ")}</div></>
+                            : "SNMP respondeu, mas modelo não reconhecido com segurança"}</td>
                           <td>
                             <button type="button" className="secondary-button"
                               disabled={!snapshot?.local_control_supported || snapshot.printers.some(item => item.ip === candidate.ip)}
                               onClick={() => {
-                                const ids = [...snapshot.printers.map(p => p.printer_id), ...snapshot.usb_scanners.map(p => p.printer_id)];
-                                setNewPrinterId(String(Math.max(0, ...ids) + 1));
+                                // An IP address never authorizes or creates a backend equipment ID.
+                                setNewPrinterId("");
                                 setNewPrinterIp(candidate.ip);
                                 setAutoDetectOid(true);
                                 setNewPrinterOid("");
@@ -776,11 +798,15 @@ export default function App() {
               {snapshot?.discovery_report?.last_error_kind && <div role="alert" className="notice error">
                 A última busca terminou com falha ({snapshot.discovery_report.last_error_kind}). Os resultados anteriores não são tratados como atuais.
               </div>}
-              <div className="table-scroll"><table><thead><tr><th>IP</th><th>Portas</th><th>eSCL</th><th>Estado</th><th>Revisar</th></tr></thead>
+              <div className="table-scroll"><table><thead><tr><th>IP</th><th>Portas</th><th>eSCL</th><th>Modelo do catálogo</th><th>Estado</th><th>Revisar</th></tr></thead>
                 <tbody>{snapshot?.discovery_report?.candidates.map(candidate => (
                   <tr key={candidate.ip}><td className="mono">{candidate.ip}</td>
                     <td>{candidate.print_ports.join(", ") || "—"}</td>
                     <td>{candidate.escl_scanner ? "Detectado" : "—"}</td>
+                    <td>{candidate.reference
+                      ? <><strong>{candidate.reference.manufacturer} {candidate.reference.model}</strong>
+                          <div>{networkCatalogStatus(candidate)}</div></>
+                      : "Não reconhecido via SNMP"}</td>
                     <td>{candidateReviewStatus(candidate, snapshot?.candidate_reviews ?? [])}</td>
                     <td><div className="candidate-actions">
                       <button type="button" className="secondary-button"
