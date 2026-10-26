@@ -1,28 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   Activity, AlertTriangle, ArrowDownUp, CheckCircle2, CircleHelp, Database,
-  HardDrive, LayoutDashboard, Network, Printer, RefreshCcw, Settings2, ShieldCheck,
+  HardDrive, LayoutDashboard, Network, Printer, RefreshCcw, Settings2, ShieldCheck, Usb, Wrench,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-type PrinterInfo = { printer_id: number; ip: string; oid: string; reference_model_id: number | null; auto_detect_reference: boolean };
+type PrinterInfo = {
+  printer_id: number; ip: string; oid: string;
+  monitored: boolean; last_tested_at: string | null;
+  manufacturer: string | null; model: string | null; serial: string | null; mac: string | null;
+  reference_model_id: number | null; auto_detect_reference: boolean;
+};
+type PrinterCommand =
+  | { action: "add"; printer_id: number; ip: string; oid: number[]; auto_detect_reference: boolean }
+  | { action: "monitor" | "disable" | "remove"; printer_id: number };
 type ReferenceStatus = "not_tested" | "approved" | "incompatible";
-type ReferenceModel = {
-  source_model_id: number;
-  manufacturer: string;
-  model: string;
-  network: ReferenceStatus;
-  usb: ReferenceStatus;
-  network_total_oid_candidates: string[];
-};
-type ReferenceSearchResult = {
-  source: string;
-  snapshot_at: string;
-  total_catalog: number;
-  total_matches: number;
-  results: ReferenceModel[];
-  nexa_field_certified: boolean;
-};
 type UsbScannerInfo = { printer_id: number; profile: string };
 type DiscoveryCandidate = { ip: string; print_ports: number[]; http_server: string | null; escl_scanner: boolean };
 type UsbDeviceCandidate = {
@@ -103,6 +95,7 @@ type CollectorSnapshot = {
   authorized_subnets: string[];
   discovery_schedule: DiscoverySchedule | null;
   discovery_report: DiscoveryReport | null;
+  broadcast_report: DiscoveryReport | null;
   candidate_reviews: CandidateReview[];
   candidate_reviews_error: string | null;
   local_control_supported: boolean;
@@ -123,7 +116,8 @@ type CollectorSnapshot = {
   last_run: string | null;
   error: string | null;
 };
-type Tab = "overview" | "printers" | "quarantine" | "watchdog" | "settings";
+type Tab = "overview" | "printers" | "tools" | "quarantine" | "watchdog" | "settings";
+type ToolMode = "network" | "usb" | null;
 
 function formatDate(value: string | null): string {
   if (!value) return "Nenhuma execução registrada";
@@ -139,6 +133,7 @@ function referenceStatus(value: ReferenceStatus): string {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("overview");
+  const [toolMode, setToolMode] = useState<ToolMode>(null);
   const [snapshot, setSnapshot] = useState<CollectorSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -163,28 +158,21 @@ export default function App() {
   const [canonMeter, setCanonMeter] = useState<CanonDrc225Meter | null>(null);
   const [canonReading, setCanonReading] = useState(false);
   const [canonError, setCanonError] = useState<string | null>(null);
-  const [referenceQuery, setReferenceQuery] = useState("");
-  const [referenceInterface, setReferenceInterface] = useState("all");
-  const [referenceResult, setReferenceResult] = useState<ReferenceSearchResult | null>(null);
-  const [referenceSearching, setReferenceSearching] = useState(false);
-  const [referenceError, setReferenceError] = useState<string | null>(null);
-
-  const searchReference = useCallback(async (query: string, interfaceFilter: string) => {
-    setReferenceSearching(true);
-    setReferenceError(null);
-    try {
-      setReferenceResult(await invoke<ReferenceSearchResult>("search_reference_models", {
-        query, interface: interfaceFilter,
-      }));
-    } catch (error) {
-      setReferenceError(String(error));
-    } finally {
-      setReferenceSearching(false);
-    }
-  }, []);
-
-  useEffect(() => { void searchReference("", "all"); }, [searchReference]);
-
+  const [printerFilter, setPrinterFilter] = useState("");
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [printerBusy, setPrinterBusy] = useState(false);
+  const [printerError, setPrinterError] = useState<string | null>(null);
+  const [printerNotice, setPrinterNotice] = useState<string | null>(null);
+  const [addingPrinter, setAddingPrinter] = useState(false);
+  const [removeArmed, setRemoveArmed] = useState(false);
+  const [expandedPrinter, setExpandedPrinter] = useState<number | null>(null);
+  const [newPrinterId, setNewPrinterId] = useState("");
+  const [newPrinterIp, setNewPrinterIp] = useState("");
+  const [newPrinterOid, setNewPrinterOid] = useState("");
+  const [autoDetectOid, setAutoDetectOid] = useState(true);
+  const [broadcastBusy, setBroadcastBusy] = useState(false);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
+  const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null);
   const discover = useCallback(async () => {
     setDiscovering(true);
     setDiscoveryError(null);
@@ -205,7 +193,6 @@ export default function App() {
       const candidates = await invoke<DiscoveryCandidate[]>("discover_authorized_printers", { cidrs });
       setDiscovered(candidates);
       setDiscoveryError(null);
-      setTab("printers");
     } catch (error) {
       setRangeError(String(error));
     } finally {
@@ -250,6 +237,76 @@ export default function App() {
       setLoading(false);
     }
   }, []);
+
+
+  const addPrinter = useCallback(async () => {
+    setPrinterError(null);
+    setPrinterNotice(null);
+    const printer_id = Number(newPrinterId);
+    const parts = newPrinterIp.trim().split(".");
+    const validIp = parts.length === 4 && parts.every(part =>
+      /^\d{1,3}$/.test(part) && Number(part) <= 255
+    );
+    if (!Number.isSafeInteger(printer_id) || printer_id < 1 || !validIp) {
+      setPrinterError("Informe um ID inteiro positivo e um IPv4 válido."); return;
+    }
+    const oid = autoDetectOid ? [] : newPrinterOid.trim().split(".").map(value =>
+      /^\d+$/.test(value) ? Number(value) : NaN
+    );
+    if (!autoDetectOid && (oid.length < 2 || oid.length > 128 ||
+      oid.some(value => !Number.isSafeInteger(value) || value < 0 || value > 4294967295))) {
+      setPrinterError("OID numérico inválido (2 a 128 componentes)."); return;
+    }
+    setPrinterBusy(true);
+    try {
+      const command: PrinterCommand = {
+        action: "add", printer_id, ip: newPrinterIp.trim(), oid,
+        auto_detect_reference: autoDetectOid,
+      };
+      await invoke("printer_action", { command });
+      await refresh();
+      setAddingPrinter(false);
+      setNewPrinterId(""); setNewPrinterIp(""); setNewPrinterOid("");
+      setPrinterNotice("Cadastro salvo. Use Monitorar para testar o contador SNMP real.");
+    } catch (error) { setPrinterError(String(error)); }
+    finally { setPrinterBusy(false); }
+  }, [newPrinterId, newPrinterIp, newPrinterOid, autoDetectOid, refresh]);
+
+  const operatePrinters = useCallback(async (action: "monitor" | "disable" | "remove") => {
+    if (!selectedIds.length) return;
+    setPrinterBusy(true); setPrinterError(null); setPrinterNotice(null);
+    const done: number[] = []; const failed: string[] = [];
+    for (const printer_id of selectedIds) {
+      try {
+        const command: PrinterCommand = { action, printer_id };
+        await invoke("printer_action", { command });
+        done.push(printer_id);
+      } catch (error) { failed.push("#" + printer_id + ": " + String(error)); }
+    }
+    try { await refresh(); } catch { /* refresh reports its own errors */ }
+    setSelectedIds(previous => previous.filter(id => !done.includes(id)));
+    if (failed.length) setPrinterError(failed.join(" | "));
+    if (done.length) setPrinterNotice(done.length + " operação(ões) confirmada(s) pelo serviço local.");
+    setPrinterBusy(false);
+  }, [selectedIds, refresh]);
+
+  const broadcastDiscover = useCallback(async () => {
+    const cidrs = rangeDraft.split(/[\s,;]+/).filter(Boolean);
+    setBroadcastBusy(true); setBroadcastError(null); setBroadcastNotice(null);
+    try {
+      await invoke("discover_broadcast_printers", { cidrs });
+      await refresh();
+      setBroadcastNotice("Broadcast SNMP concluído. Revise os candidatos encontrados na lista abaixo.");
+    } catch (error) { setBroadcastError(String(error)); }
+    finally { setBroadcastBusy(false); }
+  }, [rangeDraft, refresh]);
+
+  const filteredPrinters = (snapshot?.printers ?? []).filter(printer =>
+    [String(printer.printer_id), printer.ip, printer.manufacturer,
+      printer.model, printer.serial, printer.mac]
+      .some(value => (value ?? "").toLocaleLowerCase("pt-BR")
+        .includes(printerFilter.toLocaleLowerCase("pt-BR")))
+  );
 
   useEffect(() => { void refresh(); }, [refresh]);
   useEffect(() => {
@@ -330,6 +387,7 @@ export default function App() {
   const menu: { id: Tab; label: string; icon: typeof LayoutDashboard }[] = [
     { id: "overview", label: "Visão geral", icon: LayoutDashboard },
     { id: "printers", label: "Impressoras", icon: Printer },
+    { id: "tools", label: "Ferramentas", icon: Wrench },
     { id: "quarantine", label: "Quarentena", icon: AlertTriangle },
     { id: "watchdog", label: "Recuperação", icon: Activity },
     { id: "settings", label: "Configuração", icon: Settings2 },
@@ -367,7 +425,7 @@ export default function App() {
           <div className="heading">
             <div>
               <p className="eyebrow">CONTROLE DA ESTAÇÃO</p>
-              <h1>{tab === "overview" ? "Visão geral" : tab === "printers" ? "Impressoras" : tab === "quarantine" ? "Quarentena" : tab === "watchdog" ? "Recuperação" : "Configurações"}</h1>
+              <h1>{tab === "overview" ? "Visão geral" : tab === "printers" ? "Impressoras" : tab === "tools" ? "Ferramentas" : tab === "quarantine" ? "Quarentena" : tab === "watchdog" ? "Recuperação" : "Configurações"}</h1>
               <p>Informações lidas do arquivo de configuração e da fila local do Nexa Collector.</p>
             </div>
             <button type="button" className="primary-button" onClick={() => void refresh()} disabled={loading}>
@@ -497,53 +555,134 @@ export default function App() {
 
           {tab === "printers" && (
             <>
-            <section className="panel">
-              <div className="panel-title"><h2>Dispositivos configurados</h2><span>{snapshot ? snapshot.printers.length + snapshot.usb_scanners.length : 0} registros</span></div>
-              <div className="table-scroll"><table>
-                <thead><tr><th>ID do equipamento</th><th>Conexão</th><th>Perfil de leitura</th><th>Estado</th></tr></thead>
-                <tbody>
-                  {snapshot?.printers.map((printer) => (
-                    <tr key={`ip-${printer.printer_id}`}>
-                      <td>#{printer.printer_id}</td><td>{printer.ip}</td>
-                        <td className="mono">SNMP: {printer.oid}{printer.reference_model_id ? ` · Ref. #${printer.reference_model_id}` : ""}</td><td>{printer.auto_detect_reference ? "Nome SNMP comparado a cada coleta; contador depende de validação" : "Contador depende de validação no Nexa"}</td>
-                    </tr>
-                  ))}
-                  {snapshot?.usb_scanners.map((scanner) => (
-                    <tr key={`usb-${scanner.printer_id}`}>
-                      <td>#{scanner.printer_id}</td><td>USB local</td>
-                      <td className="mono">{scanner.profile}</td><td>Leitura experimental em sessão interativa</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table></div>
-              {snapshot && snapshot.printers.length + snapshot.usb_scanners.length === 0 && <div className="empty">Nenhum equipamento configurado neste ponto de coleta.</div>}
-            </section>
-            <section className="panel">
-              <div className="panel-title"><h2>Catálogo de referência de modelos</h2>
-                <span>{referenceResult?.total_catalog.toLocaleString("pt-BR") ?? "—"} registros · PrintWayy</span></div>
-              <p className="reference-intro">Estados de rede e USB extraídos do mapeamento local de {referenceResult?.snapshot_at ? formatDate(referenceResult.snapshot_at) : "2026-09-22"}. A aprovação no PrintWayy orienta a configuração, mas não comprova leitura pelo Nexa neste equipamento.</p>
-              <form className="reference-search" onSubmit={(event) => { event.preventDefault(); void searchReference(referenceQuery, referenceInterface); }}>
-                <label>Fabricante ou modelo<input value={referenceQuery} onChange={(event) => setReferenceQuery(event.target.value)} maxLength={120} placeholder="Ex.: OfficeJet 7740" /></label>
-                <label>Interface<select value={referenceInterface} onChange={(event) => setReferenceInterface(event.target.value)}>
-                  <option value="all">Todas</option><option value="network">Rede homologada</option>
-                  <option value="usb">USB homologado</option><option value="both">Rede e USB homologados</option>
-                </select></label>
-                <button className="primary-button" type="submit" disabled={referenceSearching}>{referenceSearching ? "Consultando..." : "Buscar modelos"}</button>
-              </form>
-              {referenceError && <div className="notice error" role="alert">{referenceError}</div>}
-              {referenceResult && <>
-                <p className="reference-count">{referenceResult.total_matches.toLocaleString("pt-BR")} resultado(s); exibindo até 100. Selecione o ID exato no arquivo de configuração para resolver automaticamente um OID total único de rede.</p>
-                <div className="table-scroll"><table><thead><tr><th>ID</th><th>Fabricante</th><th>Modelo</th><th>Rede</th><th>USB</th><th>OID total de rede</th></tr></thead>
-                  <tbody>{referenceResult.results.map((model) => <tr key={model.source_model_id}>
-                    <td className="mono">{model.source_model_id}</td><td>{model.manufacturer}</td><td>{model.model}</td>
-                    <td>{referenceStatus(model.network)}</td><td>{referenceStatus(model.usb)}</td>
-                    <td className="mono">{model.network_total_oid_candidates.length === 1 ? model.network_total_oid_candidates[0] : model.network_total_oid_candidates.length > 1 ? "Ambíguo" : "Sem OID total no pacote"}</td>
-                  </tr>)}</tbody></table></div>
-                {referenceResult.total_matches === 0 && <div className="empty">Nenhum modelo corresponde à busca.</div>}
-              </>}
-              <div className="notice">O catálogo não ativa coleta USB nem cadastra equipamentos. OID de rede só é usado quando um ID de modelo é configurado explicitamente e há um único candidato; confirme identidade, unidade e variação do contador no dispositivo real.</div>
-            </section>
-            <section className="panel">
+              <section className="panel printer-register">
+                <div className="panel-title"><h2>Cadastro de impressoras</h2>
+                  <span>Gerenciamento local conectado ao serviço Rust</span></div>
+                <div className="printer-toolbar">
+                  <div className="printer-buttons">
+                    <button type="button" className="primary-button" disabled={printerBusy || !selectedIds.length || !snapshot?.local_control_supported}
+                      onClick={() => void operatePrinters("monitor")}>Monitorar</button>
+                    <button type="button" className="secondary-button" disabled={printerBusy || !selectedIds.length || !snapshot?.local_control_supported}
+                      onClick={() => void operatePrinters("disable")}>Desativar</button>
+                    <button type="button" className="secondary-button" disabled={printerBusy || !snapshot?.local_control_supported}
+                      onClick={() => setAddingPrinter(value => !value)}>Adicionar</button>
+                    <button type="button" className="secondary-button" disabled={printerBusy || !selectedIds.length || !snapshot?.local_control_supported}
+                      onClick={() => setRemoveArmed(true)}>Remover</button>
+                  </div>
+                  <div className="printer-totals">
+                    <span>Impressoras cadastradas: <strong>{snapshot?.printers.length ?? 0}</strong></span>
+                    <span>Impressoras monitoradas: <strong>{snapshot?.printers.filter(p => p.monitored).length ?? 0}</strong></span>
+                  </div>
+                  <label className="printer-filter">
+                    <span className="sr-only">Filtrar impressoras</span>
+                    <input placeholder="Filtrar impressoras..." value={printerFilter}
+                      onChange={event => setPrinterFilter(event.target.value)} maxLength={120} /></label>
+                </div>
+                {addingPrinter && <form className="printer-add-form" onSubmit={event => { event.preventDefault(); void addPrinter(); }}>
+                  <h3>Adicionar impressora de rede</h3>
+                  <p>Use o ID do equipamento já associado ao cliente Nexa e um IP em faixa autorizada.</p>
+                  <label>ID no Nexa <input type="number" min="1" step="1" required value={newPrinterId}
+                    onChange={event => setNewPrinterId(event.target.value)} /></label>
+                  <label>IPv4 <input required value={newPrinterIp} maxLength={15} placeholder="192.168.15.45"
+                    onChange={event => setNewPrinterIp(event.target.value)} /></label>
+                  <label>OID total <input value={newPrinterOid} maxLength={300} disabled={autoDetectOid}
+                    placeholder="1.3.6.1.2.1.43.10.2.1.4.1.1"
+                    onChange={event => setNewPrinterOid(event.target.value)} /></label>
+                  <label className="printer-checkbox"><input type="checkbox" checked={autoDetectOid}
+                    onChange={event => setAutoDetectOid(event.target.checked)} />
+                    Detectar o OID por identidade SNMP, somente quando inequívoca</label>
+                  <div className="printer-buttons">
+                    <button type="submit" className="primary-button" disabled={printerBusy}>Salvar cadastro</button>
+                    <button type="button" className="secondary-button" onClick={() => setAddingPrinter(false)}>Cancelar</button>
+                  </div>
+                  <p>Salvar não ativa monitoramento. Monitorar exige leitura SNMP real.</p>
+                </form>}
+                {removeArmed && <div className="printer-confirm" role="alert">
+                  <span>Remover {selectedIds.length} impressora(s) do cadastro local? Leituras anteriores serão preservadas.</span>
+                  <button type="button" className="secondary-button" disabled={printerBusy}
+                    onClick={() => { setRemoveArmed(false); void operatePrinters("remove"); }}>Confirmar</button>
+                  <button type="button" className="secondary-button" onClick={() => setRemoveArmed(false)}>Cancelar</button>
+                </div>}
+                {snapshot?.authorized_subnets?.some(cidr => cidr.startsWith("192.0.2.")) &&
+                  <div className="notice warning" role="alert">
+                    A faixa 192.0.2.0/24 é reservada para documentação.
+                    Provisione no serviço as sub-redes privadas reais autorizadas antes de adicionar impressoras.
+                  </div>}
+                {printerError && <div className="notice error" role="alert">{printerError}</div>}
+                {printerNotice && <div className="notice" role="status">{printerNotice}</div>}
+                <div className="table-scroll"><table>
+                  <thead><tr><th><input type="checkbox" aria-label="Selecionar impressoras filtradas"
+                    checked={filteredPrinters.length > 0 && filteredPrinters.every(p => selectedIds.includes(p.printer_id))}
+                    onChange={event => {
+                      const ids = filteredPrinters.map(p => p.printer_id);
+                      setSelectedIds(previous => event.target.checked
+                        ? Array.from(new Set([...previous, ...ids]))
+                        : previous.filter(id => !ids.includes(id)));
+                    }} /></th>
+                    <th>Monitorada</th><th>Situação</th><th>Tipo</th><th>Homologado</th>
+                    <th>Endereço IP</th><th>Fabricante</th><th>Modelo</th>
+                    <th>Número de série</th><th>Endereço MAC</th><th>Ver detalhes</th></tr></thead>
+                  <tbody>{filteredPrinters.map(printer => <tr key={printer.printer_id}>
+                    <td><input type="checkbox" aria-label={"Selecionar impressora " + printer.printer_id}
+                      checked={selectedIds.includes(printer.printer_id)}
+                      onChange={event => setSelectedIds(previous => event.target.checked
+                        ? Array.from(new Set([...previous, printer.printer_id]))
+                        : previous.filter(id => id !== printer.printer_id))} /></td>
+                    <td>{printer.monitored ? "Sim" : "Não"}</td>
+                    <td>{!printer.monitored ? "Desativada" : printer.last_tested_at
+                      ? "SNMP validado" : "Ativa (sem teste registrado)"}</td>
+                    <td>Rede</td><td>Não homologado no Nexa</td>
+                    <td className="mono">{printer.ip}</td>
+                    <td>{printer.manufacturer ?? "Não identificado"}</td>
+                    <td>{printer.model ?? "Não identificado"}</td>
+                    <td>{printer.serial ?? "Não identificado"}</td>
+                    <td>{printer.mac ?? "Não identificado"}</td>
+                    <td><button type="button" className="secondary-button"
+                      aria-expanded={expandedPrinter === printer.printer_id}
+                      onClick={() => setExpandedPrinter(previous =>
+                        previous === printer.printer_id ? null : printer.printer_id)}>
+                      {expandedPrinter === printer.printer_id ? "Ocultar" : "Detalhes"}</button>
+                      {expandedPrinter === printer.printer_id && <div className="printer-details">
+                        <strong>Equipamento #{printer.printer_id}</strong>
+                        <span>OID: {printer.oid || "Seleção automática"}</span>
+                        <span>Teste SNMP: {printer.last_tested_at ? formatDate(printer.last_tested_at) : "Ainda não registrado"}</span>
+                        <span>Perfil de referência: {printer.reference_model_id ?? "Não selecionado"}</span>
+                        <span>Homologação de contador para faturamento: pendente</span>
+                      </div>}</td></tr>)}</tbody>
+                </table></div>
+                {snapshot?.printers.length === 0 && <div className="empty">
+                  Nenhuma impressora cadastrada. Utilize Adicionar para começar.</div>}
+              </section>
+
+
+            </>
+          )}
+
+
+          {tab === "tools" && (
+            <>
+              <section className="tool-selector" aria-label="Ferramentas de descoberta">
+                <button type="button" className={`tool-card ${toolMode === "network" ? "selected" : ""}`}
+                  aria-pressed={toolMode === "network"} onClick={() => setToolMode("network")}>
+                  <Network size={30} aria-hidden="true" />
+                  <strong>Busca de impressoras na rede</strong>
+                  <span>Localize candidatos em sub-redes autorizadas.</span>
+                </button>
+                <button type="button" className={`tool-card ${toolMode === "usb" ? "selected" : ""}`}
+                  aria-pressed={toolMode === "usb"} onClick={() => setToolMode("usb")}>
+                  <Usb size={30} aria-hidden="true" />
+                  <strong>Busca de impressoras USB</strong>
+                  <span>Encontre impressoras, scanners e dispositivos de imagem conectados.</span>
+                </button>
+              </section>
+              {toolMode === null && (
+                <div className="notice" role="status">
+                  Escolha uma ferramenta para iniciar a descoberta. Nenhum dispositivo será cadastrado ou monitorado automaticamente.
+                </div>
+              )}
+              {toolMode === "network" && (
+                <div className="tool-workspace">
+                  <section className="panel">
               <div className="panel-title"><h2>Descoberta na rede local</h2><span>Busca limitada às interfaces privadas deste computador</span></div>
               <p>Portas de impressão e capacidades eSCL são indícios de equipamento. Confirme modelo, cliente e medidores antes do cadastro.</p>
               <button type="button" className="primary-button" onClick={() => void discover()} disabled={discovering}>
@@ -562,6 +701,73 @@ export default function App() {
               </table></div>}
               {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão ou scanner eSCL respondeu nesta busca.</div>}
             </section>
+                  <div className="discovery-settings">
+                <h3>Busca manual por faixa autorizada</h3>
+                <p>Informe até quatro faixas IPv4/CIDR privadas, separadas por vírgula ou linha.
+                  Cada faixa deve caber em /24 e estar integralmente contida nas sub-redes já autorizadas pelo administrador.</p>
+                <label htmlFor="manual-discovery-cidrs">Faixas para esta varredura</label>
+                <textarea id="manual-discovery-cidrs" rows={3} value={rangeDraft}
+                  placeholder="192.168.1.0/24" spellCheck={false} autoComplete="off"
+                  onChange={event => setRangeDraft(event.target.value)} maxLength={256} />
+                <button type="button" className="primary-button" onClick={() => void discoverRanges()}
+                  disabled={rangeDiscovering || !snapshot?.configured || !rangeDraft.trim()}>
+                  <Network size={16} aria-hidden="true" />
+                  {rangeDiscovering ? "Verificando faixas..." : "Buscar apenas nas faixas informadas"}
+                </button>
+                {rangeError && <div className="notice error" role="alert">{rangeError}</div>}
+                <p>Resultados aparecem abaixo como candidatos para revisão. Esta consulta não altera o cadastro
+                  e não habilita monitoramento. Faixas fora do escopo autorizado continuam bloqueadas pelo serviço.</p>
+              </div>
+                  <div className="discovery-settings">
+                    <h3>Busca rápida por broadcast SNMP</h3>
+                    <p>Utiliza as faixas acima, somente na rede local diretamente conectada.
+                      A credencial SNMP permanece no serviço protegido. Nem todos os equipamentos respondem ao broadcast.</p>
+                    <button type="button" className="primary-button"
+                      disabled={broadcastBusy || !rangeDraft.trim() || !snapshot?.local_control_supported}
+                      onClick={() => void broadcastDiscover()}>
+                      {broadcastBusy ? "Consultando broadcast..." : "Busca rápida (broadcast)"}
+                    </button>
+                    {broadcastError && <div className="notice error" role="alert">{broadcastError}</div>}
+                    {broadcastNotice && <div className="notice" role="status">{broadcastNotice}</div>}
+                  </div>
+                  <section className="panel">
+                    <div className="panel-title">
+                      <h2>Resultados da busca por broadcast</h2>
+                      <span>{snapshot?.broadcast_report?.observed_candidates ?? 0} resposta(s) SNMP</span>
+                    </div>
+                    <p>Última execução: {formatDate(snapshot?.broadcast_report?.last_completed_at ?? null)}.
+                      Uma resposta SNMP não significa que o contador está homologado.</p>
+                    <div className="table-scroll"><table>
+                      <thead><tr><th>Endereço IP</th><th>Identificação</th><th>Cadastro</th></tr></thead>
+                      <tbody>{snapshot?.broadcast_report?.candidates.map(candidate => (
+                        <tr key={candidate.ip}>
+                          <td className="mono">{candidate.ip}</td>
+                          <td>Respondendo ao SNMP (fabricante e contador ainda não confirmados)</td>
+                          <td>
+                            <button type="button" className="secondary-button"
+                              disabled={!snapshot?.local_control_supported || snapshot.printers.some(item => item.ip === candidate.ip)}
+                              onClick={() => {
+                                const ids = [...snapshot.printers.map(p => p.printer_id), ...snapshot.usb_scanners.map(p => p.printer_id)];
+                                setNewPrinterId(String(Math.max(0, ...ids) + 1));
+                                setNewPrinterIp(candidate.ip);
+                                setAutoDetectOid(true);
+                                setNewPrinterOid("");
+                                setAddingPrinter(true);
+                                setTab("printers");
+                              }}>
+                              {snapshot.printers.some(item => item.ip === candidate.ip) ? "Já cadastrado" : "Preparar cadastro"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}</tbody>
+                    </table></div>
+                    {snapshot?.broadcast_report?.last_completed_at && !snapshot.broadcast_report.observed_candidates && (
+                      <div className="empty">Nenhum dispositivo respondeu ao broadcast. Utilize a busca detalhada por IP.</div>
+                    )}
+                    {!snapshot?.broadcast_report?.last_completed_at && (
+                      <div className="empty">Nenhuma busca rápida executada ainda.</div>
+                    )}
+                  </section>
             <section className="panel">
               <div className="panel-title"><h2>Candidatos da última varredura programada</h2>
                 <span>Relatório persistido na fila local</span></div>
@@ -629,7 +835,12 @@ export default function App() {
                 Nenhum candidato disponível nesta varredura. Confira se a agenda foi habilitada pelo administrador.
               </div>}
             </section>
-            <section className="panel">
+                  <div className="notice">Busca por portas de impressão/eSCL não é leitura SNMP e não comprova fabricante, modelo, número de série ou contadores. Credenciais SNMP não são expostas nesta tela; a homologação depende de inspeção autorizada com o daemon Rust.</div>
+                </div>
+              )}
+              {toolMode === "usb" && (
+                <div className="tool-workspace">
+                  <section className="panel">
               <div className="panel-title"><h2>Impressoras e dispositivos USB</h2><span>Descoberta local · Windows</span></div>
               <p>Identifica impressoras e dispositivos de imagem conectados por USB, de qualquer fabricante. A identificação não confirma suporte à leitura de contadores.</p>
               <button type="button" className="primary-button" onClick={() => void discoverUsb()} disabled={usbDiscovering} aria-label="Detectar impressoras USB">
@@ -659,6 +870,8 @@ export default function App() {
               </>}
               <div className="notice">Detecção local somente leitura. Equipamentos não são cadastrados automaticamente e nenhuma medição é transmitida nesta etapa.</div>
             </section>
+                </div>
+              )}
             </>
           )}
 
@@ -791,23 +1004,6 @@ export default function App() {
                 {scheduleError && <div role="alert" className="notice error">{scheduleError}</div>}
                 {scheduleNotice && <div role="status" className="notice">{scheduleNotice}</div>}
                 <p>Permissões locais do serviço são obrigatórias. No Windows, a edição da agenda permanece desabilitada nesta etapa. Desativar a agenda impede novas varreduras, mas uma busca já iniciada pode concluir suas conexões.</p>
-              </div>
-              <div className="discovery-settings">
-                <h3>Busca manual por faixa autorizada</h3>
-                <p>Informe até quatro faixas IPv4/CIDR privadas, separadas por vírgula ou linha.
-                  Cada faixa deve caber em /24 e estar integralmente contida nas sub-redes já autorizadas pelo administrador.</p>
-                <label htmlFor="manual-discovery-cidrs">Faixas para esta varredura</label>
-                <textarea id="manual-discovery-cidrs" rows={3} value={rangeDraft}
-                  placeholder="192.168.1.0/24" spellCheck={false} autoComplete="off"
-                  onChange={event => setRangeDraft(event.target.value)} maxLength={256} />
-                <button type="button" className="primary-button" onClick={() => void discoverRanges()}
-                  disabled={rangeDiscovering || !snapshot?.configured || !rangeDraft.trim()}>
-                  <Network size={16} aria-hidden="true" />
-                  {rangeDiscovering ? "Verificando faixas..." : "Buscar apenas nas faixas informadas"}
-                </button>
-                {rangeError && <div className="notice error" role="alert">{rangeError}</div>}
-                <p>Resultados aparecem em Impressoras apenas como candidatos. Esta consulta não altera o cadastro
-                  e não habilita monitoramento. Faixas fora do escopo autorizado continuam bloqueadas pelo serviço.</p>
               </div>
               <div className="notice">Tokens de acesso e comunidades SNMP nunca são carregados ou exibidos nesta interface.</div>
             </section>

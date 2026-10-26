@@ -1,5 +1,20 @@
 # Nexa Collector — cliente e limites de homologação
 
+## Cadastro operacional de impressoras (implementação incremental, PR #73)
+
+A aba **Impressoras** permite selecionar equipamentos de rede e executar **Adicionar**, **Monitorar**, **Desativar** e **Remover**. As operações não são apenas mudanças de estado na interface: o Console envia comandos tipados pelo canal local protegido ao daemon, que valida ID, IP, CIDR provisionado e OID antes de persistir a lista em `state.printer_fleet_v1` do SQLite. Operações são transacionais. A lista tem limite de 500 equipamentos por ponto de coleta e é retomada após reinício; o daemon lê as alterações e antecipa a próxima coleta, enquanto amostras históricas permanecem na outbox.
+
+- **Adicionar:** exige o `printer_id` previamente associado ao cliente no backend, IPv4 autorizado e OID explícito ou detecção de referência inequívoca. Um cadastro não ativa monitoramento.
+- **Monitorar:** lê de fato um contador SNMP v2c do IP e OID configurados. Somente resposta numérica válida ativa o monitoramento. Nome do modelo, fabricante e série são obtidos por consultas SNMP limitadas quando disponíveis; campos ausentes não são fabricados. Isso não certifica contador para faturamento.
+- **Desativar/Remover:** altera o monitoramento/cadastro do daemon, sem apagar amostras já persistidas. A alteração entra na próxima iteração do processo.
+- **Permissões:** no Windows, comandos requerem a named pipe local restrita a contas administrativas e LocalSystem; em Linux/macOS, o socket Unix privado do serviço. Não há endpoint HTTP de escrita nem exposição de senha SNMP no React.
+- **Busca rápida por broadcast:** em **Ferramentas → Rede**, uma requisição UDP 161 SNMPv2c GET para o broadcast dirigido de até quatro redes IPv4/CIDR autorizadas, pequenas (máximo /24) e diretamente conectadas ao host, durante até dois segundos por rede. Respostas são correlacionadas por comunidade/ID e o resultado é persistido como candidato. Pode retornar vazio porque muitos equipamentos e roteadores não respondem ao broadcast; neste caso use a busca detalhada por IP.
+- **Bloqueios esperados:** faixa `192.0.2.0/24` no exemplo de configuração é reservada para documentação; substitua pelas faixas privadas reais da estação antes de usar. A credencial de leitura SNMP precisa estar provisionada no serviço. Usuários não elevados no Windows não podem executar mudanças administrativas.
+
+**Ainda não homologado em hardware:** falta ensaio real de cada marca/modelo/firmware, testes de instalação/atualização/rollback em Windows e aprovação explícita de medidores para faturamento. IDs só são considerados pertencentes ao cliente após a validação da API Nexa; o cadastro local por si só não cria o equipamento no backend.
+
+
+
 ## Inspeção SNMP explícita de inventário (incremento)
 
 Com credencial SNMPv2c **somente leitura** colocada em

@@ -13,6 +13,8 @@ use zeroize::Zeroizing;
 mod progress_watchdog;
 mod recovery_guard;
 mod mail_transport;
+mod printer_control;
+mod broadcast_control;
 
 #[cfg(unix)]
 mod local_control;
@@ -284,12 +286,11 @@ fn run_application(
         Some(load_secret("NEXA_MAIL_PASSWORD", windows_service_mode, macos_launchd_mode)?
             .ok_or("email mode requires a protected mailbox password")?)
     } else { None };
-    let snmp_community = if cfg.printers.is_empty() {
-        None
-    } else {
-        load_secret("NEXA_SNMP_COMMUNITY", windows_service_mode, macos_launchd_mode)?
-    };
-    if supervised_mode && (token.is_none() || (!cfg.printers.is_empty() && snmp_community.is_none())) {
+    // Managed printers may be added while the service is running.
+    // Load the protected credential even when the initial JSON has no printers.
+    let snmp_community = load_optional_snmp_secret(windows_service_mode, macos_launchd_mode)?;
+    let has_active_snmp = outbox.printer_fleet(&cfg)?.iter().any(|item| item.monitored);
+    if supervised_mode && (token.is_none() || (has_active_snmp && snmp_community.is_none())) {
         return Err("supervised collector requires token and configured SNMP credentials".into());
     }
     // Separate progress checkpoints: the heartbeat worker can no longer be
@@ -369,6 +370,10 @@ fn run_application(
     let retry_seconds = stored_retry.seconds_until_retry(Utc::now())?;
     upload_retry.restore(Instant::now(), retry_seconds, stored_retry.consecutive_failures);
     let mut next_poll = Instant::now();
+    // Detect privileged roster changes without restarting the service.
+    // The first live poll is already scheduled immediately.
+    let mut last_fleet_snapshot = serde_json::to_vec(&outbox.printer_fleet(&cfg)?)?;
+
     // The scheduler never registers printers or generates readings. Its
     // non-sensitive candidate report is stored in the existing outbox state.
     // A worker thread keeps slow probes independent from uploads/heartbeats.
@@ -402,7 +407,7 @@ fn run_application(
         match local_control::start(
             Path::new(&args[2]), cfg.clone(),
             db_key.clone().ok_or("encrypted service storage required for local control")?,
-            Arc::clone(&shutdown),
+            snmp_community.clone(), Arc::clone(&shutdown),
         ) {
             Ok(handle) => Some(handle),
             Err(error) => {
@@ -414,13 +419,11 @@ fn run_application(
         None
     };
     #[cfg(windows)]
-    let _windows_control = if windows_service_mode && !once
-        && env::var("NEXA_EXPERIMENTAL_WINDOWS_CONTROL").as_deref() == Ok("1")
-    {
+    let _windows_control = if windows_service_mode && !once {
         match windows_local_control::start(
             Path::new(&args[2]).to_path_buf(), cfg.clone(),
             db_key.clone().ok_or("Windows protected database key required")?,
-            Arc::clone(&shutdown),
+            snmp_community.clone(), Arc::clone(&shutdown),
         ) {
             Ok(handle) => Some(handle),
             Err(error) => {
@@ -503,6 +506,16 @@ fn run_application(
                 discovery_receiver = Some(receiver);
             }
         }
+        if !once {
+            if let Ok(current) = outbox.printer_fleet(&cfg) {
+                if let Ok(serialized) = serde_json::to_vec(&current) {
+                    if serialized != last_fleet_snapshot {
+                        last_fleet_snapshot = serialized;
+                        next_poll = Instant::now();
+                    }
+                }
+            }
+        }
         if Instant::now() >= next_poll {
             let disk_limited = outbox.disk_soft_limit_reached()?;
             if disk_limited {
@@ -510,7 +523,17 @@ fn run_application(
             } else if outbox.at_capacity()? {
                 eprintln!("Outbox count/payload budget saturated; new SNMP samples deferred");
             } else if let Some(ref community) = snmp_community {
-                for printer in &cfg.printers {
+                // Read committed service-owned roster each collection interval;
+                // an invalid/tampered override must never fall back to old devices.
+                let fleet = match outbox.printer_fleet(&cfg) {
+                    Ok(records) => records,
+                    Err(_) => {
+                        eprintln!("Operational printer roster invalid: SNMP polling disabled until repaired");
+                        Vec::new()
+                    }
+                };
+                for entry in fleet.iter().filter(|entry| entry.monitored) {
+                    let printer = &entry.config;
                     if shutdown.load(Ordering::Relaxed) { break; }
                     if outbox.at_capacity()? {
                         eprintln!("Outbox full; remaining printers deferred");
@@ -715,6 +738,34 @@ fn read_secret_file(path: &Path) -> Result<Zeroizing<String>, Box<dyn Error>> {
 /// In systemd mode missing credential files are fatal, NEVER silently
 /// replaced with environment variables or a plaintext DB configuration.
 /// Outside systemd, preserve explicit development CLI environment support.
+/// A collector with no active SNMP devices can still run heartbeats and
+/// receive protected enrollment commands before a credential is provisioned.
+fn load_optional_snmp_secret(
+    windows_service_mode: bool, macos_launchd_mode: bool,
+) -> Result<Option<Zeroizing<String>>, Box<dyn Error>> {
+    const NAME: &str = "NEXA_SNMP_COMMUNITY";
+    if windows_service_mode {
+        #[cfg(windows)]
+        {
+            let root = env::var_os("ProgramData").ok_or("ProgramData is missing")?;
+            let path = Path::new(&root).join("NexaCollector").join("credentials").join(NAME);
+            return if path.exists() { read_secret_file(&path).map(Some) } else { Ok(None) };
+        }
+    }
+    if macos_launchd_mode {
+        #[cfg(target_os = "macos")]
+        {
+            let path = Path::new("/Library/Application Support/NexaCollector").join("credentials").join(NAME);
+            return if path.exists() { read_secret_file(&path).map(Some) } else { Ok(None) };
+        }
+    }
+    if let Some(root) = env::var_os("CREDENTIALS_DIRECTORY") {
+        let path = Path::new(&root).join(NAME);
+        return if path.exists() { read_secret_file(&path).map(Some) } else { Ok(None) };
+    }
+    load_secret(NAME, windows_service_mode, macos_launchd_mode)
+}
+
 fn load_secret(
     name: &str,
     windows_service_mode: bool,

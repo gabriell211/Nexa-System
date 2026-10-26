@@ -1,9 +1,11 @@
 pub mod recovery_guard;
 pub mod discovery;
+pub mod broadcast_discovery;
 pub mod mib_registry;
 pub mod reference_catalog;
 pub mod snmp_inventory;
 pub mod candidate_review;
+pub mod fleet;
 pub mod local_control;
 pub mod usb_devices;
 pub mod canon_drc225;
@@ -1395,6 +1397,84 @@ impl Outbox {
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             [&serialized],
         )?;
+        Ok(())
+    }
+
+    /// Broadcast observations must not replace scheduled discovery history:
+    /// the scheduler uses discovery_report.last_completed_at to plan its next run.
+    pub fn broadcast_report(&self) -> Result<DiscoveryReport, CollectorError> {
+        let raw: Option<String> = self.connection.query_row(
+            "SELECT value FROM state WHERE key = 'broadcast_report_v1'",
+            [], |row| row.get(0),
+        ).optional()?;
+        raw.map(|value| serde_json::from_str(&value).map_err(CollectorError::from))
+            .transpose()
+            .map(|value| value.unwrap_or_default())
+    }
+
+    pub fn save_broadcast_report(&self, report: &DiscoveryReport) -> Result<(), CollectorError> {
+        if report.candidates.len() > 128 || report.observed_candidates > 128 {
+            return Err(CollectorError::Configuration("broadcast result exceeds response cap".into()));
+        }
+        let serialized = serde_json::to_string(report)?;
+        self.connection.execute(
+            "INSERT INTO state(key, value) VALUES ('broadcast_report_v1', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [&serialized],
+        )?;
+        Ok(())
+    }
+
+    /// Current fleet override, or the provisioned legacy roster when no override exists.
+    /// A malformed override never silently restores legacy monitoring.
+    pub fn printer_fleet(
+        &self, cfg: &CollectorConfig,
+    ) -> Result<Vec<fleet::FleetPrinter>, CollectorError> {
+        let raw: Option<String> = self.connection.query_row(
+            "SELECT value FROM state WHERE key = 'printer_fleet_v1'",
+            [], |row| row.get(0),
+        ).optional()?;
+        // Legacy configuration remains readable without imposing new policy
+        // until an operator explicitly starts managing the roster.
+        let Some(json) = raw else { return Ok(fleet::from_config(cfg)); };
+        let records = serde_json::from_str::<Vec<fleet::FleetPrinter>>(&json)?;
+        fleet::validate(cfg, &records)?;
+        Ok(records)
+    }
+
+    /// Serial, immediate transaction protects concurrent administrative
+    /// changes; disabling/removing does not delete queued historical samples.
+    pub fn apply_printer_command(
+        &mut self,
+        cfg: &CollectorConfig, command: &fleet::FleetCommand,
+        tested_at: Option<String>,
+        identity: Option<fleet::FleetIdentity>,
+    ) -> Result<(), CollectorError> {
+        let tx = self.connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let raw: Option<String> = tx.query_row(
+            "SELECT value FROM state WHERE key = 'printer_fleet_v1'",
+            [], |row| row.get(0),
+        ).optional()?;
+        let mut records = match raw {
+            Some(json) => serde_json::from_str::<Vec<fleet::FleetPrinter>>(&json)?,
+            None => fleet::from_config(cfg),
+        };
+        fleet::apply(cfg, &mut records, command, tested_at)?;
+        if let (fleet::FleetCommand::Monitor { printer_id }, Some(identity)) = (command, identity) {
+            if let Some(record) = records.iter_mut().find(|entry| entry.config.printer_id == *printer_id) {
+                record.manufacturer = identity.manufacturer;
+                record.model = identity.model;
+                record.serial = identity.serial;
+                record.mac = identity.mac;
+            }
+        }
+        let serialized = serde_json::to_string(&records)?;
+        tx.execute(
+            "INSERT INTO state(key, value) VALUES ('printer_fleet_v1', ?1)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            [&serialized],
+        )?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -3029,5 +3109,58 @@ mod tests {
             usb_scanners: vec![],
         };
         assert!(cfg.validate().is_err());
+    }
+}
+
+
+#[cfg(test)]
+mod broadcast_persistence_tests {
+    use super::*;
+
+    #[test]
+    fn broadcast_keeps_scheduled_scan_history_and_survives_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("queue.sqlite");
+        let store = Outbox::open(&db_path).unwrap();
+        let scheduled = DiscoveryReport {
+            last_completed_at: Some(Utc::now()),
+            observed_candidates: 1,
+            candidates: vec![discovery::DiscoveryCandidate {
+                ip: "192.168.1.10".parse().unwrap(),
+                print_ports: vec![9100], http_server: None, escl_scanner: false,
+            }],
+            ..DiscoveryReport::default()
+        };
+        store.save_discovery_report(&scheduled).unwrap();
+        let broadcast = DiscoveryReport {
+            last_completed_at: Some(Utc::now()),
+            observed_candidates: 1,
+            candidates: vec![discovery::DiscoveryCandidate {
+                ip: "192.168.1.20".parse().unwrap(),
+                print_ports: vec![], http_server: None, escl_scanner: false,
+            }],
+            ..DiscoveryReport::default()
+        };
+        store.save_broadcast_report(&broadcast).unwrap();
+        drop(store);
+        let reopened = Outbox::open(&db_path).unwrap();
+        assert_eq!(reopened.discovery_report().unwrap().candidates[0].ip,
+            "192.168.1.10".parse::<std::net::Ipv4Addr>().unwrap());
+        assert_eq!(reopened.broadcast_report().unwrap().candidates[0].ip,
+            "192.168.1.20".parse::<std::net::Ipv4Addr>().unwrap());
+        assert_eq!(reopened.discovery_report().unwrap().observed_candidates, 1);
+    }
+
+    #[test]
+    fn refuses_oversized_broadcast_results_without_clobbering_previous() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Outbox::open(dir.path().join("queue.sqlite")).unwrap();
+        let report = DiscoveryReport {
+            last_completed_at: Some(Utc::now()),
+            observed_candidates: 129,
+            ..DiscoveryReport::default()
+        };
+        assert!(db.save_broadcast_report(&report).is_err());
+        assert!(db.broadcast_report().unwrap().last_completed_at.is_none());
     }
 }
