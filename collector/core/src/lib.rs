@@ -1460,8 +1460,10 @@ impl Outbox {
             None => fleet::from_config(cfg),
         };
         fleet::apply(cfg, &mut records, command, tested_at)?;
-        if let (fleet::FleetCommand::Monitor { printer_id }, Some(identity)) = (command, identity) {
-            if let Some(record) = records.iter_mut().find(|entry| entry.config.printer_id == *printer_id) {
+        // Preserve catalog identity on Add without enabling the printer.
+        if let Some(identity) = identity {
+            let printer_id = command.printer_id();
+            if let Some(record) = records.iter_mut().find(|entry| entry.config.printer_id == printer_id) {
                 record.manufacturer = identity.manufacturer;
                 record.model = identity.model;
                 record.serial = identity.serial;

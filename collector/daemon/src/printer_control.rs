@@ -30,6 +30,20 @@ pub fn execute(
         }
         Some(Utc::now().to_rfc3339())
     } else {
+        if let FleetCommand::Add { ip, .. } = command {
+            if let Some(secret) = community.filter(|v| !v.is_empty()) {
+                // Best-effort, read-only and restricted to authorized CIDRs.
+                // Unknown models are saved unmonitored as "Não homologada".
+                identity = nexa_collector_core::snmp_inventory::identify_reference_v2c(
+                    *ip, &config.authorized_subnets, secret.as_bytes(),
+                ).map(|reference| nexa_collector_core::fleet::FleetIdentity {
+                    manufacturer: Some(reference.manufacturer),
+                    model: Some(reference.model),
+                    serial: None,
+                    mac: None,
+                });
+            }
+        }
         None
     };
     outbox.apply_printer_command(config, command, proof, identity)

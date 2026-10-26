@@ -140,7 +140,7 @@ function networkCatalogStatus(candidate: DiscoveryCandidate): string {
   if (!reference || reference.network_status !== "approved") return "Não homologada";
   return reference.total_counter_oid
     ? "Homologada no catálogo · leitura automática disponível"
-    : "Homologada no catálogo · contador automático indisponível";
+    : "Não homologada para coleta automática";
 }
 
 function referenceStatus(value: ReferenceStatus): string {

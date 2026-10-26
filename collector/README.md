@@ -2,6 +2,10 @@
 
 ## Reconhecimento automático de modelos já mapeados (rede + USB)
 
+Na ação **Adicionar**, o daemon consulta em modo somente leitura a identidade SNMP do IP autorizado com a credencial protegida do serviço. Se a referência do catálogo corresponder inequivocamente, fabricante/modelo são persistidos no registro local **ainda não monitorado** e o Console apresenta o estado de homologação de coleta automática sem esperar a ação Monitorar. A ausência de resposta ou perfil utilizável não impede o cadastro local, mas aparece como **Não homologada** e bloqueia o monitoramento. Esta identificação não é evidência para faturamento.
+
+
+
 **A interface não solicita OID manual.** Em **Impressoras → Adicionar**, o usuário informa somente o ID previamente vinculado ao cliente e o IP permitido; o Console envia um comando com resolução automática de OID obrigatória. Um modelo fora do catálogo aprovado ou sem OID único de leitura permanece identificado como **Não homologada** para coleta automática, e a ação **Monitorar** falha de forma segura sem registrar leituras. Perfis explícitos legados provisionados por administradores continuam reconhecidos pelo daemon para preservar compatibilidade, mas não são introduzidos pela UI.
 
 O catálogo embarcado tem **2.142 modelos**, dos quais **1.898 aprovados para rede** e **920 aprovados para USB** na fonte de referência. A detecção USB no Windows já identifica o status de referência por fabricante/modelo no nome PnP, mas não implica leitura do contador USB; sem driver/provider específico, o contador permanece indisponível.
