@@ -78,7 +78,6 @@ struct CollectorSnapshot {
     error: Option<String>,
 }
 
-#[tauri::command]
 fn catalog_auto_supported(
     printer: &nexa_collector_core::PrinterConfig,
     manufacturer: Option<&str>, model: Option<&str>,
@@ -99,6 +98,7 @@ fn catalog_auto_supported(
         })
 }
 
+#[tauri::command]
 fn get_snapshot() -> CollectorSnapshot {
     let mut snapshot = CollectorSnapshot {
         configured: false,
