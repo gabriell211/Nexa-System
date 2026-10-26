@@ -136,8 +136,11 @@ fn run_application(
     // Never fall back to inherited env variables if that directory is set.
     let has_systemd_credentials = env::var_os("CREDENTIALS_DIRECTORY").is_some();
     let supervised_mode = has_systemd_credentials || windows_service_mode || macos_launchd_mode;
-    let proxy_user = load_secret("NEXA_PROXY_USERNAME", windows_service_mode, macos_launchd_mode)?;
-    let proxy_password = load_secret("NEXA_PROXY_PASSWORD", windows_service_mode, macos_launchd_mode)?;
+    // Proxy credentials are optional in direct HTTPS and e-mail modes.
+    // A missing file in the protected Windows/macOS service directory must
+    // not prevent boot. If exactly one is present, reject the pair below.
+    let proxy_user = load_optional_secret("NEXA_PROXY_USERNAME", windows_service_mode, macos_launchd_mode)?;
+    let proxy_password = load_optional_secret("NEXA_PROXY_PASSWORD", windows_service_mode, macos_launchd_mode)?;
     match (proxy_user, proxy_password) {
         (Some(username), Some(password)) => {
             cfg.proxy_auth = Some(ProxyAuth {
@@ -748,30 +751,52 @@ fn read_secret_file(path: &Path) -> Result<Zeroizing<String>, Box<dyn Error>> {
 /// Outside systemd, preserve explicit development CLI environment support.
 /// A collector with no active SNMP devices can still run heartbeats and
 /// receive protected enrollment commands before a credential is provisioned.
-fn load_optional_snmp_secret(
-    windows_service_mode: bool, macos_launchd_mode: bool,
+fn load_optional_secret(
+    name: &str,
+    windows_service_mode: bool,
+    macos_launchd_mode: bool,
 ) -> Result<Option<Zeroizing<String>>, Box<dyn Error>> {
-    const NAME: &str = "NEXA_SNMP_COMMUNITY";
     if windows_service_mode {
         #[cfg(windows)]
         {
             let root = env::var_os("ProgramData").ok_or("ProgramData is missing")?;
-            let path = Path::new(&root).join("NexaCollector").join("credentials").join(NAME);
-            return if path.exists() { read_secret_file(&path).map(Some) } else { Ok(None) };
+            let path = Path::new(&root).join("NexaCollector").join("credentials").join(name);
+            return read_optional_secret_file(&path);
         }
+        #[cfg(not(windows))]
+        return Err("Windows service credentials are unavailable on this platform".into());
     }
     if macos_launchd_mode {
         #[cfg(target_os = "macos")]
         {
-            let path = Path::new("/Library/Application Support/NexaCollector").join("credentials").join(NAME);
-            return if path.exists() { read_secret_file(&path).map(Some) } else { Ok(None) };
+            let path = Path::new("/Library/Application Support/NexaCollector")
+                .join("credentials").join(name);
+            return read_optional_secret_file(&path);
         }
+        #[cfg(not(target_os = "macos"))]
+        return Err("macOS launchd credentials are unavailable on this platform".into());
     }
     if let Some(root) = env::var_os("CREDENTIALS_DIRECTORY") {
-        let path = Path::new(&root).join(NAME);
-        return if path.exists() { read_secret_file(&path).map(Some) } else { Ok(None) };
+        return read_optional_secret_file(&Path::new(&root).join(name));
     }
-    load_secret(NAME, windows_service_mode, macos_launchd_mode)
+    load_secret(name, false, false)
+}
+
+/// Only a genuinely absent optional file is ignored; invalid, unreadable or
+/// malformed secrets must fail closed rather than falling back to env values.
+fn read_optional_secret_file(path: &Path) -> Result<Option<Zeroizing<String>>, Box<dyn Error>> {
+    match fs::metadata(path) {
+        Ok(metadata) if metadata.is_file() => read_secret_file(path).map(Some),
+        Ok(_) => Err("credential path is not a regular file".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn load_optional_snmp_secret(
+    windows_service_mode: bool, macos_launchd_mode: bool,
+) -> Result<Option<Zeroizing<String>>, Box<dyn Error>> {
+    load_optional_secret("NEXA_SNMP_COMMUNITY", windows_service_mode, macos_launchd_mode)
 }
 
 fn load_secret(
@@ -816,6 +841,23 @@ fn load_secret(
 #[cfg(test)]
 mod credential_tests {
     use super::*;
+
+    #[test]
+    fn optional_proxy_credentials_do_not_break_mail_or_direct_web_service() {
+        let dir = tempfile::tempdir().unwrap();
+        let username = dir.path().join("NEXA_PROXY_USERNAME");
+        let password = dir.path().join("NEXA_PROXY_PASSWORD");
+        assert!(read_optional_secret_file(&username).unwrap().is_none());
+        assert!(read_optional_secret_file(&password).unwrap().is_none());
+
+        fs::write(&username, b"authenticated-proxy-user").unwrap();
+        assert_eq!(read_optional_secret_file(&username).unwrap().as_deref().map(String::as_str),
+            Some("authenticated-proxy-user"));
+        assert!(read_optional_secret_file(&password).unwrap().is_none());
+
+        fs::write(&password, b"bad\ncredential").unwrap();
+        assert!(read_optional_secret_file(&password).is_err());
+    }
 
     #[test]
     fn loads_systemd_credential_text_without_trailing_newline() {
