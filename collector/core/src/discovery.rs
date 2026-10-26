@@ -58,6 +58,28 @@ fn invalid_scope(reason: &'static str) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidInput, reason)
 }
 
+/// Validate explicit administrative network grants. Never infer permission
+/// from a discovered address, and never accept public/broad networks.
+/// Normalize host CIDRs such as 192.168.15.1/24 to 192.168.15.0/24.
+pub fn validate_network_grants(requested: &[String]) -> Result<Vec<String>, &'static str> {
+    if requested.is_empty() || requested.len() > 4 {
+        return Err("Informe entre uma e quatro faixas IPv4 privadas.");
+    }
+    let mut grants = BTreeSet::new();
+    for text in requested {
+        let range = text.parse::<Ipv4Net>()
+            .map_err(|_| "Faixa IPv4/CIDR inválida.")?.trunc();
+        if range.prefix_len() < 24
+            || !range.network().is_private() || !range.broadcast().is_private()
+            || range.network().is_loopback() || range.network().is_link_local()
+        {
+            return Err("Só é permitido autorizar redes IPv4 privadas com /24 ou mais restritas.");
+        }
+        grants.insert(range.to_string());
+    }
+    Ok(grants.into_iter().collect())
+}
+
 /// Plan a bounded, explicit scan. Requested ranges must be contained in the
 /// administrator-provisioned `authorized_subnets` from the Collector config.
 /// An open TCP port never counts as a registered or approved printer.
@@ -282,6 +304,19 @@ fn sanitize_server_header(value: &str) -> Option<String> {
 mod tests {
     use super::*;
     use std::net::TcpListener;
+
+    #[test]
+    fn explicit_network_grants_normalize_private_host_cidrs() {
+        assert_eq!(
+            validate_network_grants(&["192.168.15.1/24".into()]).unwrap(),
+            vec!["192.168.15.0/24".to_owned()],
+        );
+        assert!(validate_network_grants(&["192.0.2.0/24".into()]).is_err());
+        assert!(validate_network_grants(&["0.0.0.0/0".into()]).is_err());
+        assert!(validate_network_grants(&["10.0.0.0/16".into()]).is_err());
+        assert!(validate_network_grants(&[]).is_err());
+        assert!(validate_network_grants(&vec!["192.168.1.0/24".into(); 5]).is_err());
+    }
 
     #[test]
     fn manual_discovery_requires_authorized_bounded_rfc1918_ranges() {

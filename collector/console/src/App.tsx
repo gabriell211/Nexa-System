@@ -109,6 +109,8 @@ type CollectorSnapshot = {
   candidate_reviews_error: string | null;
   local_control_supported: boolean;
   schedule_control_supported: boolean;
+  sample_configuration: boolean;
+  windows_service_status: string | null;
   printers: PrinterInfo[];
   usb_scanners: UsbScannerInfo[];
   queue_pending: number | null;
@@ -159,6 +161,8 @@ export default function App() {
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [rangeDraft, setRangeDraft] = useState("");
   const [rangeDiscovering, setRangeDiscovering] = useState(false);
+  const [authorizingRange, setAuthorizingRange] = useState(false);
+  const [authorizationNotice, setAuthorizationNotice] = useState<string | null>(null);
   const [rangeError, setRangeError] = useState<string | null>(null);
   const [scheduleEnabled, setScheduleEnabled] = useState(false);
   const [scheduleHours, setScheduleHours] = useState(24);
@@ -253,6 +257,22 @@ export default function App() {
     }
   }, []);
 
+
+  const authorizeRanges = useCallback(async () => {
+    setRangeError(null);
+    setAuthorizationNotice(null);
+    const cidrs = rangeDraft.split(/[\s,;]+/).map(value => value.trim()).filter(Boolean);
+    setAuthorizingRange(true);
+    try {
+      await invoke<void>("authorize_network_ranges", { cidrs });
+      await refresh();
+      setAuthorizationNotice("Faixa autorizada no serviço instalado. Execute novamente a varredura.");
+    } catch (error) {
+      setRangeError(String(error));
+    } finally {
+      setAuthorizingRange(false);
+    }
+  }, [rangeDraft, refresh]);
 
   const addPrinter = useCallback(async () => {
     setPrinterError(null);
@@ -537,7 +557,7 @@ export default function App() {
                   <Info icon={ShieldCheck} label="Payload das leituras em repouso"
                     value={snapshot?.payload_encryption_enabled === true ? "AES-256-GCM habilitado" : snapshot?.payload_encryption_enabled === false ? "Sem criptografia de payload" : "Não verificado"} />
                   <Info icon={ArrowDownUp} label="Transmissão" value="Verificar logs do serviço" />
-                  <Info icon={CircleHelp} label="Serviço do sistema" value="Processo não inspecionado pelo console" />
+                  <Info icon={CircleHelp} label="Serviço do sistema" value={snapshot?.windows_service_status ?? "Processo não inspecionado pelo console"} />
                   <Info icon={Activity} label="Circuito do watchdog" value={snapshot?.watchdog_error ? "Histórico inválido/inacessível"
                     : watchdog ? watchdog.circuit_open ? "Bloqueado (requer análise)" : "Sem bloqueio por incidentes" : "Não verificado"} />
                 </div>
@@ -610,7 +630,7 @@ export default function App() {
                 {snapshot?.authorized_subnets?.some(cidr => cidr.startsWith("192.0.2.")) &&
                   <div className="notice warning" role="alert">
                     A faixa 192.0.2.0/24 é reservada para documentação.
-                    Provisione no serviço as sub-redes privadas reais autorizadas antes de adicionar impressoras.
+                    Este é um CIDR reservado para exemplos. Autorize uma faixa real no serviço do Windows; não utilize a impressora fictícia 192.0.2.10.
                   </div>}
                 {printerError && <div className="notice error" role="alert">{printerError}</div>}
                 {printerNotice && <div className="notice" role="status">{printerNotice}</div>}
@@ -689,6 +709,10 @@ export default function App() {
                   <section className="panel">
               <div className="panel-title"><h2>Descoberta na rede local</h2><span>Busca limitada às interfaces privadas deste computador</span></div>
               <p>Portas de impressão e capacidades eSCL são indícios de equipamento. Confirme modelo, cliente e medidores antes do cadastro.</p>
+              {snapshot?.sample_configuration && <div className="notice warning" role="alert">
+                CONFIGURAÇÃO DE EXEMPLO: este Console está conectado ao arquivo de demonstração, não à instalação do cliente.
+                A impressora e a faixa fictícias não representam equipamentos reais. Configure o NexaCollector em %ProgramData% e reinicie o Console.
+              </div>}
               <button type="button" className="primary-button" onClick={() => void discover()} disabled={discovering}>
                 <Network size={16} aria-hidden="true" />{discovering ? "Buscando..." : "Buscar impressoras e scanners"}
               </button>
@@ -720,6 +744,14 @@ export default function App() {
                   {rangeDiscovering ? "Verificando faixas..." : "Buscar apenas nas faixas informadas"}
                 </button>
                 {rangeError && <div className="notice error" role="alert">{rangeError}</div>}
+                {authorizationNotice && <div className="notice" role="status">{authorizationNotice}</div>}
+                <p>Faixas liberadas atualmente: <strong>{snapshot?.authorized_subnets?.join(", ") || "Nenhuma"}</strong>.</p>
+                <button type="button" className="secondary-button" onClick={() => void authorizeRanges()}
+                  disabled={!snapshot?.configured || !!snapshot.sample_configuration || !rangeDraft.trim() || authorizingRange}>
+                  {authorizingRange ? "Configurando serviço..." : "Autorizar esta faixa no serviço (administrador)"}
+                </button>
+                <p>Autorizar é uma alteração administrativa explícita da configuração instalada e pode reiniciar o serviço. Requer permissão elevada.
+                  Não habilita monitoramento nem importa impressoras sem vínculo.</p>
                 <p>Resultados aparecem abaixo como candidatos para revisão. Esta consulta não altera o cadastro
                   e não habilita monitoramento. Faixas fora do escopo autorizado continuam bloqueadas pelo serviço.</p>
               </div>
@@ -836,7 +868,7 @@ export default function App() {
               {reviewNotice && <div role="status" className="notice">{reviewNotice}</div>}
               <div className="notice">
                 {snapshot?.local_control_supported
-                  ? "As decisões exigem acesso ao canal privado do serviço. Em caso de acesso negado, utilize uma conta do sistema operacional autorizada."
+                  ? "As decisões exigem acesso ao canal privado do serviço. Se o canal não responder, confirme que NexaCollector está em execução pelo Windows e abra o Console como administrador."
                   : "A edição por Console está bloqueada neste sistema até existir transporte nativo com permissões homologadas."}
                 {" "}Salvar/ignorar não homologa contadores, não reserva IP e não ativa monitoramento.
                 O agente identifica o modelo automaticamente pelo catálogo; equipamentos não reconhecidos aparecem como Não homologada e não têm coleta ativada.

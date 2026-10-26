@@ -61,6 +61,8 @@ struct CollectorSnapshot {
     candidate_reviews_error: Option<String>,
     local_control_supported: bool,
     schedule_control_supported: bool,
+    sample_configuration: bool,
+    windows_service_status: Option<String>,
     printers: Vec<PrinterInfo>,
     usb_scanners: Vec<UsbScannerInfo>,
     queue_pending: Option<u64>,
@@ -76,6 +78,125 @@ struct CollectorSnapshot {
     watchdog: Option<WatchdogSnapshot>,
     watchdog_error: Option<String>,
     error: Option<String>,
+}
+
+#[cfg(windows)]
+fn windows_service_status() -> Option<String> {
+    let result = std::process::Command::new("sc.exe")
+        .args(["query", "NexaCollector"]).output().ok()?;
+    if !result.status.success() { return Some("Não instalado".into()); }
+    let output = String::from_utf8_lossy(&result.stdout);
+    let state = if output.contains("RUNNING") { "Em execução" }
+        else if output.contains("STOPPED") { "Parado" }
+        else { "Indisponível ou iniciando" };
+    Some(state.into())
+}
+
+#[cfg(not(windows))]
+fn windows_service_status() -> Option<String> { None }
+
+#[cfg(windows)]
+fn provision_network_range_windows(cidrs: &[String]) -> Result<(), String> {
+    use std::{fs, process::Command, thread, time::Duration};
+    if env::var_os("NEXA_COLLECTOR_CONFIG").is_some()
+        || env::var_os("NEXA_COLLECTOR_DB").is_some() {
+        return Err("Console em modo personalizado/teste. Configure o serviço instalado em ProgramData, não o arquivo de exemplo.".into());
+    }
+    let root = installed_root().ok_or("ProgramData indisponível.")?;
+    let config_path = root.join("config.json");
+    let mut config = read_config(&config_path)
+        .map_err(|_| "Configuração do serviço não encontrada em ProgramData. Instale e vincule o agente primeiro.")?;
+    if config.collector_id.to_string() == "00000000-0000-4000-8000-000000000000"
+        || config.api_url.contains("nexa.example.com") {
+        return Err("Configuração de exemplo. Vincule o Collector ao cliente antes de autorizar redes.".into());
+    }
+    let grants = discovery::validate_network_grants(cidrs).map_err(str::to_owned)?;
+    let mut authorized = config.authorized_subnets.clone();
+    for grant in grants {
+        if !authorized.contains(&grant) { authorized.push(grant); }
+    }
+    if authorized.len() > 16 {
+        return Err("Limite de 16 faixas autorizadas no ponto de coleta.".into());
+    }
+    config.authorized_subnets = authorized;
+    config.validate().map_err(|e| format!("As faixas informadas invalidariam a configuração atual: {e}"))?;
+    let service = Command::new("sc.exe").args(["query", "NexaCollector"])
+        .output().map_err(|_| "Não foi possível consultar o serviço do Windows.")?;
+    if !service.status.success() {
+        return Err("Serviço NexaCollector não encontrado. Instale o agente completo.".into());
+    }
+    let running = String::from_utf8_lossy(&service.stdout).contains("RUNNING");
+    // Use a temporary file under the same protected ProgramData directory.
+    // Administrators must have write permission. Never copy keys or tokens.
+    let previous = fs::read(&config_path).map_err(|_| "Não foi possível ler o cadastro existente.")?;
+    let staged = root.join("config.network-staged.json");
+    let write_staged = (|| -> Result<(), String> {
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new().write(true).create_new(true)
+            .open(&staged).map_err(|_| "Não foi possível criar configuração protegida; execute como administrador.")?;
+        file.write_all(&serde_json::to_vec_pretty(&config)
+            .map_err(|_| "Falha ao serializar configuração.")?)
+            .map_err(|_| "Não foi possível salvar a configuração protegida.")?;
+        file.sync_all().map_err(|_| "Falha ao confirmar gravação da configuração.")?;
+        Ok(())
+    })();
+    if let Err(error) = write_staged {
+        let _ = fs::remove_file(&staged);
+        return Err(error);
+    }
+    if running {
+        let stopped = Command::new("sc.exe").args(["stop", "NexaCollector"]).status()
+            .map_err(|_| "Não foi possível solicitar a parada do serviço.")?;
+        if !stopped.success() {
+            let _ = fs::remove_file(&staged);
+            return Err("Acesso negado ao serviço. Execute o Console como administrador.".into());
+        }
+        let mut stopped_ok = false;
+        for _ in 0..40 {
+            thread::sleep(Duration::from_millis(250));
+            if let Ok(result) = Command::new("sc.exe").args(["query", "NexaCollector"]).output() {
+                if result.status.success()
+                    && String::from_utf8_lossy(&result.stdout).contains("STOPPED") {
+                    stopped_ok = true;
+                    break;
+                }
+            }
+        }
+        if !stopped_ok {
+            let _ = fs::remove_file(&staged);
+            return Err("O serviço não parou para atualizar a configuração. Reinicie-o pela ferramenta Serviços.".into());
+        }
+    }
+    if fs::rename(&staged, &config_path).is_err() {
+        let _ = fs::remove_file(&staged);
+        if running { let _ = Command::new("sc.exe").args(["start", "NexaCollector"]).status(); }
+        return Err("Falha ao substituir a configuração protegida. Dados anteriores preservados.".into());
+    }
+    if running {
+        if Command::new("sc.exe").args(["start", "NexaCollector"]).status()
+            .is_ok_and(|status| status.success()) {
+            return Ok(());
+        }
+        // Best-effort rollback of configuration, retaining the old connection.
+        let _ = fs::write(&config_path, previous);
+        let _ = Command::new("sc.exe").args(["start", "NexaCollector"]).status();
+        return Err("Falha ao reiniciar o serviço. Configuração anterior restaurada; verifique o serviço Windows.".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+async fn authorize_network_ranges(cidrs: Vec<String>) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        tauri::async_runtime::spawn_blocking(move || provision_network_range_windows(&cidrs))
+            .await.map_err(|_| "Atualização das faixas interrompida.".to_owned())?
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = cidrs;
+        Err("A autorização de faixas pelo Console está disponível somente no Windows; use o administrador do serviço neste sistema.".into())
+    }
 }
 
 fn catalog_auto_supported(
@@ -114,6 +235,8 @@ fn get_snapshot() -> CollectorSnapshot {
         candidate_reviews_error: None,
         local_control_supported: cfg!(unix) || cfg!(windows),
         schedule_control_supported: cfg!(unix),
+        sample_configuration: false,
+        windows_service_status: windows_service_status(),
         printers: Vec::new(),
         usb_scanners: Vec::new(),
         queue_pending: None,
@@ -143,6 +266,9 @@ fn get_snapshot() -> CollectorSnapshot {
         Some(path) => match read_config(path) {
             Ok(config) => {
                 snapshot.configured = true;
+                snapshot.sample_configuration =
+                    config.collector_id.to_string() == "00000000-0000-4000-8000-000000000000"
+                    || config.api_url.contains("nexa.example.com");
                 snapshot.collector_id = Some(config.collector_id.to_string());
                 snapshot.communication_mode = Some(match config.communication_mode {
                     CommunicationMode::WebServices => "Internet (Web Services)",
@@ -473,7 +599,7 @@ async fn printer_action(command: FleetCommand) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_snapshot, search_reference_models, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate, save_discovery_schedule, printer_action, discover_broadcast_printers])
+        .invoke_handler(tauri::generate_handler![get_snapshot, authorize_network_ranges, search_reference_models, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate, save_discovery_schedule, printer_action, discover_broadcast_printers])
         .run(tauri::generate_context!())
         .expect("failed to start Nexa Collector Console");
 }

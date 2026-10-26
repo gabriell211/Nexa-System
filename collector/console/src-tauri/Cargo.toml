@@ -14,4 +14,5 @@ tauri-build = "2.7.0"
 chrono = "0.4"
 nexa-collector-core = { path = "../../core" }
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tauri = "2.12.0"

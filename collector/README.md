@@ -1,5 +1,15 @@
 # Nexa Collector — cliente e limites de homologação
 
+## Diagnóstico de rede e canal administrativo (Windows)
+
+O arquivo `collector/config.example.json` é um **modelo**, não um cadastro operacional: nenhuma faixa ou impressora vem pré-monitorada. Uma instalação real cria `%ProgramData%\\NexaCollector\\config.json` via provisionamento do instalador. A identificação vazia/demonstração é mostrada com alerta explícito no Console. Se você vê uma antiga impressora `192.0.2.10`, provavelmente carregou um modelo legado de configuração e precisa apontar para o arquivo da instalação (ou corrigir a configuração existente), sem presumir que foi medida.
+
+Em **Ferramentas → Rede**, informe uma faixa privada limitada (ex.: `192.168.15.1/24`), e um administrador poderá clicar em **Autorizar esta faixa no serviço**. O comando nativo valida IPv4 privado /24-/32, normaliza a faixa para `192.168.15.0/24`, preserva as faixas existentes e só altera o arquivo protegido em `%ProgramData%` quando existir um serviço `NexaCollector` provisionado. Enquanto o serviço está em execução, ele é parado, a configuração é atualizada e ele é reiniciado; falhas de reinicialização tentam restaurar a configuração anterior. O botão **Buscar apenas nas faixas informadas** não concede autorização por si só.
+
+No Windows o Console instalado tem manifesto UAC `requireAdministrator`, e a named pipe local está limitada a SYSTEM/Administradores. Se aparecer **Canal administrativo indisponível ou acesso negado**, verifique pelo Windows `Get-Service NexaCollector` (PowerShell elevado) ou `sc.exe query NexaCollector`; confirme que a instalação foi concluída, o serviço está ativo e o Console foi iniciado com elevação. Não desative as ACLs ou libere a pipe para usuários comuns. A busca TCP local de impressoras não usa essa pipe e pode funcionar independentemente da comunicação do serviço.
+
+
+
 ## Reconhecimento automático de modelos já mapeados (rede + USB)
 
 Na ação **Adicionar**, o daemon consulta em modo somente leitura a identidade SNMP do IP autorizado com a credencial protegida do serviço. Se a referência do catálogo corresponder inequivocamente, fabricante/modelo são persistidos no registro local **ainda não monitorado** e o Console apresenta o estado de homologação de coleta automática sem esperar a ação Monitorar. A ausência de resposta ou perfil utilizável não impede o cadastro local, mas aparece como **Não homologada** e bloqueia o monitoramento. Esta identificação não é evidência para faturamento.
