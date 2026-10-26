@@ -88,6 +88,25 @@ fn model_match_length(observed: &str, model: &str) -> Option<usize> {
     folded_match_length(observed, model, 4)
 }
 
+/// Some source rows repeat the manufacturer at the start of `model`, even
+/// without a separator (for example `BrotherHL-5450DN`). Give those aliases
+/// the same match score as the canonical model so they cannot hide its ID.
+fn reference_model_match_length(observed: &str, entry: &ReferenceModel) -> Option<usize> {
+    let model = &entry.model;
+    let core = model.get(..entry.manufacturer.len())
+        .filter(|prefix| prefix.eq_ignore_ascii_case(&entry.manufacturer))
+        .map(|_| model[entry.manufacturer.len()..].trim_start_matches(|c: char| !c.is_ascii_alphanumeric()))
+        .filter(|rest| rest.chars().filter(char::is_ascii_alphanumeric).count() >= 4);
+    match core {
+        Some(core) => {
+            let score = core.chars().filter(char::is_ascii_alphanumeric).count();
+            (folded_match_length(observed, core, 4).is_some()
+                || model_match_length(observed, model).is_some()).then_some(score)
+        }
+        None => model_match_length(observed, model),
+    }
+}
+
 /// Interpret a Windows USB friendly name as PrintWayy reference evidence only
 /// if the name contains both manufacturer and the strongest model name, and
 /// every matching source record agrees on its USB status.
@@ -101,22 +120,26 @@ pub fn usb_status_for_friendly_name(name: &str) -> (Vec<u64>, Option<ReferenceSt
     (matches.into_iter().map(|model| model.source_model_id).collect(), status)
 }
 
-/// Return every strongest name match. A caller must inspect every match's
-/// interface status before claiming compatibility; duplicate source records
-/// can disagree. The result is advisory identity evidence, never enrollment.
+/// Return every strongest manufacturer + model match. A caller must inspect
+/// every match's interface status before claiming compatibility; duplicate
+/// source records can disagree. This remains advisory identity evidence.
 pub fn strongest_name_matches(observed: &[String]) -> Vec<&'static ReferenceModel> {
     let mut best = 0;
     let mut matches = Vec::new();
     for model in &catalog().models {
+        if !observed.iter().any(|text| {
+            folded_match_length(text, &model.manufacturer, 2).is_some()
+        }) { continue; }
         let length = observed.iter()
-            .filter_map(|text| model_match_length(text, &model.model))
+            .filter_map(|text| reference_model_match_length(text, model))
             .max().unwrap_or(0);
         if length == 0 { continue; }
-        if length > best {
-            best = length;
+        let score = length + model.manufacturer.chars().filter(char::is_ascii_alphanumeric).count();
+        if score > best {
+            best = score;
             matches.clear();
         }
-        if length == best { matches.push(model); }
+        if score == best { matches.push(model); }
     }
     matches
 }
@@ -385,5 +408,29 @@ mod tests {
         let (conflicting_ids, conflicting_status) = usb_status_for_friendly_name("EPSON WF-6090");
         assert!(conflicting_ids.contains(&31_929) && conflicting_ids.contains(&31_930));
         assert_eq!(conflicting_status, None);
+    }
+
+    #[test]
+    fn approved_usb_rows_are_found_by_exact_manufacturer_and_model_name() {
+        let mut resolved = 0;
+        let mut ambiguous = 0;
+        let mut unmatched = Vec::new();
+        for model in catalog().models.iter().filter(|model| model.usb == ReferenceStatus::Approved) {
+            let name = format!("{} {}", model.manufacturer, model.model);
+            let (ids, status) = usb_status_for_friendly_name(&name);
+            if !ids.contains(&model.source_model_id) {
+                unmatched.push(name);
+                continue;
+            }
+            match status {
+                Some(ReferenceStatus::Approved) => resolved += 1,
+                None => ambiguous += 1,
+                other => panic!("USB reference {name} was given wrong status {other:?}"),
+            }
+        }
+        assert_eq!(resolved + ambiguous + unmatched.len(), 920);
+        assert_eq!(resolved, 915);
+        assert_eq!(ambiguous, 3);
+        assert_eq!(unmatched, ["HP USB", "KONICA 184"]);
     }
 }

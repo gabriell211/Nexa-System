@@ -1,5 +1,6 @@
 # Nexa Collector — cliente e limites de homologação
 
+
 ## Reconhecimento automático de modelos já mapeados (rede + USB)
 
 Na ação **Adicionar**, o daemon consulta em modo somente leitura a identidade SNMP do IP autorizado com a credencial protegida do serviço. Se a referência do catálogo corresponder inequivocamente, fabricante/modelo são persistidos no registro local **ainda não monitorado** e o Console apresenta o estado de homologação de coleta automática sem esperar a ação Monitorar. A ausência de resposta ou perfil utilizável não impede o cadastro local, mas aparece como **Não homologada** e bloqueia o monitoramento. Esta identificação não é evidência para faturamento.
@@ -109,7 +110,21 @@ A **interface desktop usa Tauri 2.12 + React 19 + TypeScript**. A coleta roda no
 
 ## Descoberta em CIDRs autorizados — incremento parcial
 
-O Console Tauri oferece **Configurações → Busca manual por faixa autorizada**.
+Em **Ferramentas → Rede**, o Console mostra as interfaces IPv4 privadas e a faixa
+efetiva da busca local (limitada a /24), além de indicar se cada faixa está
+integralmente contida em `authorized_subnets`. A busca local por portas TCP/eSCL
+funciona sem a credencial SNMP em qualquer rede privada diretamente conectada.
+Quando a página HTTP local informa fabricante e modelo no título, o Collector
+consulta o catálogo embarcado e mostra um **possível modelo**; esse indício
+HTTP não confirma identidade física, SNMP ou contador. Uma faixa fora da
+autorização pode aparecer na busca local, porém não pode ser usada na busca
+detalhada autorizada, no broadcast SNMP ou na identificação protegida. O botão
+**Usar esta faixa** só é oferecido para uma faixa autorizada. A tela informa a
+contagem e o escopo da última busca, inclusive quando nenhum candidato responde.
+Equipamentos que não expõem as portas sondadas ou que estejam isolados pela rede
+podem não aparecer; não há descoberta universal em toda rede possível.
+
+O Console Tauri oferece **Ferramentas → Rede → Busca manual por faixa autorizada**.
 O operador escolhe de 1 a 4 faixas IPv4/CIDR privadas, cada uma de no máximo /24,
 já integralmente contida em `authorized_subnets` do JSON provisionado pelo
 administrador. A validação e a limitação conjunta de 1024 IPs ocorrem no Rust
@@ -278,6 +293,15 @@ Esta etapa ainda não cria uma fila de impressoras prontas para operar.
 ## Descoberta de impressoras USB no Windows
 
 O daemon oferece `--discover-usb` no Windows e o Console tem o botão **Detectar impressoras USB** na aba Impressoras. A busca, sob demanda e somente leitura, identifica impressoras USB (inclusive multifuncionais) e dispositivos de imagem, de diferentes fabricantes. Usa as interfaces PnP USB presentes (`USB\\VID_*` e `USBPRINT\\*`), evitando reportar impressoras virtuais ou de rede como equipamentos fisicamente conectados. Exibe nome, tipo, status e VID:PID quando disponível. Dispositivos de imagem cujo tipo não é comprovado permanecem classificados como tal.
+
+Cada nome PnP presente é cruzado com o catálogo USB embarcado. A UI distingue
+**aprovado**, **não testado**, **incompatível**, **conflito entre referências** e
+**sem correspondência**. O snapshot possui 920 registros com status USB
+aprovado; a auditoria de nomes completos encontra 915 de forma inequívoca,
+três com estados conflitantes e dois nomes genéricos curtos que não permitem
+identificação segura apenas pelo nome. O Canon DR-C225 USB observado neste host
+não consta no snapshot de referência; seu leitor local experimental é exibido
+separadamente e não transforma o dispositivo em modelo aprovado no catálogo.
 
 Quando a busca identifica o DR-C225 USB, o Console também mostra **Ler total do scanner Canon**. A leitura abre brevemente o utilitário oficial e exibe total e rolos separadamente; este botão não enfileira nem envia uma amostra. A lista de equipamentos configurados mostra o vínculo USB pelo ID de cadastro e pelo perfil, sem exibir o identificador PnP completo.
 
@@ -495,6 +519,8 @@ O instalador NSIS em `collector/console/src-tauri/windows/installer-hooks.nsh`:
 - Recusa instalar sobre um serviço já existente para evitar corromper instalações ativas; uma rotina auditada de atualização/rollback será necessária.
 
 **Provisionamento:** o Setup recebe os valores do portal e grava a vinculação em arquivos protegidos, sem colocar credenciais nos argumentos ou no registro SCM. O serviço inicia com uma configuração vazia de equipamentos e envia heartbeat. Depois, um administrador deve configurar os equipamentos, as sub-redes autorizadas e os OIDs homologados em `config.json`. Quando houver impressoras SNMP, deve instalar `NEXA_SNMP_COMMUNITY` em `credentials\` antes de reiniciar o serviço com essa configuração. Instalações silenciosas (`/S`) recebem `NEXA_INSTALL_COLLECTOR_ID`, `NEXA_INSTALL_TOKEN`, `NEXA_INSTALL_COMMUNICATION_MODE` (`web_services` ou `email`) e os campos do modo escolhido no ambiente do instalador. Para Web Services: `NEXA_INSTALL_API_URL` e, opcionalmente, `NEXA_INSTALL_PROXY_URL`, `NEXA_INSTALL_PROXY_USERNAME`, `NEXA_INSTALL_PROXY_PASSWORD`, `NEXA_INSTALL_PROXY_DOMAIN`. Para e-mail: `NEXA_INSTALL_MAIL_ADDRESS`, `NEXA_INSTALL_MAIL_PASSWORD`, `NEXA_INSTALL_MAIL_RECIPIENT`, `NEXA_INSTALL_POP3_HOST`, `NEXA_INSTALL_POP3_PORT`, `NEXA_INSTALL_POP3_SSL` (`1` ou `0`), `NEXA_INSTALL_SMTP_HOST`, `NEXA_INSTALL_SMTP_PORT`, `NEXA_INSTALL_SMTP_SSL` (`1` ou `0`). A URL da API é opcional no modo e-mail.
+
+Na instalação Windows nova, o **instalador** solicita o ID e a chave do Collector emitidos para o cliente no portal. Com URL HTTPS da API, o daemon valida esse par no servidor **antes de gravar** a credencial e o instalador confirma o nome do cliente. Chave inválida, revogada, ID de outro Collector ou cliente inativo impedem a vinculação. O modo e-mail sem URL da API pode ser instalado sem conexão HTTP; nesse caso a identificação é confirmada pelo servidor no primeiro envio, e o instalador informa que a confirmação está pendente. Ao reinstalar sobre dados preservados, o instalador mostra uma página de vinculação existente e mantém a credencial anterior; não pede a chave de exibição única novamente. A interface desktop não solicita ID nem chave.
 
 **Transporte por e-mail:** a caixa do agente envia as leituras cifradas por SMTP. A rotina `php artisan nexa:collector:receive-mail` no backend lê a caixa POP3 Nexa, valida a identidade do agente, persiste as leituras pelas mesmas regras da API e envia um ACK cifrado. A fila local só remove as amostras após ler e autenticar esse ACK no POP3 do agente. O scheduler executa a rotina a cada minuto, com trava contra sobreposição. Configure no backend `NEXA_COLLECTOR_MAIL_INBOX_ENABLED=true`, `NEXA_COLLECTOR_MAIL_INBOX_ADDRESS`, `NEXA_COLLECTOR_MAIL_INBOX_PASSWORD`, `NEXA_COLLECTOR_MAIL_POP3_HOST`, `NEXA_COLLECTOR_MAIL_POP3_PORT`, `NEXA_COLLECTOR_MAIL_POP3_IMPLICIT_TLS` e um `MAIL_MAILER` real, com `MAIL_FROM_ADDRESS` válido. Use uma caixa dedicada, sem outras mensagens, e mantenha as credenciais no cofre da implantação. `curl.exe` deve estar disponível no Windows do agente. Se a caixa ou o servidor de e-mail não estiverem configurados, as leituras permanecem na fila local.
 

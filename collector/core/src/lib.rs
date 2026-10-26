@@ -21,6 +21,7 @@ use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBeha
 use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, OpenOptions},
+    io::Read,
     net::{IpAddr, SocketAddr},
     path::{Path, PathBuf},
     str::FromStr,
@@ -1725,6 +1726,44 @@ struct HeartbeatAck {
     collector_id: Uuid,
 }
 
+/// Server-side customer binding for installer preflight. The raw token is
+/// never stored in the configuration or returned to the desktop UI.
+#[derive(Debug, Deserialize)]
+pub struct CollectorBinding {
+    pub collector_id: Uuid,
+    pub customer_id: u64,
+    pub customer_name: String,
+}
+
+pub fn verify_collector_binding(
+    cfg: &CollectorConfig, token: &str,
+) -> Result<CollectorBinding, CollectorError> {
+    cfg.validate()?;
+    if cfg.api_url.is_empty() || token.len() != 64 ||
+        !token.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(CollectorError::Configuration("collector ID, HTTPS API and key are required for verification".into()));
+    }
+    let response = collector_http_client(cfg)?
+        .post(format!("{}/api/v1/collector/identity", cfg.api_url.trim_end_matches('/')))
+        .bearer_auth(token)
+        .json(&serde_json::json!({"collector_id": cfg.collector_id}))
+        .send()?;
+    if !response.status().is_success() {
+        return Err(CollectorError::HttpStatus {
+            status: response.status().as_u16(), retry_after_seconds: None,
+        });
+    }
+    let mut body = Vec::new();
+    response.take(4097).read_to_end(&mut body)?;
+    if body.len() > 4096 { return Err(CollectorError::InvalidAcknowledgement); }
+    let binding: CollectorBinding = serde_json::from_slice(&body)?;
+    if binding.collector_id != cfg.collector_id || binding.customer_id == 0 ||
+        binding.customer_name.trim().is_empty() || binding.customer_name.len() > 255 {
+        return Err(CollectorError::InvalidAcknowledgement);
+    }
+    Ok(binding)
+}
+
 /// A successful HTTP POST is not enough: verify the bound identity and ACK.
 /// No meter or device state is uploaded as part of this heartbeat.
 pub fn send_heartbeat(cfg: &CollectorConfig, token: &str) -> Result<(), CollectorError> {
@@ -2678,7 +2717,7 @@ mod tests {
                 print_ports: vec![9100],
                 http_server: Some("Printer HTTP".into()),
                 escl_scanner: false,
-                            reference: None,
+                            reference: None, catalog_hint: None,
 }],
         };
         {
@@ -2710,7 +2749,7 @@ mod tests {
                     print_ports: vec![9100],
                     http_server: Some("Printer service".into()),
                     escl_scanner: false,
-                                    reference: None,
+                                    reference: None, catalog_hint: None,
 }],
             }).unwrap();
             assert!(store.review_candidate("192.168.20.45".parse().unwrap(),
@@ -2747,7 +2786,7 @@ mod tests {
             observed_candidates: 1,
             candidates: vec![discovery::DiscoveryCandidate {
                 ip: address, print_ports: vec![631], http_server: None, escl_scanner: false,
-                            reference: None,
+                            reference: None, catalog_hint: None,
 }],
         };
         store.save_discovery_report(&report).unwrap();
@@ -3133,7 +3172,7 @@ mod broadcast_persistence_tests {
             candidates: vec![discovery::DiscoveryCandidate {
                 ip: "192.168.1.10".parse().unwrap(),
                 print_ports: vec![9100], http_server: None, escl_scanner: false,
-                            reference: None,
+                            reference: None, catalog_hint: None,
 }],
             ..DiscoveryReport::default()
         };
@@ -3144,7 +3183,7 @@ mod broadcast_persistence_tests {
             candidates: vec![discovery::DiscoveryCandidate {
                 ip: "192.168.1.20".parse().unwrap(),
                 print_ports: vec![], http_server: None, escl_scanner: false,
-                            reference: None,
+                            reference: None, catalog_hint: None,
 }],
             ..DiscoveryReport::default()
         };

@@ -49,7 +49,12 @@
 .tool-workspace>.panel>p{padding:0 24px;color:#536a93;font-size:12px;line-height:1.6}
 .tool-workspace>.panel>.primary-button{margin:14px 24px 24px}
 .tool-workspace>.panel>.notice{margin:16px 24px}
+.network-context{margin:24px 0 0}
+.network-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 0;border-top:1px solid #e3eaf8;color:#405676;font-size:12px;line-height:1.6}
+.network-row>div>div{color:#657994}
+.network-context .notice{margin:0}
 @media(max-width:700px){.tool-selector{grid-template-columns:1fr}.tool-card{min-height:130px}}
+@media(max-width:700px){.network-row{align-items:flex-start;flex-direction:column}}
 
 
 /* Operational printer registry. */

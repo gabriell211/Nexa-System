@@ -67,7 +67,7 @@ assert "SetErrorLevel 30" in request_writer
 message_boxes = [line for line in installer.splitlines() if line.lstrip().startswith("MessageBox ")]
 assert message_boxes and all(" /SD IDOK" in line for line in message_boxes), "Silent install must never wait for a dialog"
 hooks = installer.split("!macro NSIS_HOOK_PREINSTALL", 1)[1]
-hook_boxes = [line for line in hooks.splitlines() if line.lstrip().startswith("MessageBox ")]
+hook_boxes = [line for line in hooks.splitlines() if line.lstrip().startswith("MessageBox MB_ICONSTOP")]
 error_levels = [line.strip() for line in hooks.splitlines() if line.lstrip().startswith("SetErrorLevel ")]
 assert len(error_levels) == len(hook_boxes) == len(set(error_levels)), "Each NSIS hook failure needs its own exit code"
 assert len(re.findall(r"IfSilent 0 \+2\s+Quit\s+Abort ", hooks)) == len(hook_boxes), "Silent failures must preserve their exit codes"

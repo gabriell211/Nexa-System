@@ -47,6 +47,30 @@ struct UsbScannerInfo {
 }
 
 #[derive(Serialize)]
+struct LocalNetworkInfo {
+    interface: String,
+    ip: String,
+    scan_cidr: String,
+    authorized: bool,
+}
+
+#[derive(Serialize)]
+struct CatalogCoverage {
+    total_models: usize,
+    network_approved: usize,
+    usb_approved: usize,
+}
+
+fn catalog_coverage() -> CatalogCoverage {
+    let models = &reference_catalog::catalog().models;
+    CatalogCoverage {
+        total_models: models.len(),
+        network_approved: models.iter().filter(|model| model.network == reference_catalog::ReferenceStatus::Approved).count(),
+        usb_approved: models.iter().filter(|model| model.usb == reference_catalog::ReferenceStatus::Approved).count(),
+    }
+}
+
+#[derive(Serialize)]
 struct CollectorSnapshot {
     configured: bool,
     collector_id: Option<String>,
@@ -54,6 +78,9 @@ struct CollectorSnapshot {
     communication_mode: Option<String>,
     interval_seconds: Option<u64>,
     authorized_subnets: Vec<String>,
+    catalog_coverage: CatalogCoverage,
+    local_networks: Vec<LocalNetworkInfo>,
+    local_networks_error: Option<String>,
     discovery_schedule: Option<DiscoverySchedule>,
     discovery_report: Option<DiscoveryReport>,
     broadcast_report: Option<DiscoveryReport>,
@@ -107,6 +134,9 @@ fn get_snapshot() -> CollectorSnapshot {
         communication_mode: None,
         interval_seconds: None,
         authorized_subnets: Vec::new(),
+        catalog_coverage: catalog_coverage(),
+        local_networks: Vec::new(),
+        local_networks_error: None,
         discovery_schedule: None,
         discovery_report: None,
         broadcast_report: None,
@@ -179,6 +209,23 @@ fn get_snapshot() -> CollectorSnapshot {
             Err(_) => snapshot.error = Some("Configuração não encontrada ou inválida.".into()),
         },
         None => snapshot.error = Some("Configuração do Collector não encontrada.".into()),
+    }
+
+    match discovery::local_scan_networks() {
+        Ok(networks) => snapshot.local_networks = networks.into_iter().map(|network| {
+            let authorized = discovery::plan_authorized_hosts(
+                &snapshot.authorized_subnets, &[network.scan_cidr.clone()],
+            ).is_ok();
+            LocalNetworkInfo {
+                interface: network.interface,
+                ip: network.ip.to_string(),
+                scan_cidr: network.scan_cidr,
+                authorized,
+            }
+        }).collect(),
+        Err(_) => snapshot.local_networks_error = Some(
+            "Não foi possível consultar as interfaces de rede locais.".into()
+        ),
     }
 
     let default_db = env::var("NEXA_COLLECTOR_DB").is_err();

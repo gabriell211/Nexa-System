@@ -3,6 +3,7 @@
 
 Var NexaId
 Var NexaToken
+Var NexaExistingBinding
 Var NexaApi
 Var NexaMode
 Var NexaProxy
@@ -54,15 +55,29 @@ Page custom NexaMailOutgoingPage NexaMailOutgoingLeave
 Function NexaProvisionPage
   IfSilent 0 +2
     Abort
-  IfFileExists "$COMMONPROGRAMDATA\NexaCollector\credentials\NEXA_COLLECTOR_TOKEN" 0 +2
-    Abort
+  StrCpy $NexaExistingBinding "0"
+  IfFileExists "$COMMONPROGRAMDATA\NexaCollector\credentials\NEXA_COLLECTOR_TOKEN" 0 nexa_new_binding
+    StrCpy $NexaExistingBinding "1"
+    nsDialogs::Create 1018
+    Pop $0
+    ${If} $0 == error
+      Abort
+    ${EndIf}
+    !insertmacro MUI_HEADER_TEXT "Cliente ja vinculado" "O instalador encontrou uma credencial protegida nesta estacao."
+    ${NSD_CreateLabel} 0 0 100% 34u "A vinculacao do Collector existente sera preservada. O ID pode ser consultado na aba Configuracao do Console apos a instalacao."
+    Pop $0
+    ${NSD_CreateLabel} 0 41u 100% 37u "Para trocar de cliente, cancele esta instalacao e solicite recuperacao administrativa. O instalador nao substitui uma chave existente."
+    Pop $0
+    nsDialogs::Show
+    Return
+  nexa_new_binding:
   nsDialogs::Create 1018
   Pop $0
   ${If} $0 == error
     Abort
   ${EndIf}
-  !insertmacro MUI_HEADER_TEXT "Chave do cliente Nexa" "Use a chave exibida uma unica vez no portal administrativo."
-  ${NSD_CreateLabel} 0 0 100% 16u "Vincule este agente com o ID e a chave proprios do Nexa."
+  !insertmacro MUI_HEADER_TEXT "Identificacao do cliente Nexa" "Use o ID e a chave exibidos uma unica vez no portal administrativo."
+  ${NSD_CreateLabel} 0 0 100% 16u "Informe o ID e a chave emitidos para o cliente correto."
   Pop $0
   ${NSD_CreateLabel} 0 18u 100% 10u "ID do Collector"
   Pop $0
@@ -76,16 +91,19 @@ Function NexaProvisionPage
 FunctionEnd
 
 Function NexaProvisionLeave
+  ${If} $NexaExistingBinding == "1"
+    Return
+  ${EndIf}
   ${NSD_GetText} $NexaIdInput $NexaId
   ${NSD_GetText} $NexaTokenInput $NexaToken
   StrLen $0 $NexaId
   ${If} $0 != 36
-    MessageBox MB_ICONSTOP|MB_OK "Informe o ID de 36 caracteres exibido no portal administrativo." /SD IDOK
+    MessageBox MB_ICONSTOP|MB_OK "Informe o ID de 36 caracteres emitido para o cliente no portal administrativo." /SD IDOK
     Abort
   ${EndIf}
   StrLen $0 $NexaToken
   ${If} $0 != 64
-    MessageBox MB_ICONSTOP|MB_OK "Informe a chave de 64 caracteres exibida no portal administrativo." /SD IDOK
+    MessageBox MB_ICONSTOP|MB_OK "Informe a chave de 64 caracteres emitida para o mesmo cliente no portal administrativo." /SD IDOK
     Abort
   ${EndIf}
 FunctionEnd
@@ -447,15 +465,23 @@ FunctionEnd
     FileWriteUTF16LE /BOM $9 "$NexaId$\r$\n$NexaToken$\r$\n$NexaApi$\r$\n$NexaProxy$\r$\n$NexaProxyUser$\r$\n$NexaProxyPassword$\r$\n$NexaMode$\r$\n$NexaProxyDomain$\r$\n$NexaMailAddress$\r$\n$NexaMailPassword$\r$\n$NexaMailRecipient$\r$\n$NexaPop3Host$\r$\n$NexaPop3Port$\r$\n$NexaPop3Ssl$\r$\n$NexaSmtpHost$\r$\n$NexaSmtpPort$\r$\n$NexaSmtpSsl$\r$\n"
     IfErrors nexa_request_write_failed
     FileClose $9
-    ExecWait '"$INSTDIR\nexa-collector-daemon.exe" --provision-windows' $0
+    nsExec::ExecToStack '"$INSTDIR\nexa-collector-daemon.exe" --provision-windows'
+    Pop $0
+    Pop $1
+    StrCpy $NexaToken ""
+    StrCpy $NexaProxyPassword ""
+    StrCpy $NexaMailPassword ""
     ${If} $0 != "0"
-      MessageBox MB_ICONSTOP|MB_OK "Falha ao validar os dados de vinculacao ou comunicacao. Revise os campos e execute o instalador novamente." /SD IDOK
+      Delete "$COMMONPROGRAMDATA\NexaCollector\credentials\install-request.utf16"
+      MessageBox MB_ICONSTOP|MB_OK "A API nao confirmou o ID e a chave, ou houve falha na configuracao. Verifique os dados do cliente, a URL HTTPS e a conexao; depois execute o instalador novamente." /SD IDOK
       SetErrorLevel 22
       !insertmacro NEXA_DIAGNOSTIC 22
       IfSilent 0 +2
         Quit
       Abort "Nexa Collector provisioning failed"
     ${EndIf}
+    IfSilent nexa_provisioned 0
+    MessageBox MB_ICONINFORMATION|MB_OK "$1" /SD IDOK
     Goto nexa_provisioned
   nexa_request_write_failed:
     FileClose $9

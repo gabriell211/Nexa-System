@@ -615,11 +615,20 @@ jobs:
             $env:NEXA_INSTALL_COLLECTOR_ID = [guid]::NewGuid().ToString()
             $env:NEXA_INSTALL_TOKEN = [Convert]::ToHexString(
               [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)).ToLowerInvariant()
-            $env:NEXA_INSTALL_API_URL = 'https://nexa.example.com'
-            $env:NEXA_INSTALL_PROXY_URL = 'http://127.0.0.1:8888'
-            $env:NEXA_INSTALL_PROXY_USERNAME = 'ci-proxy-user'
-            $env:NEXA_INSTALL_PROXY_PASSWORD = [Convert]::ToHexString(
-              [Security.Cryptography.RandomNumberGenerator]::GetBytes(16))
+            # Offline e-mail provisioning exercises the real NSIS/SCM path.
+            # Web mode verifies a live backend binding before storing the key;
+            # its accepted/rejected paths are covered by Rust and API tests.
+            $env:NEXA_INSTALL_API_URL = ''
+            $env:NEXA_INSTALL_COMMUNICATION_MODE = 'email'
+            $env:NEXA_INSTALL_MAIL_ADDRESS = 'collector@example.test'
+            $env:NEXA_INSTALL_MAIL_PASSWORD = 'ci-only-mail-password'
+            $env:NEXA_INSTALL_MAIL_RECIPIENT = 'ingest@example.test'
+            $env:NEXA_INSTALL_POP3_HOST = 'pop3.example.test'
+            $env:NEXA_INSTALL_POP3_PORT = '995'
+            $env:NEXA_INSTALL_POP3_SSL = '1'
+            $env:NEXA_INSTALL_SMTP_HOST = 'smtp.example.test'
+            $env:NEXA_INSTALL_SMTP_PORT = '465'
+            $env:NEXA_INSTALL_SMTP_SSL = '1'
           # Start-Process -Wait may wait for child GUI processes too. Monitor
           # the installer process itself and bound execution to two minutes.
           $result = Start-Process -FilePath $exe[0].FullName -ArgumentList '/S' -PassThru
@@ -647,16 +656,15 @@ jobs:
             $config = Get-Content -Raw -LiteralPath $configFile | ConvertFrom-Json
             if ($config.collector_id -ne $env:NEXA_INSTALL_COLLECTOR_ID) { throw 'Collector ID not provisioned' }
             if ($config.api_url -ne $env:NEXA_INSTALL_API_URL) { throw 'API URL not provisioned' }
-            if ($config.proxy_url -ne $env:NEXA_INSTALL_PROXY_URL) { throw 'Proxy URL not provisioned' }
+            if ($config.communication_mode -ne 'email') { throw 'E-mail mode not provisioned' }
+            if ($null -ne $config.proxy_url) { throw 'E-mail mode unexpectedly configured a proxy' }
             $secrets = Join-Path $directory 'credentials'
             if ((Get-Content -Raw -LiteralPath (Join-Path $secrets 'NEXA_COLLECTOR_TOKEN')) -ne $env:NEXA_INSTALL_TOKEN) {
               throw 'Collector key not provisioned'
             }
-            if ((Get-Content -Raw -LiteralPath (Join-Path $secrets 'NEXA_PROXY_USERNAME')) -ne $env:NEXA_INSTALL_PROXY_USERNAME) {
-              throw 'Proxy username not provisioned'
-            }
-            if ((Get-Content -Raw -LiteralPath (Join-Path $secrets 'NEXA_PROXY_PASSWORD')) -ne $env:NEXA_INSTALL_PROXY_PASSWORD) {
-              throw 'Proxy password not provisioned'
+            if ($config.mail.address -ne $env:NEXA_INSTALL_MAIL_ADDRESS) { throw 'Mail sender not provisioned' }
+            if ((Get-Content -Raw -LiteralPath (Join-Path $secrets 'NEXA_MAIL_PASSWORD')) -ne $env:NEXA_INSTALL_MAIL_PASSWORD) {
+              throw 'Mail password not provisioned'
             }
             $dbKey = Get-Content -Raw -LiteralPath (Join-Path $secrets 'NEXA_COLLECTOR_DB_KEY_HEX')
             if ($dbKey -notmatch '^[0-9a-f]{64}$') { throw 'Encrypted queue key not generated' }

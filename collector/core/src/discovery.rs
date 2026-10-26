@@ -34,6 +34,18 @@ pub struct DiscoveryCandidate {
     /// persisted reports lack this field and remain backwards compatible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference: Option<crate::reference_catalog::NetworkReferenceMatch>,
+    /// Advisory catalog match from an unauthenticated HTTP page title. It
+    /// never substitutes for SNMP identity or permits meter collection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog_hint: Option<crate::reference_catalog::NetworkReferenceMatch>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct LocalScanNetwork {
+    pub interface: String,
+    pub ip: Ipv4Addr,
+    /// Effective range probed by `discover_local`, capped at /24.
+    pub scan_cidr: String,
 }
 
 /// Clamp large interfaces to the host's own /24, and skip public, loopback and
@@ -119,17 +131,34 @@ pub fn discover_authorized_ranges(
     Ok(scan_hosts(plan_authorized_hosts(authorized_subnets, requested_cidrs)?))
 }
 
-pub fn discover_local() -> std::io::Result<Vec<DiscoveryCandidate>> {
+fn local_scan_interfaces() -> std::io::Result<Vec<(String, Ipv4Addr, Ipv4Net)>> {
     let interfaces = get_if_addrs()?;
-    let mut hosts = BTreeSet::new();
+    let mut networks = Vec::new();
     for interface in interfaces {
         if let IfAddr::V4(address) = interface.addr {
             if let Some(net) = local_scan_net(address.ip, address.netmask) {
-                for host in net.hosts() {
-                    if host != address.ip {
-                        hosts.insert(host);
-                    }
-                }
+                networks.push((interface.name, address.ip, net));
+            }
+        }
+    }
+    networks.sort_by(|a, b| (&a.0, a.1).cmp(&(&b.0, b.1)));
+    networks.dedup();
+    Ok(networks)
+}
+
+/// Show the exact local ranges used by the on-demand search, without probing.
+pub fn local_scan_networks() -> std::io::Result<Vec<LocalScanNetwork>> {
+    Ok(local_scan_interfaces()?.into_iter().map(|(interface, ip, net)| {
+        LocalScanNetwork { interface, ip, scan_cidr: net.to_string() }
+    }).collect())
+}
+
+pub fn discover_local() -> std::io::Result<Vec<DiscoveryCandidate>> {
+    let mut hosts = BTreeSet::new();
+    for (_, local_ip, net) in local_scan_interfaces()? {
+        for host in net.hosts() {
+            if host != local_ip {
+                hosts.insert(host);
             }
         }
     }
@@ -184,13 +213,57 @@ fn probe_candidate(ip: Ipv4Addr, ports: &[u16]) -> Option<DiscoveryCandidate> {
     if print_ports.is_empty() && !escl_scanner {
         return None;
     }
+    let catalog_hint = http_title(ip)
+        .and_then(|title| crate::reference_catalog::network_reference_for_identity(&[title]));
     Some(DiscoveryCandidate {
         ip,
         print_ports,
         http_server: http_server(ip),
         escl_scanner,
         reference: None,
+        catalog_hint,
     })
+}
+
+fn parse_http_title(response: &[u8]) -> Option<String> {
+    let header_end = response.windows(4).position(|part| part == b"\r\n\r\n")?;
+    let headers = &response[..header_end];
+    if !headers.starts_with(b"HTTP/1.0 200 ") && !headers.starts_with(b"HTTP/1.1 200 ") {
+        return None;
+    }
+    let body = String::from_utf8_lossy(&response[header_end + 4..]);
+    let lower = body.to_ascii_lowercase();
+    let opening = lower.find("<title")?;
+    let start = opening + lower[opening..].find('>')? + 1;
+    let end = start + lower[start..].find("</title>")?;
+    let title = body[start..end]
+        .replace("&nbsp;", " ").replace("&#160;", " ").replace("&amp;", "&");
+    let clean: String = title.split_whitespace().collect::<Vec<_>>().join(" ")
+        .chars().filter(|c| !c.is_control()).take(160).collect();
+    (!clean.is_empty()).then_some(clean)
+}
+
+fn http_title(ip: Ipv4Addr) -> Option<String> {
+    let mut stream = TcpStream::connect_timeout(&SocketAddr::from((ip, 80)), CONNECT_TIMEOUT).ok()?;
+    stream.set_read_timeout(Some(CONNECT_TIMEOUT)).ok()?;
+    stream.set_write_timeout(Some(CONNECT_TIMEOUT)).ok()?;
+    stream.write_all(format!("GET / HTTP/1.0\r\nHost: {ip}\r\nConnection: close\r\n\r\n").as_bytes()).ok()?;
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let mut response = Vec::with_capacity(2048);
+    let mut chunk = [0u8; 2048];
+    while response.len() < 8192 && Instant::now() < deadline {
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(size) => {
+                let room = 8192 - response.len();
+                response.extend_from_slice(&chunk[..size.min(room)]);
+                if let Some(title) = parse_http_title(&response) { return Some(title); }
+            }
+            Err(error) if matches!(error.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock) => {}
+            Err(_) => break,
+        }
+    }
+    parse_http_title(&response)
 }
 
 fn probe_escl(ip: Ipv4Addr, port: u16) -> bool {
@@ -355,6 +428,7 @@ mod tests {
         let original = r#"{"ip":"192.168.15.20","print_ports":[9100],"http_server":null,"escl_scanner":false}"#;
         let parsed: DiscoveryCandidate = serde_json::from_str(original).unwrap();
         assert!(parsed.reference.is_none());
+        assert!(parsed.catalog_hint.is_none());
         assert_eq!(serde_json::to_string(&parsed).unwrap(), original);
     }
 
@@ -398,5 +472,16 @@ mod tests {
             sanitize_server_header("HP HTTP Server; OfficeJet Pro 7740; Serial Number: secret"),
             Some("HP HTTP Server; OfficeJet Pro 7740".into())
         );
+    }
+
+    #[test]
+    fn http_title_can_hint_at_catalog_model_without_snmp_approval() {
+        let response = b"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<html><title>HP LaserJet P2055dn&nbsp;&nbsp;192.168.15.73</title></html>";
+        let title = parse_http_title(response).unwrap();
+        assert_eq!(title, "HP LaserJet P2055dn 192.168.15.73");
+        let hint = crate::reference_catalog::network_reference_for_identity(&[title]).unwrap();
+        assert_eq!(hint.model, "LaserJet P2055dn");
+        assert!(parse_http_title(b"HTTP/1.0 302 Found\r\n\r\n<title>HP LaserJet P2055dn</title>").is_none());
+        assert!(parse_http_title(b"HTTP/1.0 200 OK\r\n\r\n<title>unfinished").is_none());
     }
 }

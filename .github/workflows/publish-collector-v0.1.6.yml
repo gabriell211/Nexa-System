@@ -1,0 +1,116 @@
+name: Publish Nexa Collector v0.1.6
+
+on:
+  workflow_run:
+    workflows: ["Nexa validation"]
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: nexa-collector-v0.1.6-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Release v0.1.6 verified installer packages
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'push'
+      && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: v0.1.6
+      SOURCE_RUN: ${{ github.event.workflow_run.id }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Checkout verified main
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+
+      - name: Verify source and approved workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(jq -r .version collector/console/src-tauri/tauri.conf.json)" = "0.1.6"
+          grep -Fxq 'version = "0.1.6"' collector/Cargo.toml
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN")"
+          test "$(jq -r .name <<<"$run")" = "Nexa validation"
+          test "$(jq -r .conclusion <<<"$run")" = success
+          test "$(jq -r .event <<<"$run")" = push
+          test "$(jq -r .head_branch <<<"$run")" = main
+          test "$(jq -r .head_sha <<<"$run")" = "$SOURCE_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$SOURCE_SHA"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Tag already exists. Not replacing a published release."
+            exit 1
+          fi
+
+      - name: Download five native installer packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p incoming/{windows,linux,intel,arm} release
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-windows-setup-unsigned -D incoming/windows
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-linux-x64-deb-rpm-unsigned -D incoming/linux
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-macos-x86_64-pkg-unsigned -D incoming/intel
+          gh run download "$SOURCE_RUN" -R "$GITHUB_REPOSITORY" -n nexa-collector-macos-arm64-pkg-unsigned -D incoming/arm
+          stage_one() {
+            local folder="$1" pattern="$2" dest="$3" count=0 file='' match
+            while IFS= read -r -d '' match; do
+              count=$((count + 1))
+              file="$match"
+            done < <(find "$folder" -type f -name "$pattern" -print0)
+            if test "$count" -ne 1; then
+              echo "::error::Expected one package matching $pattern in $folder, got $count"
+              exit 1
+            fi
+            cp -- "$file" "release/$dest"
+            test "$(stat -c%s "release/$dest")" -gt 102400
+          }
+          stage_one incoming/windows '*-setup.exe' 'Nexa.Collector_0.1.6_x64-setup.exe'
+          stage_one incoming/linux '*.deb' 'Nexa-Collector-0.1.6-linux-x64.deb'
+          stage_one incoming/linux '*.rpm' 'Nexa-Collector-0.1.6-linux-x64.rpm'
+          stage_one incoming/intel '*.pkg' 'NexaCollector-0.1.6-x86_64-unsigned.pkg'
+          stage_one incoming/arm '*.pkg' 'NexaCollector-0.1.6-arm64-unsigned.pkg'
+          (cd release && sha256sum -- *.exe *.deb *.rpm *.pkg > SHA256SUMS.txt)
+          test "$(wc -l < release/SHA256SUMS.txt)" -eq 5
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          cat > RELEASE_NOTES.md <<'NOTES'
+          ## Nexa Collector v0.1.6 — descoberta de rede, USB e identificação do cliente
+
+          **Atualização sobre v0.1.5:** a interface mostra as redes privadas locais que serão varridas, os candidatos de impressoras de rede e dispositivos USB, e o estado de referência do catálogo embarcado. O catálogo contém 2.142 modelos, dos quais 1.898 têm referência de rede e 920 têm referência USB. O título HTTP pode sugerir um modelo, mas somente uma identidade SNMP inequívoca autoriza a leitura de contadores. A varredura local se adapta à rede privada do computador e limita cada faixa a /24. Dispositivos podem depender de portas acessíveis, resposta SNMP e permissão da rede.
+
+          **Vinculação do cliente:** em uma instalação Windows nova, o assistente solicita o ID e a chave do Collector, consulta a API HTTPS e confirma o cliente antes de gravar a credencial. A interface de uso diário não solicita a chave. Uma atualização preserva a vinculação protegida existente. No modo e-mail sem API, a confirmação fica para a primeira comunicação com o servidor. **Disponibilize a nova rota `/api/v1/collector/identity` no backend antes de instalar em modo Web Services.**
+
+          **Instaladores:** Windows x64 (NSIS Setup.exe), Linux x64 (DEB e RPM), macOS Intel x86_64 e Apple Silicon arm64 (PKG). Cinco pacotes nativos, acompanhados de SHA256SUMS.txt. CI verifica testes, builds, empacotamento e instalação/desinstalação Windows.
+
+          **Limitações:** prévia técnica não assinada. A referência do catálogo não comprova homologação física de contadores pela Nexa nem leitura USB universal. Descoberta não cadastra automaticamente um equipamento do cliente; Monitorar exige vínculo e leitura real válida. Não há garantia de detecção em toda rede ou para dispositivos bloqueados por firewall, segmentação ou protocolos indisponíveis.
+
+          **Atualização:** preserve os dados existentes em ProgramData/serviço. No Windows, desinstale a versão anterior antes de instalar a nova, conforme o procedimento atual de distribuição. Não compartilhe a chave de vinculação em chamados ou logs.
+
+          **Proveniência:** compilado a partir do commit SOURCE_SHA_PLACEHOLDER, após aprovação integral da validação RUN_PLACEHOLDER. Confirme os arquivos locais contra SHA256SUMS.txt.
+          NOTES
+          sed -i "s/SOURCE_SHA_PLACEHOLDER/$SOURCE_SHA/g; s/RUN_PLACEHOLDER/$SOURCE_RUN/g" RELEASE_NOTES.md
+
+      - name: Publish verified prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" release/* --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" --title "Nexa Collector v0.1.6 — descoberta e vinculação do cliente" \
+            --notes-file RELEASE_NOTES.md --prerelease
+          release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          test "$(jq -r .draft <<<"$release")" = false
+          test "$(jq -r .prerelease <<<"$release")" = true
+          test "$(jq -r .target_commitish <<<"$release")" = "$SOURCE_SHA"
+          test "$(jq -r '.assets | length' <<<"$release")" -eq 6

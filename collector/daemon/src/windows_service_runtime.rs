@@ -8,7 +8,10 @@ use std::{
     sync::{atomic::{AtomicBool, Ordering}, Arc},
     time::Duration,
 };
-use nexa_collector_core::{CollectorConfig, CommunicationMode, DiscoverySchedule, MailConfig};
+use nexa_collector_core::{
+    verify_collector_binding, CollectorBinding, CollectorConfig, CollectorError,
+    CommunicationMode, DiscoverySchedule, MailConfig, ProxyAuth,
+};
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 use windows_service::{
@@ -33,6 +36,13 @@ pub fn provision() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn provision_at(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    provision_at_with_verifier(root, verify_collector_binding)
+}
+
+fn provision_at_with_verifier(
+    root: PathBuf,
+    verify: impl Fn(&CollectorConfig, &str) -> Result<CollectorBinding, CollectorError>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let credentials = root.join("credentials");
     let request = credentials.join("install-request.utf16");
     let config_path = root.join("config.json");
@@ -122,12 +132,36 @@ fn provision_at(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             printers: Vec::new(), usb_scanners: Vec::new(),
         }
     };
+    if config_path.exists() && config.collector_id != collector_id {
+        return Err("existing Collector configuration belongs to another ID; administrative recovery is required".into());
+    }
     config.collector_id = collector_id;
     config.api_url = fields[2].to_owned();
     config.communication_mode = mode;
     config.mail = mail;
     config.proxy_url = proxy_url;
     config.validate()?;
+    // Validate the exact ID/key/customer mapping before persisting any new
+    // credentials. E-mail-only installations without an API URL retain their
+    // existing offline workflow and must be confirmed on first delivery.
+    let binding = if !config.api_url.is_empty() {
+        let mut verification_config = config.clone();
+        if proxy_auth {
+            let username = if proxy_domain.is_empty() {
+                fields[4].to_owned()
+            } else {
+                format!("{proxy_domain}\\{}", fields[4])
+            };
+            verification_config.proxy_auth = Some(ProxyAuth {
+                username: Zeroizing::new(username),
+                password: Zeroizing::new(fields[5].to_owned()),
+            });
+        }
+        Some(verify(&verification_config, token)
+            .map_err(|_| "server could not confirm the Collector ID and key; binding was not saved")?)
+    } else {
+        None
+    };
     let config_json = serde_json::to_vec_pretty(&config)?;
     let key = Zeroizing::new(format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()));
     let user_path = credentials.join("NEXA_PROXY_USERNAME");
@@ -179,6 +213,12 @@ fn provision_at(root: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         return Err(error.into());
     }
     fs::remove_file(request)?;
+    if let Some(binding) = binding {
+        let name = binding.customer_name.replace(['\r', '\n'], " ");
+        println!("Cliente confirmado: {name} (#{})", binding.customer_id);
+    } else {
+        println!("Chave armazenada; cliente sera confirmado pelo servidor no primeiro envio.");
+    }
     Ok(())
 }
 
@@ -276,6 +316,14 @@ fn run_service() -> windows_service::Result<()> {
 mod tests {
     use super::*;
 
+    fn approved(cfg: &CollectorConfig, _token: &str) -> Result<CollectorBinding, CollectorError> {
+        Ok(CollectorBinding {
+            collector_id: cfg.collector_id,
+            customer_id: 42,
+            customer_name: "Cliente homologado".into(),
+        })
+    }
+
     fn request(root: &std::path::Path, token: &str) {
         fs::create_dir_all(root.join("credentials")).unwrap();
         let payload = format!(
@@ -304,7 +352,7 @@ mod tests {
         let root = dir.path().join("NexaCollector");
         let token = "ab".repeat(32);
         request(&root, &token);
-        provision_at(root.clone()).unwrap();
+        provision_at_with_verifier(root.clone(), approved).unwrap();
         let cfg = nexa_collector_core::read_config(root.join("config.json")).unwrap();
         assert_eq!(cfg.collector_id.to_string(), "f47ac10b-58cc-4372-a567-0e02b2c3d479");
         assert_eq!(cfg.api_url, "https://nexa.example.com");
@@ -319,7 +367,7 @@ mod tests {
         assert_eq!(key.len(), 64);
         assert!(key.bytes().all(|byte| byte.is_ascii_hexdigit()));
         assert!(!credentials.join("install-request.utf16").exists());
-        provision_at(root.clone()).unwrap();
+        provision_at_with_verifier(root.clone(), approved).unwrap();
         assert_eq!(fs::read_to_string(credentials.join("NEXA_COLLECTOR_DB_KEY_HEX")).unwrap(), key);
     }
 
@@ -328,7 +376,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("NexaCollector");
         request(&root, "invalid");
-        assert!(provision_at(root.clone()).is_err());
+        assert!(provision_at_with_verifier(root.clone(), approved).is_err());
         assert!(!root.join("config.json").exists());
         assert!(!root.join("credentials/NEXA_COLLECTOR_TOKEN").exists());
     }
@@ -338,7 +386,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("NexaCollector");
         mail_request(&root, "mail-secret");
-        provision_at(root.clone()).unwrap();
+        provision_at_with_verifier(root.clone(), approved).unwrap();
         let cfg = nexa_collector_core::read_config(root.join("config.json")).unwrap();
         assert_eq!(cfg.communication_mode, CommunicationMode::Email);
         let mail = cfg.mail.unwrap();
@@ -356,9 +404,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("NexaCollector");
         mail_request(&root, "");
-        assert!(provision_at(root.clone()).is_err());
+        assert!(provision_at_with_verifier(root.clone(), approved).is_err());
         assert!(!root.join("config.json").exists());
         assert!(!root.join("credentials/NEXA_COLLECTOR_TOKEN").exists());
+    }
+
+    #[test]
+    fn rejected_customer_binding_never_persists_config_or_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("NexaCollector");
+        request(&root, &"ab".repeat(32));
+        let result = provision_at_with_verifier(root.clone(), |_cfg, _token| {
+            Err(CollectorError::InvalidAcknowledgement)
+        });
+        assert!(result.is_err());
+        assert!(!root.join("config.json").exists());
+        assert!(!root.join("credentials/NEXA_COLLECTOR_TOKEN").exists());
+        assert!(!root.join("credentials/NEXA_COLLECTOR_DB_KEY_HEX").exists());
     }
 
     #[test]

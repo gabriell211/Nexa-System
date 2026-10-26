@@ -24,6 +24,10 @@ type NetworkReferenceMatch = {
 type DiscoveryCandidate = {
   ip: string; print_ports: number[]; http_server: string | null;
   escl_scanner: boolean; reference?: NetworkReferenceMatch | null;
+  catalog_hint?: NetworkReferenceMatch | null;
+};
+type LocalNetworkInfo = {
+  interface: string; ip: string; scan_cidr: string; authorized: boolean;
 };
 type UsbDeviceCandidate = {
   friendly_name: string;
@@ -80,7 +84,8 @@ function sameObservedEvidence(a: DiscoveryCandidate, b: DiscoveryCandidate): boo
     && a.escl_scanner === b.escl_scanner
     && a.http_server === b.http_server
     && a.print_ports.join(",") === b.print_ports.join(",")
-    && JSON.stringify(a.reference ?? null) === JSON.stringify(b.reference ?? null);
+    && JSON.stringify(a.reference ?? null) === JSON.stringify(b.reference ?? null)
+    && JSON.stringify(a.catalog_hint ?? null) === JSON.stringify(b.catalog_hint ?? null);
 }
 function candidateReviewStatus(candidate: DiscoveryCandidate, reviews: CandidateReview[]): string {
   const reviewed = reviews.find(item => item.candidate.ip === candidate.ip);
@@ -102,6 +107,9 @@ type CollectorSnapshot = {
   communication_mode: string | null;
   interval_seconds: number | null;
   authorized_subnets: string[];
+  catalog_coverage: { total_models: number; network_approved: number; usb_approved: number };
+  local_networks: LocalNetworkInfo[];
+  local_networks_error: string | null;
   discovery_schedule: DiscoverySchedule | null;
   discovery_report: DiscoveryReport | null;
   broadcast_report: DiscoveryReport | null;
@@ -137,15 +145,28 @@ function formatDate(value: string | null): string {
 
 function networkCatalogStatus(candidate: DiscoveryCandidate): string {
   const reference = candidate.reference;
-  if (!reference || reference.network_status !== "approved") return "Não homologada";
+  if (!reference) return "Sem identificação SNMP";
+  if (reference.network_status === "incompatible") return "Incompatível no catálogo de rede";
+  if (reference.network_status === "not_tested") return "Rede não testada no catálogo";
+  if (reference.network_status === null) return "Referências com estados conflitantes";
   return reference.total_counter_oid
-    ? "Homologada no catálogo · leitura automática disponível"
-    : "Não homologada para coleta automática";
+    ? "Aprovado no catálogo de rede · OID candidato disponível"
+    : "Aprovado no catálogo de rede · sem OID único";
 }
 
 function referenceStatus(value: ReferenceStatus): string {
   return value === "approved" ? "Homologado no PrintWayy"
     : value === "incompatible" ? "Incompatível no PrintWayy" : "Não testado no PrintWayy";
+}
+
+function usbCatalogStatus(candidate: UsbDeviceCandidate): string {
+  const ids = candidate.reference_model_ids;
+  if (!ids.length) return "Sem correspondência no catálogo USB";
+  const suffix = ` · ID ${ids.join(", ")}`;
+  if (candidate.reference_usb_status === "approved") return `Aprovado no catálogo USB${suffix}`;
+  if (candidate.reference_usb_status === "incompatible") return `Incompatível no catálogo USB${suffix}`;
+  if (candidate.reference_usb_status === "not_tested") return `USB não testado no catálogo${suffix}`;
+  return `Referências com estados conflitantes${suffix}`;
 }
 
 export default function App() {
@@ -155,6 +176,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [requestError, setRequestError] = useState<string | null>(null);
   const [discovered, setDiscovered] = useState<DiscoveryCandidate[] | null>(null);
+  const [discoveredScope, setDiscoveredScope] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [discoveryError, setDiscoveryError] = useState<string | null>(null);
   const [rangeDraft, setRangeDraft] = useState("");
@@ -191,8 +213,10 @@ export default function App() {
   const discover = useCallback(async () => {
     setDiscovering(true);
     setDiscoveryError(null);
+    setDiscovered(null);
     try {
       setDiscovered(await invoke<DiscoveryCandidate[]>("discover_local_printers"));
+      setDiscoveredScope("interfaces locais");
     } catch (error) {
       setDiscoveryError(String(error));
     } finally {
@@ -203,10 +227,12 @@ export default function App() {
   const discoverRanges = useCallback(async () => {
     setRangeDiscovering(true);
     setRangeError(null);
+    setDiscovered(null);
     const cidrs = rangeDraft.split(/[\s,;]+/).map(value => value.trim()).filter(Boolean);
     try {
       const candidates = await invoke<DiscoveryCandidate[]>("discover_authorized_printers", { cidrs });
       setDiscovered(candidates);
+      setDiscoveredScope(cidrs.join(", "));
       setDiscoveryError(null);
     } catch (error) {
       setRangeError(String(error));
@@ -427,7 +453,7 @@ export default function App() {
       <main className="main">
         <header className="topbar">
           <div className="crumb">Nexa System <span>/</span> Collector Console</div>
-          <div className="version">DESKTOP 0.1.2</div>
+          <div className="version">DESKTOP 0.1.6</div>
         </header>
         <div className="content">
           <div className="heading">
@@ -686,24 +712,48 @@ export default function App() {
               )}
               {toolMode === "network" && (
                 <div className="tool-workspace">
+                  <div className="discovery-settings network-context">
+                    <h3>Rede encontrada neste computador</h3>
+                    {snapshot?.local_networks_error && <div className="notice error" role="alert">{snapshot.local_networks_error}</div>}
+                    {!snapshot && <p>Consultando interfaces de rede...</p>}
+                    {snapshot?.local_networks?.length ? snapshot.local_networks.map(network => (
+                      <div className="network-row" key={`${network.interface}-${network.ip}`}>
+                        <div><strong>{network.interface}</strong> · IP {network.ip} · varredura {network.scan_cidr}
+                          <div>{network.authorized ? "Faixa incluída na autorização do serviço" : "Faixa fora da autorização do serviço"}</div>
+                        </div>
+                        <button type="button" className="secondary-button" disabled={!network.authorized}
+                          onClick={() => setRangeDraft(network.scan_cidr)}>Usar esta faixa</button>
+                      </div>
+                    )) : snapshot && !snapshot.local_networks_error && <p>Nenhuma interface IPv4 privada disponível para varredura.</p>}
+                    {snapshot?.local_networks?.some(network => !network.authorized) && (
+                      <div className="notice warning" role="status">
+                        A busca local por portas funciona, mas a busca por faixa exige que o administrador inclua a rede real em <code>authorized_subnets</code> no arquivo protegido do serviço. A identificação SNMP também exige a credencial protegida e o serviço em execução.
+                      </div>
+                    )}
+                    <p>Faixas autorizadas: {snapshot?.authorized_subnets.join(", ") || "nenhuma"}.</p>
+                  </div>
                   <section className="panel">
               <div className="panel-title"><h2>Descoberta na rede local</h2><span>Busca limitada às interfaces privadas deste computador</span></div>
               <p>Portas de impressão e capacidades eSCL são indícios de equipamento. Confirme modelo, cliente e medidores antes do cadastro.</p>
+              {snapshot?.catalog_coverage && <p>Catálogo local: {snapshot.catalog_coverage.total_models.toLocaleString("pt-BR")} modelos, {snapshot.catalog_coverage.network_approved.toLocaleString("pt-BR")} com status de rede aprovado. O título HTTP pode sugerir um modelo; SNMP e medidor exigem verificação separada.</p>}
               <button type="button" className="primary-button" onClick={() => void discover()} disabled={discovering}>
                 <Network size={16} aria-hidden="true" />{discovering ? "Buscando..." : "Buscar impressoras e scanners"}
               </button>
               {discoveryError && <div className="notice error" role="alert">{discoveryError}</div>}
-              {discovered && <div className="table-scroll"><table>
+              {discovered && <><p role="status">Busca em {discoveredScope}: {discovered.length} candidato(s) com serviço de impressão ou eSCL acessível.</p><div className="table-scroll"><table>
                 <thead><tr><th>Endereço IP</th><th>Portas de impressão</th><th>Scanner eSCL</th><th>Servidor HTTP</th><th>Modelo</th><th>Estado</th></tr></thead>
                 <tbody>{discovered.map((candidate) => <tr key={candidate.ip}>
                   <td className="mono">{candidate.ip}</td>
                   <td>{candidate.print_ports.length ? candidate.print_ports.join(", ") : "Nenhuma"}</td>
                   <td>{candidate.escl_scanner ? "Capacidades acessíveis" : "Não identificado"}</td>
                   <td>{candidate.http_server ?? "Não identificado"}</td>
-                  <td>{candidate.reference ? `${candidate.reference.manufacturer} ${candidate.reference.model}` : "Aguardando consulta protegida"}</td>
-                  <td>{candidate.reference ? networkCatalogStatus(candidate) : "Aguardando validação"}</td>
+                  <td>{candidate.reference ? `${candidate.reference.manufacturer} ${candidate.reference.model}`
+                    : candidate.catalog_hint ? `Possível ${candidate.catalog_hint.manufacturer} ${candidate.catalog_hint.model} (página HTTP)`
+                    : "Modelo não identificado"}</td>
+                  <td>{candidate.reference ? networkCatalogStatus(candidate)
+                    : candidate.catalog_hint ? "Indício do catálogo; SNMP não confirmado" : "Candidato detectado"}</td>
                 </tr>)}</tbody>
-              </table></div>}
+              </table></div></>}
               {discovered?.length === 0 && <div className="empty">Nenhum serviço de impressão ou scanner eSCL respondeu nesta busca.</div>}
             </section>
                   <div className="discovery-settings">
@@ -790,7 +840,9 @@ export default function App() {
                     <td>{candidate.reference
                       ? <><strong>{candidate.reference.manufacturer} {candidate.reference.model}</strong>
                           <div>{networkCatalogStatus(candidate)}</div></>
-                      : "Não reconhecido via SNMP"}</td>
+                      : candidate.catalog_hint
+                        ? `Possível ${candidate.catalog_hint.manufacturer} ${candidate.catalog_hint.model} pela página HTTP; SNMP não confirmado`
+                        : "Não reconhecido via SNMP"}</td>
                     <td>{candidateReviewStatus(candidate, snapshot?.candidate_reviews ?? [])}</td>
                     <td><div className="candidate-actions">
                       <button type="button" className="secondary-button"
@@ -839,7 +891,7 @@ export default function App() {
                   ? "As decisões exigem acesso ao canal privado do serviço. Em caso de acesso negado, utilize uma conta do sistema operacional autorizada."
                   : "A edição por Console está bloqueada neste sistema até existir transporte nativo com permissões homologadas."}
                 {" "}Salvar/ignorar não homologa contadores, não reserva IP e não ativa monitoramento.
-                O agente identifica o modelo automaticamente pelo catálogo; equipamentos não reconhecidos aparecem como Não homologada e não têm coleta ativada.
+                O título HTTP é apenas um indício do catálogo; a confirmação por SNMP e o teste do contador são etapas separadas antes de ativar a coleta.
               </div>
               {!snapshot?.discovery_report?.candidates.length && <div className="empty">
                 Nenhum candidato disponível nesta varredura. Confira se a agenda foi habilitada pelo administrador.
@@ -853,6 +905,7 @@ export default function App() {
                   <section className="panel">
               <div className="panel-title"><h2>Impressoras e dispositivos USB</h2><span>Descoberta local · Windows</span></div>
               <p>Identifica impressoras e dispositivos de imagem conectados por USB, de qualquer fabricante. A identificação não confirma suporte à leitura de contadores.</p>
+              {snapshot?.catalog_coverage && <p>Catálogo local: {snapshot.catalog_coverage.usb_approved.toLocaleString("pt-BR")} modelos com status USB aprovado. A correspondência usa o nome PnP do dispositivo presente.</p>}
               <button type="button" className="primary-button" onClick={() => void discoverUsb()} disabled={usbDiscovering} aria-label="Detectar impressoras USB">
                 <RefreshCcw size={16} aria-hidden="true" />{usbDiscovering ? "Consultando USB..." : "Detectar impressoras USB"}
               </button>
@@ -864,9 +917,7 @@ export default function App() {
                   <td>{candidate.device_type === "printer" ? "Impressora" : candidate.device_type === "scanner" ? "Scanner" : "Dispositivo de imagem"}</td>
                   <td className="mono">{candidate.vid_pid ?? "Não informado"}</td>
                   <td>{candidate.status}</td>
-                  <td>{candidate.reference_usb_status === "approved"
-                    ? `Homologada no catálogo USB · ID ${candidate.reference_model_ids.join(", ")}`
-                    : "Não homologada"}</td>
+                  <td>{usbCatalogStatus(candidate)}</td>
                   <td>{candidate.device_type === "scanner" && candidate.vid_pid === "1083:1658" && candidate.friendly_name.toUpperCase() === "CANON DR-C225 USB" ? "Total Canon: leitura local experimental" : "Leitura não homologada"}</td>
                 </tr>)}</tbody>
               </table></div>}
