@@ -62,6 +62,7 @@ test('secure login, customers, tickets, stock and logout (real browser)', async 
     const dialog=page.getByRole('dialog');
     await expect(dialog.getByRole('heading',{name:/OS #/})).toBeVisible();
     await expect(dialog.getByText(subject,{exact:true})).toBeVisible();
+    await expect(dialog.getByText(/Aberta por:/)).toBeVisible();
 
     await dialog.getByLabel('Nova mensagem').fill('Mensagem interna validada pelo navegador E2E');
     await expect(dialog.getByLabel('Comentário interno (não visível ao cliente)')).toBeChecked();
