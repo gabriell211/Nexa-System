@@ -48,6 +48,7 @@ test('secure login, customers, tickets, stock and logout (real browser)', async 
     await cycle.getByRole('button',{name:'Fechar'}).click();
     await page.goto('/chamados');
     await expect(page.getByRole('heading',{name:'Chamados técnicos'})).toBeVisible();
+    await page.getByRole('button',{name:'Abrir OS'}).click();
     await page.getByLabel('Buscar cliente do chamado').fill(name);
     await page.getByLabel('Cliente',{exact:true}).selectOption({label:name});
   });
@@ -56,9 +57,8 @@ test('secure login, customers, tickets, stock and logout (real browser)', async 
     const subject='E2E impressão '+Date.now()+'-'+Math.floor(Math.random()*100_000);
     await page.getByLabel('Assunto').fill(subject);
     await page.getByLabel('Descrição').fill('A impressora não libera as páginas de impressão.');
-    await page.getByRole('button',{name:'Abrir chamado'}).click();
+    await page.getByRole('button',{name:'Abrir OS'}).click();
     await expect(page.getByText(subject,{exact:true})).toBeVisible();
-    await page.getByRole('row',{name:new RegExp(subject)}).getByRole('button',{name:'Detalhes'}).click();
     const dialog=page.getByRole('dialog');
     await expect(dialog.getByText(subject,{exact:true})).toBeVisible();
 
