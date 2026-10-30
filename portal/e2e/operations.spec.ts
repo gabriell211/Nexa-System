@@ -58,9 +58,9 @@ test('secure login, customers, tickets, stock and logout (real browser)', async 
     await page.getByLabel('Assunto').fill(subject);
     await page.getByLabel('Descrição').fill('A impressora não libera as páginas de impressão.');
     await page.getByRole('button',{name:'Abrir OS'}).click();
-    await expect(page.getByText(subject,{exact:true})).toBeVisible();
     const dialog=page.getByRole('dialog');
     await expect(dialog.getByText(subject,{exact:true})).toBeVisible();
+    await expect(dialog.getByText(/Aberta por:/)).toBeVisible();
 
     await dialog.getByLabel('Nova mensagem').fill('Mensagem interna validada pelo navegador E2E');
     await expect(dialog.getByLabel('Comentário interno (não visível ao cliente)')).toBeChecked();
