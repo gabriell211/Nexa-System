@@ -121,12 +121,12 @@ interface CreatedInvite {
   note: string;
 }
 
-function InviteAccountDialog({ token, onClose, onCreated }: {
-  token: string | null; onClose: () => void; onCreated: () => Promise<void>;
+function InviteAccountDialog({ token, onClose, onCreated, canInviteAdmin }: {
+  token: string | null; onClose: () => void; onCreated: () => Promise<void>; canInviteAdmin: boolean;
 }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
-  const [type, setType] = useState<'customer' | 'collaborator'>('customer');
+  const [type, setType] = useState<'customer' | 'collaborator' | 'administrator'>('customer');
   const [search, setSearch] = useState('');
   const delayed = useDeferredValue(search);
   const [page, setPage] = useState(1);
@@ -140,13 +140,15 @@ function InviteAccountDialog({ token, onClose, onCreated }: {
     queryFn: () => api<Page<Customer>>('/customers' + queryString({
       q: delayed, page, per_page: 25, active_only: true,
     }), token),
+    enabled: type !== 'administrator',
   });
   const save = useMutation({
     mutationFn: () => api<CreatedInvite>('/accounts', token, {
       method: 'POST',
       body: JSON.stringify({
         name: name.trim(), email: email.trim(),
-        account_type: type, customer_ids: selected,
+        account_type: type,
+        ...(type === 'administrator' ? {} : {customer_ids: selected}),
         ...(type === 'customer' ? {view_reports: reports, view_other_tickets: otherTickets} : {}),
       }),
     }),
@@ -164,7 +166,7 @@ function InviteAccountDialog({ token, onClose, onCreated }: {
   }
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (selected.length === 0) return;
+    if (type !== 'administrator' && selected.length === 0) return;
     save.mutate();
   }
 
@@ -172,7 +174,7 @@ function InviteAccountDialog({ token, onClose, onCreated }: {
     <section className="modal account-invite-modal" role="dialog" aria-modal="true" aria-labelledby="invite-title">
       <div className="modal-header"><div><span className="eyebrow">CONTAS DE ACESSO</span>
         <h2 id="invite-title">{created ? 'Convite criado' : 'Adicionar conta'}</h2>
-        <p className="modal-subtitle">Defina o tipo, a carteira de clientes e o acesso inicial.</p></div>
+        <p className="modal-subtitle">Cada pessoa tem nome, e-mail e login individuais.</p></div>
         <button className="icon-button" type="button" onClick={onClose} aria-label="Fechar"><X size={20}/></button>
       </div>
       {created ? <div className="editor-form">
@@ -200,10 +202,15 @@ function InviteAccountDialog({ token, onClose, onCreated }: {
             onChange={() => setType('customer')}/> Conta de cliente</label>
           <label className="check-row"><input type="radio" name="account_type" checked={type === 'collaborator'}
             onChange={() => setType('collaborator')}/> Conta de colaborador</label>
+          {canInviteAdmin && <label className="check-row"><input type="radio" name="account_type" checked={type === 'administrator'}
+            onChange={() => setType('administrator')}/> Conta de administrador</label>}
         </div>
-        <p className="portfolio-info">{type === 'customer'
-          ? 'Cliente: somente portal do cliente, com acesso apenas às empresas selecionadas.'
-          : 'Colaborador: papel de técnico, sujeito às permissões internas e restrito à carteira selecionada.'}</p>
+        <p className="portfolio-info">{type === 'administrator'
+          ? 'Administrador: acesso administrativo integral a esta prestadora. Apenas o proprietário pode conceder este perfil.'
+          : type === 'customer'
+            ? 'Cliente: somente portal do cliente, com acesso apenas às empresas selecionadas.'
+            : 'Colaborador: papel de técnico, sujeito às permissões internas e restrito à carteira selecionada.'}</p>
+        {type !== 'administrator' && <>
         <label htmlFor="invite-search">Clientes autorizados ({selected.length})</label>
         <label className="search-field"><Search size={17}/>
           <input id="invite-search" value={search} placeholder="Pesquisar cliente ou unidade"
@@ -219,6 +226,7 @@ function InviteAccountDialog({ token, onClose, onCreated }: {
               <span>{client.name}<small>#{client.id}</small></span>
             </label>)}<Paging data={clients.data} onChange={setPage}/></>}
         </div>
+        </>}
         {type === 'customer' && <fieldset className="account-permissions">
           <legend>Permissões do cliente</legend>
           <label className="check-row"><input type="checkbox" checked={reports} onChange={e => setReports(e.target.checked)}/>
@@ -231,7 +239,7 @@ function InviteAccountDialog({ token, onClose, onCreated }: {
         {save.error && <p role="alert" className="notice error">{readableError(save.error)}</p>}
         <div className="modal-actions">
           <button className="button ghost" type="button" onClick={onClose}>Cancelar</button>
-          <button className="button primary" type="submit" disabled={save.isPending || selected.length === 0}>
+          <button className="button primary" type="submit" disabled={save.isPending || (type !== 'administrator' && selected.length === 0)}>
             <Plus size={16}/> {save.isPending ? 'Criando...' : 'Criar e gerar convite'}
           </button>
         </div>
@@ -240,7 +248,7 @@ function InviteAccountDialog({ token, onClose, onCreated }: {
   </div>;
 }
 
-export function StaffPage({ token }: { token: string | null }) {
+export function StaffPage({ token, canInviteAdmin }: { token: string | null; canInviteAdmin: boolean }) {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Member | null>(null);
@@ -253,7 +261,7 @@ export function StaffPage({ token }: { token: string | null }) {
   return <div>
     <div className="page-heading"><div><span className="eyebrow">GOVERNANÇA DE ACESSO</span>
       <h1>Contas de acesso</h1>
-      <p>Convide clientes e colaboradores, atribua carteiras e consulte as permissões auditadas.</p>
+      <p>Convide usuários com nome e e-mail próprios, configure perfis e consulte permissões auditadas.</p>
     </div><button className="button primary" type="button" onClick={() => setInviting(true)}>
       <Plus size={17}/> Adicionar conta
     </button></div>
@@ -271,7 +279,7 @@ export function StaffPage({ token }: { token: string | null }) {
             <button className="button ghost" onClick={() => setEditing(member)}><UserRoundCog size={16}/> Configurar</button>}</td>
         </tr>)}</tbody></table></div><Paging data={members.data} onChange={setPage}/></>}
     </section>
-    {inviting && <InviteAccountDialog token={token} onClose={() => setInviting(false)}
+    {inviting && <InviteAccountDialog token={token} canInviteAdmin={canInviteAdmin} onClose={() => setInviting(false)}
       onCreated={async () => {await qc.invalidateQueries({queryKey: ['staff']});}}/>}
     {editing && <PortfolioDialog key={editing.id} member={editing} token={token} onClose={() => setEditing(null)}
       onSaved={async () => {
