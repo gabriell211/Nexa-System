@@ -12,4 +12,4 @@ RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/fra
     && chown -R www-data:www-data storage bootstrap/cache
 EXPOSE 8080
 USER www-data
-CMD ["php","artisan","serve","--host=0.0.0.0","--port=8080"]
+CMD ["sh","-c","php artisan nexa:migrate-on-start && exec php artisan serve --host=0.0.0.0 --port=8080"]
