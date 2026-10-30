@@ -181,7 +181,8 @@ function Shell({ token, identity, onLogout }: {
           {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
             <Route path="/agentes" element={<CollectorsPage />} />}
           {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
-            <Route path="/chamados" element={<TicketsPage canReopen={canWrite||identity.role==='supervisor'} />} />}
+            <Route path="/chamados" element={<TicketsPage canReopen={canWrite||identity.role==='supervisor'}
+              canCreateOrder={canWrite||identity.role==='supervisor'} />} />}
           {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
             <Route path="/alertas" element={<AlertsPage />} />}
           {canStock && <Route path="/estoque" element={<InventoryPage token={token}

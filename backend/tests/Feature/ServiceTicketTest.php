@@ -51,7 +51,7 @@ final class ServiceTicketTest extends TestCase
     {
         extract($this->fixture());
         $id=$this->create($token,$customer->id,$printer->id,$tech->id)
-            ->assertCreated()->assertJsonPath('data.status','triage')
+            ->assertCreated()->assertJsonPath('data.status','pending')
             ->assertJsonPath('data.customer.name','Cliente autorizado')
             ->assertJsonPath('data.assignee.id',$tech->id)->json('data.id');
         $this->withToken($token)->getJson('/api/v1/tickets')
@@ -59,6 +59,24 @@ final class ServiceTicketTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/tickets/'.$id)
             ->assertOk()->assertJsonPath('data.printer.model','MA5500ifx');
         $this->assertDatabaseHas('audit_entries',['action'=>'ticket.created']);
+    }
+
+    public function test_admin_order_without_technician_stays_in_triage_and_assigned_order_is_pending(): void
+    {
+        extract($this->fixture());
+        $unassigned=$this->create($token,$customer->id,$printer->id)->assertCreated()
+            ->assertJsonPath('data.status','triage')
+            ->assertJsonPath('data.assigned_user_id',null)->json('data.id');
+        $assigned=$this->create($token,$customer->id,$printer->id,$tech->id)->assertCreated()
+            ->assertJsonPath('data.status','pending')
+            ->assertJsonPath('data.assigned_user_id',$tech->id)
+            ->assertJsonPath('data.origin','backoffice')->json('data.id');
+        $this->assertDatabaseHas('service_tickets',[
+            'id'=>$unassigned,'status'=>'triage','assigned_user_id'=>null,
+        ]);
+        $this->assertDatabaseHas('service_tickets',[
+            'id'=>$assigned,'status'=>'pending','assigned_user_id'=>$tech->id,
+        ]);
     }
 
     public function test_internal_ticket_requires_full_portfolio_and_cannot_reference_printer(): void

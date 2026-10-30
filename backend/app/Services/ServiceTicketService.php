@@ -43,7 +43,9 @@ final class ServiceTicketService
                 'assigned_user_id'=>$data['assigned_user_id']??null,
                 'opened_by_user_id'=>$actor->id,'subject'=>$data['subject'],
                 'description'=>$data['description'],'category'=>$data['category'],
-                'priority'=>$data['priority'],'status'=>'triage','origin'=>'backoffice',
+                'priority'=>$data['priority'],
+                'status'=>isset($data['assigned_user_id']) ? 'pending' : 'triage',
+                'origin'=>'backoffice',
             ]);
             $this->audit->write($tenant,$actor,'ticket.created',$ticket,null,
                 $ticket->only(['customer_id','printer_id','assigned_user_id','subject','priority','status']));
