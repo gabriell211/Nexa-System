@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { ClipboardCheck, MessageSquarePlus, Plus, RotateCcw } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
-import type { Page, Printer } from '../types';
+import type { Page, Printer, User } from '../types';
 import { PagedEntitySelect } from '../components/PagedEntitySelect';
 import { PartRequestsPanel } from './PartRequestsPanel';
 
@@ -14,6 +14,7 @@ interface Ticket {
   id:number; subject:string; description:string; category:string; priority:Priority; status:Status; origin?:string;
   customer_id:number|null; printer_id:number|null; assigned_user_id:number|null; created_at:string;
   customer?:{id:number;name:string}|null;assignee?:{id:number;name:string}|null;comments?:Comment[];
+  opener?:{id:number;name:string;email:string}|null; opened_by_user_id:number;
   linked_printers?:Array<{id:number;manufacturer:string;model:string;serial_number:string|null;ip_address:string|null}>;
   attachments?:Array<{id:number;name:string;mime_type:string;size:number}>;
   signature?:{signer_name:string;service_summary:string;signed_at:string;sha256:string}|null;
@@ -35,7 +36,7 @@ function ticketLabel(ticket: Ticket): string {
   return ticket.origin === 'backoffice' ? `OS #${ticket.id}` : `Chamado #${ticket.id}`;
 }
 
-function CreateTicket({onSuccess}:{onSuccess:(ticket:Ticket)=>Promise<void>}) {
+function CreateTicket({onSuccess,currentUser}:{onSuccess:(ticket:Ticket)=>Promise<void>;currentUser:User}) {
   const [customer,setCustomer]=useState('');
   const [printer,setPrinter]=useState('');
   const [subject,setSubject]=useState('');
@@ -65,6 +66,7 @@ function CreateTicket({onSuccess}:{onSuccess:(ticket:Ticket)=>Promise<void>}) {
   function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();create.mutate();}
   return <form onSubmit={submit} className="stock-form">
     <h3>Abrir ordem de serviço</h3>
+    <p className="portfolio-info">Responsável pela abertura: <strong>{currentUser.name}</strong> ({currentUser.email??'E-mail não informado'}).</p>
     <p>Informe o atendimento. Se escolher um técnico, a OS será enviada como pendente para o aplicativo dele.</p>
     <div className="stock-form-grid">
       <div className="stock-field"><PagedEntitySelect<{id:number;name:string}>
@@ -175,6 +177,7 @@ function Detail({id,canReopen,onClose,onChanged}:{
         <p className="notice error" role="alert">{readableError(ticket.error)}</p>:data&&<>
         <h3>{data.subject}</h3>
         <p>{data.description}</p>
+        <p><strong>Aberta por:</strong> {data.opener?.name??'Não identificado'}{data.opener?.email ? ` (${data.opener.email})` : ''}</p>
         <p><strong>{statuses[data.status]}</strong> · {data.customer?.name??'Interno'} · {priorities[data.priority]}
           · Técnico: {data.assignee?.name??'Não designado'}</p>
         {(data.linked_printers??[]).length>0&&<div className="stock-form">
@@ -275,8 +278,8 @@ function Detail({id,canReopen,onClose,onChanged}:{
   </div>;
 }
 
-export function TicketsPage({canReopen,canCreateOrder}:{
-  canReopen:boolean;canCreateOrder:boolean;
+export function TicketsPage({canReopen,canCreateOrder,currentUser}:{
+  canReopen:boolean;canCreateOrder:boolean;currentUser:User;
 }) {
   const qc=useQueryClient();
   const [selected,setSelected]=useState<number|null>(null);
@@ -327,7 +330,7 @@ export function TicketsPage({canReopen,canCreateOrder}:{
     </div></div>
     {notice&&<p role="status" className="notice success">{notice}</p>}
     {canCreateOrder&&creating&&<section className="data-card" aria-label="Nova ordem de serviço">
-      <CreateTicket onSuccess={created}/>
+      <CreateTicket currentUser={currentUser} onSuccess={created}/>
     </section>}
     <section className="data-card"><div className="stock-field">
       <label htmlFor="ticket-filter">Filtrar estado</label>
@@ -342,9 +345,10 @@ export function TicketsPage({canReopen,canCreateOrder}:{
         <p role="alert" className="notice error">{readableError(results.error)}</p>:
         results.data.data.length===0?<p>Nenhum chamado encontrado.</p>:
         <div className="table-wrap"><table><thead><tr>
-          <th>Número</th><th>Assunto</th><th>Cliente</th><th>Técnico</th><th>Prioridade</th><th>Estado</th><th>Ação</th>
+          <th>Número</th><th>Assunto</th><th>Cliente</th><th>Aberta por</th><th>Técnico</th><th>Prioridade</th><th>Estado</th><th>Ação</th>
         </tr></thead><tbody>{results.data.data.map(t=><tr key={t.id}>
           <td>{ticketLabel(t)}</td><td><strong>{t.subject}</strong></td><td>{t.customer?.name??'Interno'}</td>
+          <td title={t.opener?.email??undefined}>{t.opener?.name??'Não identificado'}</td>
           <td>{t.assignee?.name??'Não designado'}</td><td>{priorities[t.priority]}</td><td>{statuses[t.status]}</td>
           <td><button type="button" className="button ghost" onClick={()=>setSelected(t.id)}>Detalhes</button></td>
         </tr>)}</tbody></table></div>}
