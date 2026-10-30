@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { ClipboardCheck, MessageSquarePlus, Plus, RotateCcw } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
-import type { Page, Printer } from '../types';
+import type { Page, Printer, User } from '../types';
 import { PagedEntitySelect } from '../components/PagedEntitySelect';
 import { PartRequestsPanel } from './PartRequestsPanel';
 
@@ -14,6 +14,7 @@ interface Ticket {
   id:number; subject:string; description:string; category:string; priority:Priority; status:Status;
   customer_id:number|null; printer_id:number|null; assigned_user_id:number|null; created_at:string;
   customer?:{id:number;name:string}|null;assignee?:{id:number;name:string}|null;comments?:Comment[];
+  opener?:{id:number;name:string;email:string}|null; opened_by_user_id:number;
   linked_printers?:Array<{id:number;manufacturer:string;model:string;serial_number:string|null;ip_address:string|null}>;
   attachments?:Array<{id:number;name:string;mime_type:string;size:number}>;
   signature?:{signer_name:string;service_summary:string;signed_at:string;sha256:string}|null;
@@ -31,7 +32,7 @@ const options:Record<Status,Status[]> = {
   in_progress:['pending','resolved'],resolved:['closed','in_progress'],closed:['triage'],
 };
 
-function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
+function CreateTicket({onSuccess,currentUser}:{onSuccess:(ticket:Ticket)=>Promise<void>;currentUser:User}) {
   const [customer,setCustomer]=useState('');
   const [printer,setPrinter]=useState('');
   const [subject,setSubject]=useState('');
@@ -52,13 +53,15 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
         ...(assignee?{assigned_user_id:Number(assignee)}:{}),
       }),
     }),
-    onSuccess:async()=>{
-      setSubject('');setDescription('');setAssignee('');await onSuccess();
+    onSuccess:async result=>{
+      setCustomer('');setPrinter('');setSubject('');setDescription('');setAssignee('');
+      await onSuccess(result.data);
     },
   });
   function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();create.mutate();}
   return <form onSubmit={submit} className="stock-form">
-    <h3>Abrir chamado</h3>
+    <h3>Abrir ordem de serviço</h3>
+    <p className="portfolio-info">Responsável pela abertura: <strong>{currentUser.name}</strong> ({currentUser.email ?? "E-mail não informado"}). O responsável é identificado pela sessão, não por um campo editável.</p>
     <div className="stock-form-grid">
       <div className="stock-field"><PagedEntitySelect<{id:number;name:string}>
         id="ticket-customer" label="Cliente" searchLabel="Buscar cliente do chamado"
@@ -96,7 +99,7 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
         value={description} onChange={e=>setDescription(e.target.value)} rows={3}/></div>
     {create.error&&<p role="alert" className="notice error">{readableError(create.error)}</p>}
     <button className="button primary" disabled={create.isPending}
-      type="submit"><Plus size={16}/> {create.isPending?'Salvando...':'Abrir chamado'}</button>
+      type="submit"><Plus size={16}/> {create.isPending?'Salvando...':'Abrir OS'}</button>
   </form>;
 }
 
@@ -167,6 +170,7 @@ function Detail({id,canReopen,onClose,onChanged}:{
         <p className="notice error" role="alert">{readableError(ticket.error)}</p>:data&&<>
         <h3>{data.subject}</h3>
         <p>{data.description}</p>
+        <p><strong>Aberta por:</strong> {data.opener?.name??'Usuário não identificado'}{data.opener?.email ? ` (${data.opener.email})` : ''}</p>
         <p><strong>{statuses[data.status]}</strong> · {data.customer?.name??'Interno'} · {priorities[data.priority]}
           · Técnico: {data.assignee?.name??'Não designado'}</p>
         {(data.linked_printers??[]).length>0&&<div className="stock-form">
@@ -267,10 +271,14 @@ function Detail({id,canReopen,onClose,onChanged}:{
   </div>;
 }
 
-export function TicketsPage({canReopen}:{canReopen:boolean}) {
+export function TicketsPage({canReopen,currentUser}:{canReopen:boolean;currentUser:User}) {
   const qc=useQueryClient();
   const [selected,setSelected]=useState<number|null>(null);
   const [filterParams, setFilterParams] = useSearchParams();
+  const [showCreate, setShowCreate] = useState(filterParams.get('new') === '1');
+  useEffect(() => {
+    if (filterParams.get('new') === '1') setShowCreate(true);
+  }, [filterParams]);
   const requested = filterParams.get('status');
   const status: Status | 'open' | 'all' = requested === 'open' ? 'open'
     : requested && Object.hasOwn(statuses, requested) ? requested as Status : 'all';
@@ -293,7 +301,9 @@ export function TicketsPage({canReopen}:{canReopen:boolean}) {
     <div className="page-heading"><div>
       <span className="eyebrow">HELP DESK</span><h1>Chamados técnicos</h1>
       <p>Triagem, atendimento, prioridades, mensagens e histórico persistido.</p>
-    </div><ClipboardCheck size={32}/></div>
+    </div>{canReopen && <button type="button" className="button primary" onClick={() => setShowCreate(value=>!value)}>
+      <Plus size={17}/> {showCreate ? 'Fechar formulário' : 'Abrir OS'}
+    </button>}</div>
     {notice&&<p role="status" className="notice success">{notice}</p>}
     <section className="data-card"><div className="stock-field">
       <label htmlFor="ticket-filter">Filtrar estado</label>
@@ -308,9 +318,10 @@ export function TicketsPage({canReopen}:{canReopen:boolean}) {
         <p role="alert" className="notice error">{readableError(results.error)}</p>:
         results.data.data.length===0?<p>Nenhum chamado encontrado.</p>:
         <div className="table-wrap"><table><thead><tr>
-          <th>Número</th><th>Assunto</th><th>Cliente</th><th>Técnico</th><th>Prioridade</th><th>Estado</th><th>Ação</th>
+          <th>Número</th><th>Assunto</th><th>Cliente</th><th>Aberta por</th><th>Técnico</th><th>Prioridade</th><th>Estado</th><th>Ação</th>
         </tr></thead><tbody>{results.data.data.map(t=><tr key={t.id}>
           <td>#{t.id}</td><td><strong>{t.subject}</strong></td><td>{t.customer?.name??'Interno'}</td>
+          <td title={t.opener?.email??undefined}>{t.opener?.name??'Não identificado'}</td>
           <td>{t.assignee?.name??'Não designado'}</td><td>{priorities[t.priority]}</td><td>{statuses[t.status]}</td>
           <td><button type="button" className="button ghost" onClick={()=>setSelected(t.id)}>Detalhes</button></td>
         </tr>)}</tbody></table></div>}
@@ -321,7 +332,13 @@ export function TicketsPage({canReopen}:{canReopen:boolean}) {
         </div></div>}
     </section>
     {canReopen&&<PartRequestsPanel/>}
-    <CreateTicket onSuccess={refresh}/>
+    {canReopen && showCreate && <section className="data-card"><CreateTicket currentUser={currentUser} onSuccess={async newTicket=>{
+      await refresh();
+      setNotice(`OS #${newTicket.id} aberta por ${currentUser.name} e registrada com sucesso.`);
+      setSelected(newTicket.id);
+      setShowCreate(false);
+      setFilterParams({status:'open'});
+    }}/></section>}
     {selected!==null&&<Detail id={selected} canReopen={canReopen}
       onClose={()=>setSelected(null)} onChanged={refresh}/>}
   </div>;
