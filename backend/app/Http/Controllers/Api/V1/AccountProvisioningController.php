@@ -3,14 +3,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Requests\AccountInvitationRequest;
 use App\Models\User;
 use App\Services\AuditWriter;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -22,18 +21,14 @@ final class AccountProvisioningController extends Controller
 {
     public function __construct(private readonly AuditWriter $audit) {}
 
-    public function store(Request $request): JsonResponse
+    public function store(AccountInvitationRequest $request): JsonResponse
     {
         $tenant = $request->attributes->get('nexa_tenant');
-        $data = $request->validate([
-            'name' => ['required','string','min:2','max:180'],
-            'email' => ['required','email','max:255'],
-            'account_type' => ['required',Rule::in(['customer','collaborator'])],
-            'customer_ids' => ['required','array','min:1','max:200'],
-            'customer_ids.*' => ['required','integer','min:1','distinct'],
-            'view_reports' => ['sometimes','boolean'],
-            'view_other_tickets' => ['sometimes','boolean'],
-        ]);
+        $data = $request->validated();
+        if ($data['account_type'] === 'administrator'
+            && $request->attributes->get('nexa_role') !== 'owner') {
+            abort(403, 'Somente o proprietário pode convidar administradores.');
+        }
 
         $email = Str::lower(trim($data['email']));
         if (User::query()->whereRaw('LOWER(email) = ?', [$email])->exists()) {
@@ -41,7 +36,7 @@ final class AccountProvisioningController extends Controller
                 'email' => 'Esta conta já existe. Solicite ao administrador a associação apropriada.',
             ]);
         }
-        $ids = array_values(array_unique(array_map('intval', $data['customer_ids'])));
+        $ids = array_values(array_unique(array_map('intval', $data['customer_ids'] ?? [])));
         sort($ids);
         $valid = $tenant->customers()->whereIn('id', $ids)
             ->where('active', true)->count();
@@ -50,9 +45,14 @@ final class AccountProvisioningController extends Controller
                 'customer_ids' => 'Selecione somente clientes ativos da empresa atual.',
             ]);
         }
-        $role = $data['account_type'] === 'customer' ? 'customer' : 'technician';
+        $role = match ($data['account_type']) {
+            'customer' => 'customer',
+            'collaborator' => 'technician',
+            'administrator' => 'admin',
+        };
+        $scope = $role === 'admin' ? 'all' : 'assigned';
         $token = bin2hex(random_bytes(32));
-        $user = DB::transaction(function () use ($tenant, $request, $data, $email, $ids, $role, $token): User {
+        $user = DB::transaction(function () use ($tenant, $request, $data, $email, $ids, $role, $scope, $token): User {
             $user = User::query()->create([
                 'name' => trim($data['name']),
                 'email' => $email,
@@ -60,16 +60,18 @@ final class AccountProvisioningController extends Controller
                 'password' => bin2hex(random_bytes(40)),
             ]);
             $tenant->users()->attach($user->id, [
-                'role' => $role, 'customer_scope' => 'assigned',
+                'role' => $role, 'customer_scope' => $scope,
             ]);
-            DB::table('customer_user_access')->insert(array_map(
-                static fn (int $id): array => [
-                    'tenant_id' => $tenant->id,
-                    'user_id' => $user->id,
-                    'customer_id' => $id,
-                    'created_at' => now(), 'updated_at' => now(),
-                ], $ids
-            ));
+            if ($ids !== []) {
+                DB::table('customer_user_access')->insert(array_map(
+                    static fn (int $id): array => [
+                        'tenant_id' => $tenant->id,
+                        'user_id' => $user->id,
+                        'customer_id' => $id,
+                        'created_at' => now(), 'updated_at' => now(),
+                    ], $ids
+                ));
+            }
             if ($role === 'customer') {
                 DB::table('customer_account_settings')->insert([
                     'tenant_id' => $tenant->id,
@@ -95,7 +97,7 @@ final class AccountProvisioningController extends Controller
 
         return response()->json([
             'user' => $user->only(['id','name','email','active']),
-            'role' => $role, 'scope' => 'assigned',
+            'role' => $role, 'scope' => $scope,
             'customer_ids' => $ids,
             'invitation' => ['token' => $token, 'tenant' => $tenant->slug,
                 'expires_at' => now()->addHours(24)->toIso8601String()],
