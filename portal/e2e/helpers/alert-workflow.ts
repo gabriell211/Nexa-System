@@ -74,8 +74,9 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
     await reopened.getByRole('button',{name:'Fechar'}).click();
   });
 
-  await test.step('Open a ticket for the same printer from the ticket form',async()=>{
+  await test.step('Open an OS for the same printer from the administration',async()=>{
     await page.goto('/chamados');
+    await page.getByRole('button',{name:'Abrir OS'}).click();
     await page.getByLabel('Buscar cliente do chamado').fill(customer);
     await page.getByLabel('Cliente',{exact:true}).selectOption({label:customer});
     await page.getByLabel('Buscar impressora do chamado').fill(model);
@@ -85,8 +86,10 @@ export async function runAlertWorkflow(page:Page): Promise<void> {
     await page.locator('#ticket-printer').selectOption(printerId!);
     await page.getByLabel('Assunto').fill(subject);
     await page.getByLabel('Descrição').fill('Falha real registrada pela interface para vincular um alerta.');
-    await page.getByRole('button',{name:'Abrir chamado'}).click();
-    await expect(page.getByText(subject,{exact:true})).toBeVisible();
+    await page.getByRole('button',{name:'Abrir OS'}).click();
+    const dialog=page.getByRole('dialog');
+    await expect(dialog.getByText(subject,{exact:true})).toBeVisible();
+    await dialog.getByRole('button',{name:'Fechar detalhes'}).click();
   });
 
   await test.step('Register manual alert and correlate it with a ticket',async()=>{
