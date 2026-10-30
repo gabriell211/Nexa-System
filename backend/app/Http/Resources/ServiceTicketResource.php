@@ -21,6 +21,8 @@ final class ServiceTicketResource extends JsonResource
             'customer'=>$this->whenLoaded('customer', fn () => $this->customer?->only(['id','name'])),
             'printer'=>$this->whenLoaded('printer', fn () => $this->printer?->only(['id','manufacturer','model','serial_number','ip_address'])),
             'assignee'=>$this->whenLoaded('assignee', fn () => $this->assignee?->only(['id','name'])),
+            'opened_by_user_id'=>$this->opened_by_user_id,
+            'opener'=>$this->whenLoaded('opener', fn () => $this->opener?->only(['id','name','email'])),
             'linked_printers'=>$this->whenLoaded('linkedPrinters', fn () =>
                 $this->linkedPrinters->map(static fn ($printer) =>
                     $printer->only(['id','manufacturer','model','serial_number','ip_address']))),
