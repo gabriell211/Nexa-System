@@ -40,7 +40,7 @@ final class ServiceTicketController extends Controller
             $query->whereIn('customer_id',$this->portfolio->assignedIds($request));
         }
         return ServiceTicketResource::collection(
-            $query->with(['customer:id,name','assignee:id,name'])
+            $query->with(['customer:id,name','assignee:id,name','opener:id,name,email'])
                 ->when(isset($filters['status']),fn ($q)=>$q->where('status',$filters['status']))
                 ->when(isset($filters['printer_id']),fn ($q)=>$q->where('printer_id',(int)$filters['printer_id']))
                 ->when(isset($filters['customer_id']),fn ($q)=>$q->where('customer_id',(int)$filters['customer_id']))

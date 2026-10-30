@@ -181,7 +181,8 @@ function Shell({ token, identity, onLogout }: {
           {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
             <Route path="/agentes" element={<CollectorsPage />} />}
           {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
-            <Route path="/chamados" element={<TicketsPage canReopen={canWrite||identity.role==='supervisor'} />} />}
+            <Route path="/chamados" element={<TicketsPage canReopen={canWrite||identity.role==='supervisor'}
+              canCreateOrder={canWrite||identity.role==='supervisor'} currentUser={identity.user} />} />}
           {['owner','admin','manager','supervisor','technician'].includes(identity.role) &&
             <Route path="/alertas" element={<AlertsPage />} />}
           {canStock && <Route path="/estoque" element={<InventoryPage token={token}
@@ -189,7 +190,7 @@ function Shell({ token, identity, onLogout }: {
           {canStock && <Route path="/reposicoes" element={<ShipmentsPage token={token} canClose={canWrite} />} />}
           {canStock && <Route path="/suprimentos" element={<SuppliesPage token={token} canRemove={canWrite} />} />}
           {canAudit && <Route path="/auditoria" element={<AuditPage token={token} />} />}
-          {canAudit && <Route path="/equipe" element={<StaffPage token={token} />} />}
+          {canAudit && <Route path="/equipe" element={<StaffPage token={token} canInviteAdmin={identity.role==='owner'} />} />}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>

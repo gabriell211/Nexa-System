@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { ClipboardCheck, MessageSquarePlus, Plus, RotateCcw } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
-import type { Page, Printer } from '../types';
+import type { Page, Printer, User } from '../types';
 import { PagedEntitySelect } from '../components/PagedEntitySelect';
 import { PartRequestsPanel } from './PartRequestsPanel';
 
@@ -11,9 +11,10 @@ type Status = 'triage'|'unassigned'|'pending'|'in_progress'|'resolved'|'closed';
 type Priority = 'low'|'normal'|'high'|'critical';
 type Comment = {id:number;body:string;internal:boolean;created_at:string;author:{id:number;name:string}|null};
 interface Ticket {
-  id:number; subject:string; description:string; category:string; priority:Priority; status:Status;
+  id:number; subject:string; description:string; category:string; priority:Priority; status:Status; origin?:string;
   customer_id:number|null; printer_id:number|null; assigned_user_id:number|null; created_at:string;
   customer?:{id:number;name:string}|null;assignee?:{id:number;name:string}|null;comments?:Comment[];
+  opener?:{id:number;name:string;email:string}|null; opened_by_user_id:number;
   linked_printers?:Array<{id:number;manufacturer:string;model:string;serial_number:string|null;ip_address:string|null}>;
   attachments?:Array<{id:number;name:string;mime_type:string;size:number}>;
   signature?:{signer_name:string;service_summary:string;signed_at:string;sha256:string}|null;
@@ -31,7 +32,11 @@ const options:Record<Status,Status[]> = {
   in_progress:['pending','resolved'],resolved:['closed','in_progress'],closed:['triage'],
 };
 
-function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
+function ticketLabel(ticket: Ticket): string {
+  return ticket.origin === 'backoffice' ? `OS #${ticket.id}` : `Chamado #${ticket.id}`;
+}
+
+function CreateTicket({onSuccess,currentUser}:{onSuccess:(ticket:Ticket)=>Promise<void>;currentUser:User}) {
   const [customer,setCustomer]=useState('');
   const [printer,setPrinter]=useState('');
   const [subject,setSubject]=useState('');
@@ -52,13 +57,17 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
         ...(assignee?{assigned_user_id:Number(assignee)}:{}),
       }),
     }),
-    onSuccess:async()=>{
-      setSubject('');setDescription('');setAssignee('');await onSuccess();
+    onSuccess:async({data:record})=>{
+      setCustomer('');setPrinter('');setSubject('');setDescription('');
+      setCategory('suporte');setPriority('normal');setAssignee('');
+      await onSuccess(record);
     },
   });
   function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();create.mutate();}
   return <form onSubmit={submit} className="stock-form">
-    <h3>Abrir chamado</h3>
+    <h3>Abrir ordem de serviço</h3>
+    <p className="portfolio-info">Responsável pela abertura: <strong>{currentUser.name}</strong> ({currentUser.email??'E-mail não informado'}).</p>
+    <p>Informe o atendimento. Se escolher um técnico, a OS será enviada como pendente para o aplicativo dele.</p>
     <div className="stock-form-grid">
       <div className="stock-field"><PagedEntitySelect<{id:number;name:string}>
         id="ticket-customer" label="Cliente" searchLabel="Buscar cliente do chamado"
@@ -96,7 +105,7 @@ function CreateTicket({onSuccess}:{onSuccess:()=>Promise<void>}) {
         value={description} onChange={e=>setDescription(e.target.value)} rows={3}/></div>
     {create.error&&<p role="alert" className="notice error">{readableError(create.error)}</p>}
     <button className="button primary" disabled={create.isPending}
-      type="submit"><Plus size={16}/> {create.isPending?'Salvando...':'Abrir chamado'}</button>
+      type="submit"><Plus size={16}/> {create.isPending?'Salvando...':'Abrir OS'}</button>
   </form>;
 }
 
@@ -160,13 +169,15 @@ function Detail({id,canReopen,onClose,onChanged}:{
   function transition(e:FormEvent<HTMLFormElement>){e.preventDefault();mutation.mutate();}
   function sendComment(e:FormEvent<HTMLFormElement>){e.preventDefault();comment.mutate();}
   return <div className="modal-overlay">
-    <section className="modal printer-assignment-modal" role="dialog" aria-modal="true" aria-label={'Chamado '+id}>
-      <div className="modal-header"><h2>Chamado #{id}</h2>
+    <section className="modal printer-assignment-modal" role="dialog" aria-modal="true"
+      aria-label={data ? ticketLabel(data) : `Atendimento #${id}`}>
+      <div className="modal-header"><h2>{data ? ticketLabel(data) : `Atendimento #${id}`}</h2>
         <button type="button" className="button ghost" onClick={onClose}>Fechar detalhes</button></div>
       {ticket.isPending?<p>Carregando chamado...</p>:ticket.error?
         <p className="notice error" role="alert">{readableError(ticket.error)}</p>:data&&<>
         <h3>{data.subject}</h3>
         <p>{data.description}</p>
+        <p><strong>Aberta por:</strong> {data.opener?.name??'Não identificado'}{data.opener?.email ? ` (${data.opener.email})` : ''}</p>
         <p><strong>{statuses[data.status]}</strong> · {data.customer?.name??'Interno'} · {priorities[data.priority]}
           · Técnico: {data.assignee?.name??'Não designado'}</p>
         {(data.linked_printers??[]).length>0&&<div className="stock-form">
@@ -267,10 +278,21 @@ function Detail({id,canReopen,onClose,onChanged}:{
   </div>;
 }
 
-export function TicketsPage({canReopen}:{canReopen:boolean}) {
+export function TicketsPage({canReopen,canCreateOrder,currentUser}:{
+  canReopen:boolean;canCreateOrder:boolean;currentUser:User;
+}) {
   const qc=useQueryClient();
   const [selected,setSelected]=useState<number|null>(null);
   const [filterParams, setFilterParams] = useSearchParams();
+  const creating = filterParams.get('novo') === '1';
+  function toggleCreate(open:boolean) {
+    setFilterParams(previous => {
+      const params = new URLSearchParams(previous);
+      if (open) params.set('novo','1');
+      else params.delete('novo');
+      return params;
+    });
+  }
   const requested = filterParams.get('status');
   const status: Status | 'open' | 'all' = requested === 'open' ? 'open'
     : requested && Object.hasOwn(statuses, requested) ? requested as Status : 'all';
@@ -284,7 +306,13 @@ export function TicketsPage({canReopen}:{canReopen:boolean}) {
     }),null),
   });
   async function refresh(){
-    setNotice('Chamado atualizado e registrado na auditoria.');
+    setNotice('Atendimento atualizado e registrado na auditoria.');
+    await qc.invalidateQueries({queryKey:['tickets']});
+  }
+  async function created(record:Ticket){
+    setNotice(`OS #${record.id} aberta com sucesso. ${record.assigned_user_id ? 'Enviada ao técnico responsável.' : 'Aguardando triagem e designação.'}`);
+    toggleCreate(false);
+    setSelected(record.id);
     await qc.invalidateQueries({queryKey:['tickets']});
   }
   const current=results.data?.meta?.current_page??results.data?.current_page??1;
@@ -293,8 +321,17 @@ export function TicketsPage({canReopen}:{canReopen:boolean}) {
     <div className="page-heading"><div>
       <span className="eyebrow">HELP DESK</span><h1>Chamados técnicos</h1>
       <p>Triagem, atendimento, prioridades, mensagens e histórico persistido.</p>
-    </div><ClipboardCheck size={32}/></div>
+    </div><div className="page-actions">
+      {canCreateOrder&&<button type="button" className="button primary"
+        aria-expanded={creating} onClick={()=>toggleCreate(!creating)}>
+        <Plus size={17} aria-hidden="true"/> {creating?'Cancelar abertura':'Abrir OS'}
+      </button>}
+      <ClipboardCheck size={32} aria-hidden="true"/>
+    </div></div>
     {notice&&<p role="status" className="notice success">{notice}</p>}
+    {canCreateOrder&&creating&&<section className="data-card" aria-label="Nova ordem de serviço">
+      <CreateTicket currentUser={currentUser} onSuccess={created}/>
+    </section>}
     <section className="data-card"><div className="stock-field">
       <label htmlFor="ticket-filter">Filtrar estado</label>
       <select id="ticket-filter" value={status} onChange={e=>{
@@ -308,9 +345,10 @@ export function TicketsPage({canReopen}:{canReopen:boolean}) {
         <p role="alert" className="notice error">{readableError(results.error)}</p>:
         results.data.data.length===0?<p>Nenhum chamado encontrado.</p>:
         <div className="table-wrap"><table><thead><tr>
-          <th>Número</th><th>Assunto</th><th>Cliente</th><th>Técnico</th><th>Prioridade</th><th>Estado</th><th>Ação</th>
+          <th>Número</th><th>Assunto</th><th>Cliente</th><th>Aberta por</th><th>Técnico</th><th>Prioridade</th><th>Estado</th><th>Ação</th>
         </tr></thead><tbody>{results.data.data.map(t=><tr key={t.id}>
-          <td>#{t.id}</td><td><strong>{t.subject}</strong></td><td>{t.customer?.name??'Interno'}</td>
+          <td>{ticketLabel(t)}</td><td><strong>{t.subject}</strong></td><td>{t.customer?.name??'Interno'}</td>
+          <td title={t.opener?.email??undefined}>{t.opener?.name??'Não identificado'}</td>
           <td>{t.assignee?.name??'Não designado'}</td><td>{priorities[t.priority]}</td><td>{statuses[t.status]}</td>
           <td><button type="button" className="button ghost" onClick={()=>setSelected(t.id)}>Detalhes</button></td>
         </tr>)}</tbody></table></div>}
@@ -321,7 +359,6 @@ export function TicketsPage({canReopen}:{canReopen:boolean}) {
         </div></div>}
     </section>
     {canReopen&&<PartRequestsPanel/>}
-    <CreateTicket onSuccess={refresh}/>
     {selected!==null&&<Detail id={selected} canReopen={canReopen}
       onClose={()=>setSelected(null)} onChanged={refresh}/>}
   </div>;

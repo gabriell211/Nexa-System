@@ -91,6 +91,30 @@ final class TechnicianMobileWorkflowTest extends TestCase
         $this->withToken($token)->getJson('/api/v1/tickets')->assertForbidden();
     }
 
+    public function test_administrative_order_reaches_the_assigned_mobile_technician(): void
+    {
+        extract($this->setupData());
+        $id=$this->withToken($adminToken)->postJson('/api/v1/tickets',[
+            'customer_id'=>$customer->id,
+            'printer_id'=>$printer->id,
+            'assigned_user_id'=>$tech->id,
+            'subject'=>'OS aberta pela administração',
+            'description'=>'Realizar manutenção e conferência dos contadores.',
+            'category'=>'manutencao',
+            'priority'=>'high',
+        ])->assertCreated()->assertJsonPath('data.status','pending')
+            ->assertJsonPath('data.assignee.id',$tech->id)
+            ->json('data.id');
+
+        $token=$this->login($tech,$tenant);
+        Auth::forgetGuards();
+        $this->withToken($token)->getJson('/api/v1/mobile/tickets')
+            ->assertOk()->assertJsonFragment(['id'=>$id]);
+        $this->withToken($token)->postJson('/api/v1/mobile/tickets/'.$id.'/start')
+            ->assertOk()->assertJsonPath('data.status','in_progress');
+        $this->assertDatabaseHas('audit_entries',['action'=>'ticket.created']);
+    }
+
     public function test_parts_are_idempotent_and_reviewed_without_changing_stock_balance(): void
     {
         extract($this->setupData());

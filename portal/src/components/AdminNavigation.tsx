@@ -26,7 +26,8 @@ const operational: Group[] = [
     { label: 'Ignorados', href: '/alertas?status=ignored' },
     { label: 'Encerrados', href: '/alertas?status=resolved' },
   ] },
-  { key: 'tickets', title: 'Chamados', icon: ClipboardCheck, items: [
+  { key: 'tickets', title: 'Chamados e OS', icon: ClipboardCheck, items: [
+    { label: 'Abrir OS', href: '/chamados?novo=1' },
     { label: 'Sem responsável', href: '/chamados?status=unassigned' },
     { label: 'Ativos', href: '/chamados?status=open' },
     { label: 'Encerrados', href: '/chamados?status=closed' },
@@ -46,10 +47,15 @@ export function AdminNavigation({ role, canStock, canAudit }: {
   const scopes = ['owner', 'admin', 'manager', 'supervisor', 'technician'];
   const canOperate = scopes.includes(role);
   const canCreatePrinters = ['owner','admin','manager'].includes(role);
+  const canCreateOrder = ['owner','admin','manager','supervisor'].includes(role);
   const printersGroup: Group = {
     ...operational[0]!,
     items: operational[0]!.items.map(item => item.label === 'Novas impressoras' && !canCreatePrinters
       ? {label: item.label, title: 'Cadastro de impressoras exige perfil administrativo'} : item),
+  };
+  const ticketsGroup: Group = {
+    ...operational[3]!,
+    items: operational[3]!.items.filter(item => item.label !== 'Abrir OS' || canCreateOrder),
   };
   const reportsGroup: Group = {
     ...operational[4]!,
@@ -63,7 +69,7 @@ export function AdminNavigation({ role, canStock, canAudit }: {
       { label: 'Catálogo e fornecedores', href: '/suprimentos' },
       { label: 'Níveis dos suprimentos', title: 'Sem leitura padronizada de consumíveis homologada para o parque' },
     ] }] : []),
-    ...(canOperate ? [operational[3]!] : []),
+    ...(canOperate ? [ticketsGroup] : []),
     reportsGroup,
     { key: 'settings', title: 'Configurações', icon: Settings, items: [
       ...(canAudit ? [{ label: 'Contas de usuários', href: '/equipe' }] : []),
