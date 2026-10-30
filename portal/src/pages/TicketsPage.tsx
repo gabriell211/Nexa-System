@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { ClipboardCheck, MessageSquarePlus, Plus, RotateCcw } from 'lucide-react';
+import { MessageSquarePlus, Plus, RotateCcw } from 'lucide-react';
 import { api, queryString, readableError } from '../api';
 import type { Page, Printer, User } from '../types';
 import { PagedEntitySelect } from '../components/PagedEntitySelect';
