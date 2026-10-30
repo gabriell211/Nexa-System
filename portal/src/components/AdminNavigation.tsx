@@ -46,6 +46,11 @@ export function AdminNavigation({ role, canStock, canAudit }: {
   const scopes = ['owner', 'admin', 'manager', 'supervisor', 'technician'];
   const canOperate = scopes.includes(role);
   const canCreatePrinters = ['owner','admin','manager'].includes(role);
+  const canOpenOS = ['owner','admin','manager','supervisor'].includes(role);
+  const ticketsGroup: Group = {
+    ...operational[3]!,
+    items: [...(canOpenOS ? [{label:'Abrir OS',href:'/chamados?new=1'}] : []), ...operational[3]!.items],
+  };
   const printersGroup: Group = {
     ...operational[0]!,
     items: operational[0]!.items.map(item => item.label === 'Novas impressoras' && !canCreatePrinters
@@ -63,7 +68,7 @@ export function AdminNavigation({ role, canStock, canAudit }: {
       { label: 'Catálogo e fornecedores', href: '/suprimentos' },
       { label: 'Níveis dos suprimentos', title: 'Sem leitura padronizada de consumíveis homologada para o parque' },
     ] }] : []),
-    ...(canOperate ? [operational[3]!] : []),
+    ...(canOperate ? [ticketsGroup] : []),
     reportsGroup,
     { key: 'settings', title: 'Configurações', icon: Settings, items: [
       ...(canAudit ? [{ label: 'Contas de usuários', href: '/equipe' }] : []),
