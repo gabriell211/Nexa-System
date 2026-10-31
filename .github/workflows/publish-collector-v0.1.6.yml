@@ -35,9 +35,42 @@ jobs:
           persist-credentials: false
 
       - name: Verify source and approved workflow
+        id: release_gate
         shell: bash
         run: |
           set -euo pipefail
+
+          # The version is immutable. Subsequent successful main CI runs must
+          # verify the existing release, not fail or overwrite published files.
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            release="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")" || {
+              echo "::error::Tag exists but the published release is missing."
+              exit 1
+            }
+            jq -e '.draft == false and .prerelease == true and (.assets | length == 6)' <<<"$release" >/dev/null || {
+              echo "::error::Existing release has unexpected metadata or asset count."
+              exit 1
+            }
+            for name in \
+              'Nexa.Collector_0.1.6_x64-setup.exe' \
+              'Nexa-Collector-0.1.6-linux-x64.deb' \
+              'Nexa-Collector-0.1.6-linux-x64.rpm' \
+              'NexaCollector-0.1.6-x86_64-unsigned.pkg' \
+              'NexaCollector-0.1.6-arm64-unsigned.pkg'; do
+              jq -e --arg name "$name" '.assets | any(.name == $name and .size > 102400)' <<<"$release" >/dev/null || {
+                echo "::error::Missing or empty installer: $name"
+                exit 1
+              }
+            done
+            jq -e '.assets | any(.name == "SHA256SUMS.txt" and .size > 0)' <<<"$release" >/dev/null || {
+              echo "::error::Existing release is missing its checksum manifest."
+              exit 1
+            }
+            echo 'publish=false' >>"$GITHUB_OUTPUT"
+            echo "Verified existing immutable release $RELEASE_TAG; no republication needed."
+            exit 0
+          fi
+
           test "$(jq -r .version collector/console/src-tauri/tauri.conf.json)" = "0.1.6"
           grep -Fxq 'version = "0.1.6"' collector/Cargo.toml
           run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN")"
@@ -47,12 +80,10 @@ jobs:
           test "$(jq -r .head_branch <<<"$run")" = main
           test "$(jq -r .head_sha <<<"$run")" = "$SOURCE_SHA"
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)" = "$SOURCE_SHA"
-          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "::error::Tag already exists. Not replacing a published release."
-            exit 1
-          fi
+          echo 'publish=true' >>"$GITHUB_OUTPUT"
 
       - name: Download five native installer packages
+        if: steps.release_gate.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -83,6 +114,7 @@ jobs:
           test "$(wc -l < release/SHA256SUMS.txt)" -eq 5
 
       - name: Prepare release notes
+        if: steps.release_gate.outputs.publish == 'true'
         shell: bash
         run: |
           cat > RELEASE_NOTES.md <<'NOTES'
@@ -103,6 +135,7 @@ jobs:
           sed -i "s/SOURCE_SHA_PLACEHOLDER/$SOURCE_SHA/g; s/RUN_PLACEHOLDER/$SOURCE_RUN/g" RELEASE_NOTES.md
 
       - name: Publish verified prerelease
+        if: steps.release_gate.outputs.publish == 'true'
         shell: bash
         run: |
           set -euo pipefail
