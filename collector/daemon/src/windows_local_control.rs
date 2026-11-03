@@ -5,7 +5,7 @@ use nexa_collector_core::{
     local_control::{ControlRequest, FleetControlRequest, BroadcastControlRequest, ControlResponse, MAX_MESSAGE_BYTES, PROTOCOL_VERSION, WINDOWS_PIPE_NAME},
     CollectorConfig, Outbox,
 };
-use std::{ffi::c_void, io, ptr::{null, null_mut}, path::PathBuf,
+use std::{ffi::c_void, io, ptr::null_mut, path::PathBuf,
     sync::{atomic::{AtomicBool, Ordering}, Arc}, thread::{self, JoinHandle}};
 use windows_sys::Win32::{
     Foundation::{CloseHandle, GetLastError, LocalFree, ERROR_PIPE_CONNECTED, INVALID_HANDLE_VALUE, HANDLE},
