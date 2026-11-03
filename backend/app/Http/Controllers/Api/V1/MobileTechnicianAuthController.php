@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\MobileTechnicianLoginRequest;
 use App\Models\Tenant;
+use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -16,13 +18,19 @@ final class MobileTechnicianAuthController extends Controller
     public function login(MobileTechnicianLoginRequest $request): JsonResponse
     {
         $data = $request->validated();
-        $tenant = Tenant::query()->where('slug', $data['tenant'])->where('active', true)->first();
-        $user = $tenant?->users()
-            ->wherePivot('role', 'technician')
-            ->wherePivot('login_name', $data['login_name'])
+        $membership = DB::table('tenant_user')
+            ->join('tenants', 'tenants.id', '=', 'tenant_user.tenant_id')
+            ->join('users', 'users.id', '=', 'tenant_user.user_id')
+            ->where('tenant_user.login_name', $data['login_name'])
+            ->where('tenant_user.role', 'technician')
+            ->where('tenants.active', true)
             ->where('users.active', true)
+            ->select('tenant_user.user_id', 'tenant_user.tenant_id')
             ->first();
-        if (!$user || !Hash::check($data['password'], $user->password)) {
+
+        $user = $membership ? User::query()->find($membership->user_id) : null;
+        $tenant = $membership ? Tenant::query()->find($membership->tenant_id) : null;
+        if (!$user || !$tenant || !Hash::check($data['password'], $user->password)) {
             throw ValidationException::withMessages([
                 'login_name' => 'Credenciais inválidas para o aplicativo técnico.',
             ]);

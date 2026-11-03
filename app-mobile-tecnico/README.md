@@ -47,7 +47,7 @@ Para um celular físico em desenvolvimento, a URL deve ser alcançável pelo apa
 - `POST /api/v1/mobile/tickets/{id}/signature`
 - Administrativo: `GET /api/v1/tickets/part-requests`, `POST /api/v1/tickets/part-requests/{id}/review`
 
-A autenticação mobile usa **`login_name` + senha + identificador da empresa** (não e-mail), tokens Sanctum por empresa, com validade de 12 horas e armazenamento no SecureStore do aparelho. Os tokens mobile só podem acessar `/api/v1/mobile/*`. O administrativo escolhe o nome de usuário ao criar a conta do colaborador e entrega um convite de ativação de uso único: a senha não é compartilhada com o administrador. Técnicos antigos recebem um nome de usuário migrado automaticamente; a equipe pode consultá-lo na lista de contas.
+A autenticação mobile usa **`login_name` + senha** (não e-mail), tokens Sanctum por empresa, com validade de 12 horas e armazenamento no SecureStore do aparelho. Os tokens mobile só podem acessar `/api/v1/mobile/*`. O administrativo escolhe um nome de usuário globalmente exclusivo ao criar a conta do colaborador e entrega um convite de ativação de uso único: a senha não é compartilhada com o administrador. Técnicos antigos recebem um nome de usuário migrado automaticamente; a equipe pode consultá-lo na lista de contas.
 
 ## Pontos ainda não homologados
 

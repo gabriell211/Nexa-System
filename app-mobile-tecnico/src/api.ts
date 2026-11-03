@@ -71,9 +71,9 @@ export async function restoreSession(): Promise<Person | null> {
   }
 }
 
-export async function login(loginName: string, password: string, tenant: string): Promise<LoginResponse> {
+export async function login(loginName: string, password: string): Promise<LoginResponse> {
   const login_name = loginName.trim().toLowerCase();
-  const session = await request<LoginResponse>('/mobile/auth/login','POST',{login_name,password,tenant},false);
+  const session = await request<LoginResponse>('/mobile/auth/login','POST',{login_name,password},false);
   token = session.token;
   await SecureStore.setItemAsync(STORAGE_KEY, token);
   return session;

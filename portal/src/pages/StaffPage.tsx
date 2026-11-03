@@ -191,7 +191,7 @@ function InviteAccountDialog({ token, onClose, onCreated, canInviteAdmin }: {
             .catch(() => setCopyError('Não foi possível copiar automaticamente. Selecione e copie o campo.'));
         }}><Copy size={16}/> Copiar convite</button>
         {copyError && <p role="alert" className="notice error">{copyError}</p>}
-        {created.login_name && <p className="portfolio-info">Acesso ao Nexa Técnico: <strong>{created.login_name}</strong> • Empresa: <strong>{created.invitation.tenant}</strong>. O técnico escolherá a própria senha na ativação.</p>}
+        {created.login_name && <p className="portfolio-info">Acesso ao Nexa Técnico: <strong>{created.login_name}</strong>. O técnico escolherá a própria senha na ativação.</p>}
         <p className="portfolio-info">Nenhuma mensagem foi enviada automaticamente. O usuário escolherá uma senha forte no link de ativação.</p>
         <div className="modal-actions"><button className="button ghost" onClick={onClose}>Concluir</button></div>
       </div> : <form className="editor-form" onSubmit={submit}>
@@ -215,7 +215,7 @@ function InviteAccountDialog({ token, onClose, onCreated, canInviteAdmin }: {
             pattern="[a-z][a-z0-9._-]{2,63}" autoComplete="off"
             value={loginName} onChange={e => setLoginName(e.target.value.toLowerCase())}
             placeholder="ex.: joao.silva" aria-describedby="invite-login-hint"/>
-          <p id="invite-login-hint" className="portfolio-info">Exclusivo por empresa, com letras minúsculas, números, ponto, hífen ou sublinhado. Usado com senha no aplicativo técnico.</p>
+          <p id="invite-login-hint" className="portfolio-info">Exclusivo na plataforma, com letras minúsculas, números, ponto, hífen ou sublinhado. Usado com senha no aplicativo técnico.</p>
         </>}
         <p className="portfolio-info">{type === 'administrator'
           ? 'Administrador: acesso administrativo integral a esta prestadora. Apenas o proprietário pode conceder este perfil.'

@@ -52,10 +52,9 @@ final class AccountProvisioningController extends Controller
         };
         $scope = $role === 'admin' ? 'all' : 'assigned';
         if ($role === 'technician' && DB::table('tenant_user')
-            ->where('tenant_id', $tenant->id)
             ->where('login_name', $data['login_name'])->exists()) {
             throw ValidationException::withMessages([
-                'login_name' => 'Nome de usuário já utilizado por outro técnico desta empresa.',
+                'login_name' => 'Nome de usuário já utilizado por outro técnico no Nexa.',
             ]);
         }
         $token = bin2hex(random_bytes(32));

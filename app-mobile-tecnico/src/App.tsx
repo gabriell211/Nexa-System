@@ -42,7 +42,6 @@ export default function App(): React.JSX.Element {
   const [loginName,setLoginName] = useState('');
   const [technicianName,setTechnicianName] = useState('');
   const [password,setPassword] = useState('');
-  const [tenant,setTenant] = useState('');
   const [screen,setScreen] = useState<Screen>('tickets');
   const [list,setList] = useState<Ticket[]>([]);
   const [ticketPage,setTicketPage] = useState(1);
@@ -121,7 +120,7 @@ export default function App(): React.JSX.Element {
   }
   async function submitLogin():Promise<void> {
     await run(async()=>{
-      const session=await api.login(loginName.trim(),password,tenant.trim());
+      const session=await api.login(loginName.trim(),password);
       setPassword('');setTechnicianName(session.user.name);setAuthenticated(true);setScreen('tickets');
     });
   }
@@ -212,9 +211,8 @@ export default function App(): React.JSX.Element {
         <Text style={styles.subtitle}>Utilize o acesso fornecido pela sua empresa.</Text>
         <Field label="Nome de usuário" value={loginName} onChangeText={setLoginName} placeholder="ex.: joao.silva"/>
         <Field label="Senha" value={password} onChangeText={setPassword} secureTextEntry/>
-        <Field label="Empresa (identificador)" value={tenant} onChangeText={setTenant} placeholder="slug-da-empresa"/>
         <Action title="Acessar meus chamados  →" onPress={()=>void submitLogin()}
-          disabled={busy||!loginName.trim()||!password||!tenant.trim()}/>
+          disabled={busy||!loginName.trim()||!password}/>
       </View>
       <Text style={styles.loginFooter}>NEXA SYSTEM  •  ATENDIMENTO TÉCNICO</Text>
     </ScrollView>

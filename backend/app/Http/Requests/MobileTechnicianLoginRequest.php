@@ -17,9 +17,6 @@ final class MobileTechnicianLoginRequest extends FormRequest
         if (is_string($this->input('login_name'))) {
             $this->merge(['login_name' => strtolower(trim($this->input('login_name')))]);
         }
-        if (is_string($this->input('tenant'))) {
-            $this->merge(['tenant' => trim($this->input('tenant'))]);
-        }
     }
 
     public function rules(): array
@@ -30,7 +27,6 @@ final class MobileTechnicianLoginRequest extends FormRequest
                 'regex:/^[a-z][a-z0-9._-]{2,63}$/D',
             ],
             'password' => ['required', 'string', 'max:1024'],
-            'tenant' => ['required', 'string', 'max:100'],
         ];
     }
 }

@@ -65,7 +65,7 @@ final class TechnicianMobileWorkflowTest extends TestCase
     {
         Auth::forgetGuards();
         return $this->postJson('/api/v1/mobile/auth/login',[
-            'login_name'=>'tecnico-'.$tech->id,'password'=>'strong-password-123','tenant'=>$tenant->slug,
+            'login_name'=>'tecnico-'.$tech->id,'password'=>'strong-password-123',
         ])->assertOk()->json('token');
     }
 
@@ -80,39 +80,30 @@ final class TechnicianMobileWorkflowTest extends TestCase
         return base64_encode($image);
     }
 
-    public function test_individual_technician_usernames_are_scoped_and_cannot_be_shared(): void
+    public function test_individual_technician_usernames_are_globally_unique_and_cannot_be_shared(): void
     {
         extract($this->setupData());
         $this->postJson('/api/v1/mobile/auth/login', [
             'login_name'=>'tecnico-'.$tech->id,
             'password'=>'senha-incorreta',
-            'tenant'=>$tenant->slug,
         ])->assertUnprocessable();
 
         $this->postJson('/api/v1/mobile/auth/login', [
             'email'=>$tech->email,
             'password'=>'strong-password-123',
-            'tenant'=>$tenant->slug,
         ])->assertUnprocessable()->assertJsonValidationErrors('login_name');
 
         $this->postJson('/api/v1/mobile/auth/login', [
             'login_name'=>'TECNICO-'.$tech->id,
             'password'=>'strong-password-123',
-            'tenant'=>$tenant->slug,
         ])->assertOk()->assertJsonPath('user.id', $tech->id);
 
         $other->update(['password'=>'DifferentSecretPassword456']);
         $this->postJson('/api/v1/mobile/auth/login', [
             'login_name'=>'tecnico-'.$other->id,
             'password'=>'strong-password-123',
-            'tenant'=>$tenant->slug,
         ])->assertUnprocessable();
 
-        $this->postJson('/api/v1/mobile/auth/login', [
-            'login_name'=>'tecnico-'.$tech->id,
-            'password'=>'strong-password-123',
-            'tenant'=>'empresa-inexistente',
-        ])->assertUnprocessable();
     }
 
     public function test_mobile_logout_revokes_the_individual_token(): void
@@ -226,7 +217,7 @@ final class TechnicianMobileWorkflowTest extends TestCase
     {
         extract($this->setupData());
         $this->postJson('/api/v1/mobile/auth/login',[
-            'login_name'=>'owner-'.$owner->id,'password'=>'strong-password-123','tenant'=>$tenant->slug,
+            'login_name'=>'owner-'.$owner->id,'password'=>'strong-password-123',
         ])->assertUnprocessable();
         $otherTenant=Tenant::query()->create(['name'=>'Outra Empresa','slug'=>'other-mobile']);
         $foreign=StockItem::query()->create([

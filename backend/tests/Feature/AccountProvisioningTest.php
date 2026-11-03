@@ -178,7 +178,7 @@ final class AccountProvisioningTest extends TestCase
         ])->assertUnprocessable()->assertJsonValidationErrors('login_name');
 
         $mobile = [
-            'login_name'=>'joao.silva', 'tenant'=>$tenant->slug,
+            'login_name'=>'joao.silva',
             'password'=>'NewTechnicianPassword123',
         ];
         $this->postJson('/api/v1/mobile/auth/login', $mobile)->assertUnprocessable();
