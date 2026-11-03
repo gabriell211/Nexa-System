@@ -213,7 +213,7 @@ mod tests {
         let config = config();
         let key = Zeroizing::new("11".repeat(32));
         let ip = "10.20.1.7".parse().unwrap();
-        let mut outbox = Outbox::open_encrypted_disk_guard(
+        let outbox = Outbox::open_encrypted_disk_guard(
             &queue, config.max_pending_samples, config.max_pending_payload_bytes,
             config.max_sqlite_files_bytes, &key,
         ).unwrap();
@@ -234,7 +234,7 @@ mod tests {
         submit(&queue, ip, ReviewAction::Save).unwrap();
         assert!(submit(&queue, "10.20.1.8".parse().unwrap(), ReviewAction::Save).is_err());
         submit(&queue, ip, ReviewAction::Ignore).unwrap();
-        let mut reopened = Outbox::open_encrypted_disk_guard(
+        let reopened = Outbox::open_encrypted_disk_guard(
             &queue, config.max_pending_samples, config.max_pending_payload_bytes,
             config.max_sqlite_files_bytes, &key,
         ).unwrap();
