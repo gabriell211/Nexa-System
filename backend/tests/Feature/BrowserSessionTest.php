@@ -34,6 +34,17 @@ final class BrowserSessionTest extends TestCase
         ])->assertOk()->assertJsonPath('user.id', $user->id)->assertJsonMissingPath('token');
     }
 
+    public function test_unauthenticated_api_requests_always_return_json_instead_of_500(): void
+    {
+        $this->get('/api/v1/browser/auth/me', ['Accept' => 'text/html'])
+            ->assertUnauthorized()
+            ->assertJsonPath('message', 'Unauthenticated.');
+
+        $this->get('/api/v1/browser/dashboard', ['Accept' => 'text/html'])
+            ->assertUnauthorized()
+            ->assertJsonPath('message', 'Unauthenticated.');
+    }
+
     public function test_public_csrf_handshake_and_browser_login_creates_session(): void
     {
         $tenant = Tenant::query()->create(['name' => 'Provider', 'slug' => 'provider']);
