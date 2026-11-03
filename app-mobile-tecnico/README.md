@@ -5,7 +5,7 @@ Módulo Expo/React Native + TypeScript para técnicos de campo. **Implementaçã
 ## Fluxo operacional implementado
 
 1. O administrativo cria um chamado na API existente e atribui `assigned_user_id` ao técnico.
-2. O técnico entra com **nome de usuário exclusivo na empresa e senha individual**, definida por ele no convite de ativação; enxerga **apenas chamados atribuídos a si**.
+2. O técnico entra com **nome de usuário exclusivo no Nexa e senha individual**, definida por ele no convite de ativação; enxerga **apenas chamados atribuídos a si**.
 3. No chamado, visualiza cliente, descrição, prioridade e impressora; inicia o atendimento.
 4. Pode consultar o catálogo e solicitar peças (quantidade, motivo, UUID de idempotência).
 5. A equipe responsável revisa a solicitação pelo endpoint administrativo. **Aprovar a peça não dá baixa automática de estoque.**
