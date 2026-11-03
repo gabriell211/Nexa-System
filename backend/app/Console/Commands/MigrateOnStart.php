@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use App\Models\User;
 use Throwable;
 
 final class MigrateOnStart extends Command
@@ -30,7 +31,20 @@ final class MigrateOnStart extends Command
             $connection->select('SELECT pg_advisory_lock(?)', [$lockId]);
             $locked = true;
 
-            return $this->call('migrate', ['--force' => true]);
+            $result = $this->call('migrate', ['--force' => true]);
+            if ($result !== self::SUCCESS) {
+                return self::FAILURE;
+            }
+
+            // Bootstrap a brand-new demo installation only with provisioned
+            // environment secrets. Never reset accounts on routine restarts.
+            if ((string) env('NEXA_BOOTSTRAP_EMAIL', '') !== ''
+                && (string) env('NEXA_BOOTSTRAP_PASSWORD', '') !== ''
+                && ! User::query()->exists()) {
+                return $this->call('nexa:bootstrap');
+            }
+
+            return self::SUCCESS;
         } catch (Throwable $exception) {
             report($exception);
             $this->error('Unable to prepare Nexa database. The API will not start.');
