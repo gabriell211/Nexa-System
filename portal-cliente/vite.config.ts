@@ -9,7 +9,7 @@ export default defineConfig(({mode}) => ({
     strictPort: true,
     proxy: {
       '/api': {
-        target: loadEnv(mode, '.', 'NEXA_').NEXA_API_PROXY_TARGET || 'http://127.0.0.1:8080',
+        target: loadEnv(mode, '.', 'NEXA_').NEXA_API_PROXY_TARGET || 'http://127.0.0.1:6467',
         changeOrigin: true,
       },
     },
