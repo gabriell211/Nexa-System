@@ -21,6 +21,6 @@ COPY . .
 RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
     && composer dump-autoload --no-dev --optimize && chmod +x artisan \
     && chown -R www-data:www-data storage bootstrap/cache
-EXPOSE 8080
+EXPOSE 6467
 USER www-data
-CMD ["sh","-c","php artisan nexa:migrate-on-start && exec php artisan serve --host=0.0.0.0 --port=\"${PORT:-8080}\""]
+CMD ["sh","-c","php artisan nexa:migrate-on-start && exec php artisan serve --host=0.0.0.0 --port=\"${PORT:-6467}\""]
