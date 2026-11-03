@@ -19,15 +19,16 @@ services:
     volumes:
       - customer-ticket-media:/app/storage/app/private
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:6467:6467"
     env_file: ./backend/.env
     environment:
       DB_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD in .env}
+      PORT: "6467"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:8080/up') === false ? 1 : 0);"]
+      test: ["CMD", "php", "-r", "exit(@file_get_contents('http://127.0.0.1:6467/up') === false ? 1 : 0);"]
       interval: 15s
       timeout: 5s
       retries: 4
