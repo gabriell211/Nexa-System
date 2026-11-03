@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { lazy, Suspense, useDeferredValue, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { BrowserRouter, Link, Navigate, Route, Routes, useSearchParams } from 'react-router-dom';
 import {
@@ -8,16 +8,16 @@ import { ApiError, api, queryString, readableError, resetCsrf } from './api';
 import { ActivationPage } from './pages/ActivationPage';
 import { AdminNavigation } from './components/AdminNavigation';
 import { BrandLogo } from './components/BrandLogo';
-import { CustomerOrganizationPage } from './pages/CustomerOrganizationPage';
-import { StaffPage } from './pages/StaffPage';
-import { InventoryPage } from './pages/InventoryPage';
-import { ShipmentsPage } from './pages/ShipmentsPage';
-import { SuppliesPage } from './pages/SuppliesPage';
-import { TicketsPage } from './pages/TicketsPage';
-import { AlertsPage } from './pages/AlertsPage';
-import { CollectorsPage } from './pages/CollectorsPage';
+const CustomerOrganizationPage = lazy(() => import('./pages/CustomerOrganizationPage').then(({ CustomerOrganizationPage }) => ({ default: CustomerOrganizationPage })));
+const StaffPage = lazy(() => import('./pages/StaffPage').then(({ StaffPage }) => ({ default: StaffPage })));
+const InventoryPage = lazy(() => import('./pages/InventoryPage').then(({ InventoryPage }) => ({ default: InventoryPage })));
+const ShipmentsPage = lazy(() => import('./pages/ShipmentsPage').then(({ ShipmentsPage }) => ({ default: ShipmentsPage })));
+const SuppliesPage = lazy(() => import('./pages/SuppliesPage').then(({ SuppliesPage }) => ({ default: SuppliesPage })));
+const TicketsPage = lazy(() => import('./pages/TicketsPage').then(({ TicketsPage }) => ({ default: TicketsPage })));
+const AlertsPage = lazy(() => import('./pages/AlertsPage').then(({ AlertsPage }) => ({ default: AlertsPage })));
+const CollectorsPage = lazy(() => import('./pages/CollectorsPage').then(({ CollectorsPage }) => ({ default: CollectorsPage })));
 import { CollectorCredentialDialog } from './components/CollectorCredentialDialog';
-import { ContractsPage } from './pages/ContractsPage';
+const ContractsPage = lazy(() => import('./pages/ContractsPage').then(({ ContractsPage }) => ({ default: ContractsPage })));
 import { PrinterAssignmentPanel } from './pages/PrinterAssignmentPanel';
 import { PrinterDetailsPanel } from './pages/PrinterDetailsPanel';
 import { PrinterReadingHistoryPanel } from './pages/PrinterReadingHistoryPanel';
@@ -172,7 +172,8 @@ function Shell({ token, identity, onLogout }: {
         </div>
       </header>
       <main className="main-content">
-        <Routes>
+        <Suspense fallback={<LoadingState />}>
+          <Routes>
           <Route path="/dashboard" element={<DashboardPage token={token} />} />
           <Route path="/clientes" element={<CustomersPage token={token} canWrite={canWrite} canIssueCollectorCredential={canIssueCollectorCredential} />} />
           <Route path="/contratos" element={<ContractsPage token={token} canWrite={canWrite} />} />
@@ -192,7 +193,8 @@ function Shell({ token, identity, onLogout }: {
           {canAudit && <Route path="/auditoria" element={<AuditPage token={token} />} />}
           {canAudit && <Route path="/equipe" element={<StaffPage token={token} canInviteAdmin={identity.role==='owner'} />} />}
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+          </Routes>
+        </Suspense>
       </main>
     </div>
   </div>;
