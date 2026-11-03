@@ -21,6 +21,7 @@ pub struct CanonDrc225Meter {
     pub source: String,
 }
 
+#[cfg(any(windows, test))]
 fn parse_meter(json: &[u8]) -> Result<CanonDrc225Meter, CollectorError> {
     if json.len() > 4096 {
         return Err(CollectorError::Configuration(
