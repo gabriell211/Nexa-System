@@ -29,6 +29,11 @@ jobs:
           node-version: '24'
       - name: Install packages
         run: npm install --no-audit --no-fund
+      - name: Inspecionar origem de dependências antigas
+        run: |
+          npm explain inflight
+          npm explain rimraf
+          npm explain glob
       - name: Verificar ícones e splash da marca
         run: npm run brand:check
       - name: Verify TypeScript
