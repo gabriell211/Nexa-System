@@ -4,7 +4,7 @@
 //!
 //! SNMPv2c credentials and responses are not encrypted on the LAN. Production
 //! environments should prefer independently verified SNMPv3 authPriv.
-use crate::mib_registry::{self, Kind, Manufacturer, MarkerCounterUnit};
+use crate::mib_registry::{self, Manufacturer, MarkerCounterUnit};
 use ipnet::IpNet;
 use serde::Serialize;
 use snmp2::{Oid, SyncSession, Value};
