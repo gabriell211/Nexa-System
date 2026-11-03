@@ -3,7 +3,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::io;
-use crate::reference_catalog::{self, ReferenceStatus};
+use crate::reference_catalog::ReferenceStatus;
+#[cfg(any(windows, test))]
+use crate::reference_catalog;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -31,6 +33,7 @@ pub struct UsbDeviceCandidate {
     pub reference_usb_status: Option<ReferenceStatus>,
 }
 
+#[cfg(any(windows, test))]
 fn is_usb_instance_id(instance_id: &str) -> bool {
     let id = instance_id.to_ascii_uppercase();
     let Some(rest) = id.strip_prefix("USB\\VID_") else {
@@ -44,12 +47,14 @@ fn is_usb_instance_id(instance_id: &str) -> bool {
         && (bytes.len() == 13 || matches!(bytes[13], b'&' | b'\\'))
 }
 
+#[cfg(any(windows, test))]
 fn vid_pid_from_instance(instance_id: &str) -> Option<String> {
     let id = instance_id.to_ascii_uppercase();
     let rest = id.strip_prefix("USB\\VID_")?;
     Some(format!("{}:{}", &rest[..4], &rest[9..13]))
 }
 
+#[cfg(any(windows, test))]
 fn parse_candidates(json: &str) -> io::Result<Vec<UsbDeviceCandidate>> {
     let mut devices: Vec<UsbDeviceCandidate> = serde_json::from_str(json).map_err(|_| {
         io::Error::new(
