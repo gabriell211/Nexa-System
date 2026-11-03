@@ -39,7 +39,8 @@ export default function App(): React.JSX.Element {
   const [initializing,setInitializing] = useState(true);
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState('');
-  const [email,setEmail] = useState('');
+  const [loginName,setLoginName] = useState('');
+  const [technicianName,setTechnicianName] = useState('');
   const [password,setPassword] = useState('');
   const [tenant,setTenant] = useState('');
   const [screen,setScreen] = useState<Screen>('tickets');
@@ -64,8 +65,11 @@ export default function App(): React.JSX.Element {
 
   useEffect(() => {
     let active=true;
-    api.restoreSession().then(ok=>{if(active)setAuthenticated(ok)})
-      .finally(()=>{if(active)setInitializing(false)});
+    api.restoreSession().then(user=>{
+      if(active){setAuthenticated(user!==null);setTechnicianName(user?.name??'')}
+    }).catch(()=>{
+      if(active)setError('Não foi possível verificar a sessão salva neste aparelho.');
+    }).finally(()=>{if(active)setInitializing(false)});
     return ()=>{active=false};
   },[]);
 
@@ -90,6 +94,8 @@ export default function App(): React.JSX.Element {
       if(e instanceof api.ApiError && e.status===401) {
         setAuthenticated(false);
         setCurrent(null);
+        setTechnicianName('');
+        void api.clearSession().catch(()=>undefined);
       }
       setError(e instanceof Error?e.message:'Erro inesperado.');
     } finally {setBusy(false)}
@@ -114,10 +120,21 @@ export default function App(): React.JSX.Element {
     await run(async()=>{setCurrent(await api.ticket(id));partRequestId.current=null;setScreen('detail')});
   }
   async function submitLogin():Promise<void> {
-    await run(async()=>{await api.login(email.trim(),password,tenant.trim());setPassword('');setAuthenticated(true);setScreen('tickets')});
+    await run(async()=>{
+      const session=await api.login(loginName.trim(),password,tenant.trim());
+      setPassword('');setTechnicianName(session.user.name);setAuthenticated(true);setScreen('tickets');
+    });
   }
   async function exit():Promise<void> {
-    await run(async()=>{await api.logout();setAuthenticated(false);setCurrent(null);setList([])});
+    setBusy(true);
+    setError('');
+    try {
+      await api.logout();
+    } catch {
+      setError('Sessão removida do aparelho. Sem rede, o token remoto expira em até 12 horas.');
+    } finally {
+      setAuthenticated(false);setTechnicianName('');setCurrent(null);setList([]);setBusy(false);
+    }
   }
   async function start():Promise<void> {
     if(!current)return;
@@ -193,11 +210,11 @@ export default function App(): React.JSX.Element {
       <View style={styles.loginCard}>
         <Text style={styles.sectionTitle}>Entrar no Nexa Técnico</Text>
         <Text style={styles.subtitle}>Utilize o acesso fornecido pela sua empresa.</Text>
-        <Field label="E-mail" value={email} onChangeText={setEmail}/>
+        <Field label="Nome de usuário" value={loginName} onChangeText={setLoginName} placeholder="ex.: joao.silva"/>
         <Field label="Senha" value={password} onChangeText={setPassword} secureTextEntry/>
         <Field label="Empresa (identificador)" value={tenant} onChangeText={setTenant} placeholder="slug-da-empresa"/>
         <Action title="Acessar meus chamados  →" onPress={()=>void submitLogin()}
-          disabled={busy||!email||!password||!tenant}/>
+          disabled={busy||!loginName.trim()||!password||!tenant.trim()}/>
       </View>
       <Text style={styles.loginFooter}>NEXA SYSTEM  •  ATENDIMENTO TÉCNICO</Text>
     </ScrollView>
@@ -211,7 +228,7 @@ export default function App(): React.JSX.Element {
       <View style={{flex:1}}>
         <Text style={styles.eyebrow}>PAINEL DO TÉCNICO</Text>
         <Text style={styles.title}>Meus chamados</Text>
-        <Text style={styles.subtitle}>Atendimentos atribuídos à sua conta. Atualização ao voltar ao aplicativo.</Text>
+        <Text style={styles.subtitle}>{technicianName ? `Técnico: ${technicianName}. Apenas seus atendimentos; atualização ao voltar ao aplicativo.` : 'Atendimentos atribuídos exclusivamente a você.'}</Text>
       </View>
       <View style={styles.countBubble}>
         <Text style={styles.countNumber}>{list.length}</Text>

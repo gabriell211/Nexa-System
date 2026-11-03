@@ -50,7 +50,7 @@ final class AccountActivationController extends Controller
                 'token' => 'Convite inválido, já utilizado ou expirado. Solicite um novo convite à sua prestadora.',
             ]);
         }
-        return response()->json(['message' => 'Conta ativada. Entre com seu e-mail, senha e identificador de empresa.'])
+        return response()->json(['message' => 'Conta ativada. Técnicos entram no aplicativo com nome de usuário, senha e empresa; demais perfis usam e-mail e senha nos portais.'])
             ->header('Cache-Control','no-store, private');
     }
 }

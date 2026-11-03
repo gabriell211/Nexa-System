@@ -14,7 +14,7 @@ final class Tenant extends Model
 
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class)->withPivot('role', 'customer_scope')->withTimestamps();
+        return $this->belongsToMany(User::class)->withPivot('role', 'customer_scope', 'login_name')->withTimestamps();
     }
     public function customers(): HasMany { return $this->hasMany(Customer::class); }
     public function printers(): HasMany { return $this->hasMany(Printer::class); }

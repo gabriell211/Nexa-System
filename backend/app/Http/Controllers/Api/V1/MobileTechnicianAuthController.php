@@ -3,8 +3,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Requests\MobileTechnicianLoginRequest;
 use App\Models\Tenant;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -13,19 +13,19 @@ use Illuminate\Validation\ValidationException;
 
 final class MobileTechnicianAuthController extends Controller
 {
-    public function login(Request $request): JsonResponse
+    public function login(MobileTechnicianLoginRequest $request): JsonResponse
     {
-        $data = $request->validate([
-            'email'=>['required','email','max:255'],
-            'password'=>['required','string'],
-            'tenant'=>['required','string','max:100'],
-        ]);
-        $user = User::query()->where('email', $data['email'])->where('active', true)->first();
+        $data = $request->validated();
         $tenant = Tenant::query()->where('slug', $data['tenant'])->where('active', true)->first();
-        $membership = $user && $tenant ? $user->tenants()->whereKey($tenant->id)->first() : null;
-        if (!$user || !Hash::check($data['password'], $user->password)
-            || !$membership || $membership->pivot->role !== 'technician') {
-            throw ValidationException::withMessages(['email'=>'Credenciais inválidas para o aplicativo técnico.']);
+        $user = $tenant?->users()
+            ->wherePivot('role', 'technician')
+            ->wherePivot('login_name', $data['login_name'])
+            ->where('users.active', true)
+            ->first();
+        if (!$user || !Hash::check($data['password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'login_name' => 'Credenciais inválidas para o aplicativo técnico.',
+            ]);
         }
         $token = $user->createToken('nexa-technician-mobile', [
             'api','tenant:'.$tenant->id,'mobile:technician',

@@ -5,7 +5,7 @@ import { api, queryString, readableError } from '../api';
 import type { Customer, Page } from '../types';
 
 interface Member {
-  id: number; name: string; email: string; role: string;
+  id: number; name: string; email: string; role: string; login_name: string | null;
   active: boolean; customer_scope: 'all' | 'assigned';
 }
 interface Detail {
@@ -117,6 +117,7 @@ function PortfolioDialog({ member, token, onClose, onSaved }: {
 interface CreatedInvite {
   user: {id: number; name: string; email: string; active: boolean};
   role: string;
+  login_name: string | null;
   invitation: { token: string; tenant: string; expires_at: string };
   note: string;
 }
@@ -126,6 +127,7 @@ function InviteAccountDialog({ token, onClose, onCreated, canInviteAdmin }: {
 }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [loginName, setLoginName] = useState('');
   const [type, setType] = useState<'customer' | 'collaborator' | 'administrator'>('customer');
   const [search, setSearch] = useState('');
   const delayed = useDeferredValue(search);
@@ -148,6 +150,7 @@ function InviteAccountDialog({ token, onClose, onCreated, canInviteAdmin }: {
       body: JSON.stringify({
         name: name.trim(), email: email.trim(),
         account_type: type,
+        ...(type === 'collaborator' ? {login_name: loginName.trim().toLowerCase()} : {}),
         ...(type === 'administrator' ? {} : {customer_ids: selected}),
         ...(type === 'customer' ? {view_reports: reports, view_other_tickets: otherTickets} : {}),
       }),
@@ -188,6 +191,7 @@ function InviteAccountDialog({ token, onClose, onCreated, canInviteAdmin }: {
             .catch(() => setCopyError('Não foi possível copiar automaticamente. Selecione e copie o campo.'));
         }}><Copy size={16}/> Copiar convite</button>
         {copyError && <p role="alert" className="notice error">{copyError}</p>}
+        {created.login_name && <p className="portfolio-info">Acesso ao Nexa Técnico: <strong>{created.login_name}</strong> • Empresa: <strong>{created.invitation.tenant}</strong>. O técnico escolherá a própria senha na ativação.</p>}
         <p className="portfolio-info">Nenhuma mensagem foi enviada automaticamente. O usuário escolherá uma senha forte no link de ativação.</p>
         <div className="modal-actions"><button className="button ghost" onClick={onClose}>Concluir</button></div>
       </div> : <form className="editor-form" onSubmit={submit}>
@@ -205,6 +209,14 @@ function InviteAccountDialog({ token, onClose, onCreated, canInviteAdmin }: {
           {canInviteAdmin && <label className="check-row"><input type="radio" name="account_type" checked={type === 'administrator'}
             onChange={() => setType('administrator')}/> Conta de administrador</label>}
         </div>
+        {type === 'collaborator' && <>
+          <label htmlFor="invite-login-name">Nome de usuário do técnico</label>
+          <input id="invite-login-name" required minLength={3} maxLength={64}
+            pattern="[a-z][a-z0-9._-]{2,63}" autoComplete="off"
+            value={loginName} onChange={e => setLoginName(e.target.value.toLowerCase())}
+            placeholder="ex.: joao.silva" aria-describedby="invite-login-hint"/>
+          <p id="invite-login-hint" className="portfolio-info">Exclusivo por empresa, com letras minúsculas, números, ponto, hífen ou sublinhado. Usado com senha no aplicativo técnico.</p>
+        </>}
         <p className="portfolio-info">{type === 'administrator'
           ? 'Administrador: acesso administrativo integral a esta prestadora. Apenas o proprietário pode conceder este perfil.'
           : type === 'customer'
@@ -271,7 +283,8 @@ export function StaffPage({ token, canInviteAdmin }: { token: string | null; can
         members.error ? <p role="alert" className="notice error">{readableError(members.error)}</p> :
         <><div className="table-wrap"><table><thead><tr><th>Operador</th><th>Perfil</th><th>Carteira</th><th>Situação</th><th>Ação</th></tr></thead>
         <tbody>{members.data.data.map(member => <tr key={member.id}>
-          <td><strong>{member.name}</strong><small>{member.email}</small></td>
+          <td><strong>{member.name}</strong><small>{member.email}</small>
+            {member.login_name && <small>Login técnico: {member.login_name}</small>}</td>
           <td>{member.role}</td>
           <td>{['owner', 'admin'].includes(member.role) || member.customer_scope === 'all' ? 'Todos os clientes' : 'Carteira atribuída'}</td>
           <td><span className={'state-pill ' + (member.active ? 'online' : 'neutral')}>{member.active ? 'Ativo' : 'Inativo'}</span></td>

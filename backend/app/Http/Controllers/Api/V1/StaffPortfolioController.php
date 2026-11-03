@@ -27,6 +27,7 @@ final class StaffPortfolioController extends Controller
             'id' => $user->id, 'name' => $user->name, 'email' => $user->email,
             'active' => (bool) $user->active,
             'role' => $user->pivot->role,
+            'login_name' => $user->pivot->role === 'technician' ? $user->pivot->login_name : null,
             'customer_scope' => $user->pivot->customer_scope,
         ]));
     }
@@ -41,6 +42,7 @@ final class StaffPortfolioController extends Controller
         return response()->json([
             'user' => $member->only(['id','name','email']),
             'role' => $member->pivot->role,
+            'login_name' => $member->pivot->role === 'technician' ? $member->pivot->login_name : null,
             'scope' => $member->pivot->customer_scope,
             'customer_ids' => $ids,
         ]);

@@ -5,7 +5,7 @@ Módulo Expo/React Native + TypeScript para técnicos de campo. **Implementaçã
 ## Fluxo operacional implementado
 
 1. O administrativo cria um chamado na API existente e atribui `assigned_user_id` ao técnico.
-2. O técnico autentica pelo aplicativo e enxerga **apenas chamados atribuídos a si**.
+2. O técnico entra com **nome de usuário exclusivo na empresa e senha individual**, definida por ele no convite de ativação; enxerga **apenas chamados atribuídos a si**.
 3. No chamado, visualiza cliente, descrição, prioridade e impressora; inicia o atendimento.
 4. Pode consultar o catálogo e solicitar peças (quantidade, motivo, UUID de idempotência).
 5. A equipe responsável revisa a solicitação pelo endpoint administrativo. **Aprovar a peça não dá baixa automática de estoque.**
@@ -47,7 +47,7 @@ Para um celular físico em desenvolvimento, a URL deve ser alcançável pelo apa
 - `POST /api/v1/mobile/tickets/{id}/signature`
 - Administrativo: `GET /api/v1/tickets/part-requests`, `POST /api/v1/tickets/part-requests/{id}/review`
 
-A autenticação mobile usa tokens Sanctum por empresa, com validade de 12 horas e armazenamento no SecureStore do aparelho. Os tokens mobile só podem acessar `/api/v1/mobile/*`.
+A autenticação mobile usa **`login_name` + senha + identificador da empresa** (não e-mail), tokens Sanctum por empresa, com validade de 12 horas e armazenamento no SecureStore do aparelho. Os tokens mobile só podem acessar `/api/v1/mobile/*`. O administrativo escolhe o nome de usuário ao criar a conta do colaborador e entrega um convite de ativação de uso único: a senha não é compartilhada com o administrador. Técnicos antigos recebem um nome de usuário migrado automaticamente; a equipe pode consultá-lo na lista de contas.
 
 ## Pontos ainda não homologados
 

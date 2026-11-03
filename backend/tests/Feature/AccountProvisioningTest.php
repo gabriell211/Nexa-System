@@ -127,12 +127,15 @@ final class AccountProvisioningTest extends TestCase
         $this->login($owner,$tenant,'OwnerTestPassword123');
         $answer=$this->postJson('/api/v1/browser/accounts', [
             'name'=>'Technician','email'=>'tech.'.Str::uuid().'@example.test',
+            'login_name'=>'tecnico-convite',
             'account_type'=>'collaborator','customer_ids'=>[$beta->id],
-        ])->assertCreated()->assertJsonPath('role','technician');
+        ])->assertCreated()->assertJsonPath('role','technician')
+            ->assertJsonPath('login_name','tecnico-convite');
         $userId=(int)$answer->json('user.id');
         $this->assertDatabaseHas('tenant_user',[
             'tenant_id'=>$tenant->id,'user_id'=>$userId,
             'role'=>'technician','customer_scope'=>'assigned',
+            'login_name'=>'tecnico-convite',
         ]);
         DB::table('account_invitations')->where('user_id',$userId)
             ->update(['expires_at'=>now()->subMinute()]);
@@ -141,6 +144,53 @@ final class AccountProvisioningTest extends TestCase
             'password'=>'ValidSecret123','password_confirmation'=>'ValidSecret123',
         ])->assertUnprocessable();
         $this->assertFalse((bool)User::findOrFail($userId)->active);
+    }
+
+    public function test_technician_username_is_required_unique_per_company_and_activated_individually(): void
+    {
+        extract($this->fixture());
+        $this->login($owner, $tenant, 'OwnerTestPassword123');
+        $base = [
+            'name'=>'João Técnico',
+            'email'=>'joao.'.Str::uuid().'@example.test',
+            'account_type'=>'collaborator',
+            'customer_ids'=>[$alpha->id],
+        ];
+
+        $this->postJson('/api/v1/browser/accounts', $base)
+            ->assertUnprocessable()->assertJsonValidationErrors('login_name');
+        $created = $this->postJson('/api/v1/browser/accounts', [
+            ...$base, 'login_name'=>'  JOAO.SILVA  ',
+        ])->assertCreated()->assertJsonPath('login_name', 'joao.silva');
+        $id = (int) $created->json('user.id');
+        $this->assertDatabaseHas('tenant_user', [
+            'tenant_id'=>$tenant->id, 'user_id'=>$id,
+            'role'=>'technician', 'login_name'=>'joao.silva',
+        ]);
+
+        $this->postJson('/api/v1/browser/accounts', [
+            ...$base,
+            'email'=>'outra.'.Str::uuid().'@example.test',
+            'login_name'=>'joao.silva',
+        ])->assertUnprocessable()->assertJsonValidationErrors('login_name');
+        $this->postJson('/api/v1/browser/accounts', [
+            ...$base, 'login_name'=>'../admin',
+        ])->assertUnprocessable()->assertJsonValidationErrors('login_name');
+
+        $mobile = [
+            'login_name'=>'joao.silva', 'tenant'=>$tenant->slug,
+            'password'=>'NewTechnicianPassword123',
+        ];
+        $this->postJson('/api/v1/mobile/auth/login', $mobile)->assertUnprocessable();
+
+        $this->postJson('/api/v1/browser/auth/activate', [
+            'tenant'=>$tenant->slug,
+            'token'=>$created->json('invitation.token'),
+            'password'=>'NewTechnicianPassword123',
+            'password_confirmation'=>'NewTechnicianPassword123',
+        ])->assertOk();
+        $this->postJson('/api/v1/mobile/auth/login', $mobile)
+            ->assertOk()->assertJsonPath('user.id',$id);
     }
 
     public function test_other_client_tickets_are_not_visible_until_explicitly_permitted(): void

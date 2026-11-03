@@ -51,6 +51,13 @@ final class AccountProvisioningController extends Controller
             'administrator' => 'admin',
         };
         $scope = $role === 'admin' ? 'all' : 'assigned';
+        if ($role === 'technician' && DB::table('tenant_user')
+            ->where('tenant_id', $tenant->id)
+            ->where('login_name', $data['login_name'])->exists()) {
+            throw ValidationException::withMessages([
+                'login_name' => 'Nome de usuário já utilizado por outro técnico desta empresa.',
+            ]);
+        }
         $token = bin2hex(random_bytes(32));
         $user = DB::transaction(function () use ($tenant, $request, $data, $email, $ids, $role, $scope, $token): User {
             $user = User::query()->create([
@@ -61,6 +68,7 @@ final class AccountProvisioningController extends Controller
             ]);
             $tenant->users()->attach($user->id, [
                 'role' => $role, 'customer_scope' => $scope,
+                'login_name' => $role === 'technician' ? $data['login_name'] : null,
             ]);
             if ($ids !== []) {
                 DB::table('customer_user_access')->insert(array_map(
@@ -90,6 +98,7 @@ final class AccountProvisioningController extends Controller
             ]);
             $this->audit->write($tenant, $request->user(), 'account.invited', $user, null, [
                 'account_type' => $data['account_type'], 'role' => $role,
+                'login_name' => $role === 'technician' ? $data['login_name'] : null,
                 'customer_ids' => $ids, 'activation_required' => true,
             ]);
             return $user;
@@ -98,6 +107,7 @@ final class AccountProvisioningController extends Controller
         return response()->json([
             'user' => $user->only(['id','name','email','active']),
             'role' => $role, 'scope' => $scope,
+            'login_name' => $role === 'technician' ? $data['login_name'] : null,
             'customer_ids' => $ids,
             'invitation' => ['token' => $token, 'tenant' => $tenant->slug,
                 'expires_at' => now()->addHours(24)->toIso8601String()],

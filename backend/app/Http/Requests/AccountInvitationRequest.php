@@ -13,13 +13,26 @@ final class AccountInvitationRequest extends FormRequest
         return in_array($this->attributes->get('nexa_role'), ['owner', 'admin'], true);
     }
 
+    protected function prepareForValidation(): void
+    {
+        if (is_string($this->input('login_name'))) {
+            $this->merge(['login_name' => strtolower(trim($this->input('login_name')))]);
+        }
+    }
+
     public function rules(): array
     {
         $administrator = $this->input('account_type') === 'administrator';
+        $technician = $this->input('account_type') === 'collaborator';
 
         return [
             'name' => ['required', 'string', 'min:2', 'max:180'],
             'email' => ['required', 'email', 'max:255'],
+            'login_name' => [
+                Rule::requiredIf($technician),
+                Rule::prohibitedIf(! $technician),
+                'string', 'max:64', 'regex:/^[a-z][a-z0-9._-]{2,63}$/D',
+            ],
             'account_type' => ['required', Rule::in(['customer', 'collaborator', 'administrator'])],
             'customer_ids' => [
                 Rule::requiredIf(! $administrator),

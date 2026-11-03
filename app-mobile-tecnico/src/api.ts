@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import type { LoginResponse, Page, StockItem, Ticket } from './types';
+import type { LoginResponse, Page, Person, StockItem, Ticket } from './types';
 
 const STORAGE_KEY = 'nexa.technician.mobile.token';
 const configured = process.env.EXPO_PUBLIC_NEXA_API_URL?.replace(/\/$/, '');
@@ -56,26 +56,30 @@ async function request<T>(path: string, method: 'GET'|'POST' = 'GET', body?: unk
   return payload as T;
 }
 
-export async function restoreSession(): Promise<boolean> {
+export async function restoreSession(): Promise<Person | null> {
   token = await SecureStore.getItemAsync(STORAGE_KEY);
-  if (!token) return false;
+  if (!token) return null;
   try {
-    await request('/mobile/auth/me');
-    return true;
-  } catch {
-    await clearSession();
-    return false;
+    const current = await request<{user: Person}>('/mobile/auth/me');
+    return current.user;
+  } catch (error) {
+    // A network outage must not silently destroy a still-valid local session.
+    if (error instanceof ApiError && [401, 403].includes(error.status)) {
+      await clearSession();
+    }
+    return null;
   }
 }
 
-export async function login(email: string, password: string, tenant: string): Promise<LoginResponse> {
-  const session = await request<LoginResponse>('/mobile/auth/login','POST',{email,password,tenant},false);
+export async function login(loginName: string, password: string, tenant: string): Promise<LoginResponse> {
+  const login_name = loginName.trim().toLowerCase();
+  const session = await request<LoginResponse>('/mobile/auth/login','POST',{login_name,password,tenant},false);
   token = session.token;
   await SecureStore.setItemAsync(STORAGE_KEY, token);
   return session;
 }
 
-async function clearSession(): Promise<void> {
+export async function clearSession(): Promise<void> {
   token = null;
   await SecureStore.deleteItemAsync(STORAGE_KEY);
 }
