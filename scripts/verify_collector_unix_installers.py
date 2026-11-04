@@ -49,7 +49,8 @@ assert 'rollback' in mac_post
 assert "dscl . -create /Users/_nexacollector" in mac_post
 assert "dscl . -create /Groups/_nexacollector" in mac_post
 assert 'if [[ ! -e "$base/config.json" ]]' in mac_post
-assert "launchctl bootstrap" not in mac_post
+assert 'if [[ "$previous_state" == active ]]' in mac_post
+assert "launchctl bootstrap" in mac_post
 assert "rm -rf" not in mac_post + mac_pre
 mac_recover = (root / "collector/macos/pkg/recover-update").read_text()
 assert 'launchctl bootstrap' in mac_recover
