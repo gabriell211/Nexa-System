@@ -14,3 +14,4 @@ backend/database/*.sqlite
 portal/test-results/
 portal/playwright-report/
 .DS_Store
+collector/console/src-tauri/tauri.updater.generated.json
