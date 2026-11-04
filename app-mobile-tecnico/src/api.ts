@@ -109,7 +109,7 @@ export async function restoreSession(): Promise<RestoredSession> {
 
 export async function login(loginName: string, password: string): Promise<LoginResponse> {
   const login_name = loginName.trim().toLowerCase();
-  if (!/^[a-z][a-z0-9._-]{2,63}$/.test(login_name) || !password) {
+  if (!/^[a-z][a-z0-9._-]{2,63}$/.test(login_name) || !password || password.length > 1024) {
     throw new ApiError(422, 'Informe seu nome de usuário e senha.');
   }
   const session = await request<LoginResponse>('/mobile/auth/login', 'POST',

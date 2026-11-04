@@ -45,8 +45,8 @@ export default function LoginScreen(): React.JSX.Element {
               void retrySession().catch(() => setError('Falha ao verificar a sessão.'));
             }} />}
           <Field label="Nome de usuário" value={loginName}
-            onChangeText={setLoginName} placeholder="ex.: joao.silva" autoCapitalize="none" />
-          <Field label="Senha" value={password} onChangeText={setPassword}
+            onChangeText={value => setLoginName(value.slice(0, 64))} placeholder="ex.: joao.silva" autoCapitalize="none" />
+          <Field label="Senha" value={password} onChangeText={value => setPassword(value.slice(0, 1024))}
             secureTextEntry autoCapitalize="none" placeholder="Sua senha" />
           {error && <Notice error text={error} />}
           <Button title={pending ? 'Entrando…' : 'Acessar meus chamados'}

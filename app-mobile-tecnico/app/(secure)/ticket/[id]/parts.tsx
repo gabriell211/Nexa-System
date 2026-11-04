@@ -32,7 +32,7 @@ export default function RequestPartScreen(): React.JSX.Element {
       if (!Number.isInteger(amount) || amount < 1 || amount > 1000) {
         throw new Error('Informe uma quantidade inteira entre 1 e 1000.');
       }
-      if (!selected || reason.trim().length < 5) {
+      if (!selected || reason.trim().length < 5 || reason.trim().length > 1000) {
         throw new Error('Selecione uma peça e explique o motivo da solicitação.');
       }
       if (!requestId.current) requestId.current = Crypto.randomUUID();
@@ -62,7 +62,7 @@ export default function RequestPartScreen(): React.JSX.Element {
     {ticket.data && ['closed', 'resolved'].includes(ticket.data.status) &&
       <Notice text="Esta OS já foi finalizada e não aceita novas solicitações." />}
     {ticket.data && !['closed', 'resolved'].includes(ticket.data.status) && <>
-      <Field label="Pesquisar por nome ou SKU" value={search} onChangeText={setSearch}
+      <Field label="Pesquisar por nome ou SKU" value={search} onChangeText={value => setSearch(value.slice(0, 80))}
         placeholder="Ex.: toner, fusor, rolete" />
       <Button secondary title="Pesquisar estoque" onPress={() => setTerm(search.trim())}
         disabled={stock.isFetching} />
@@ -85,7 +85,7 @@ export default function RequestPartScreen(): React.JSX.Element {
         <Field label="Quantidade" value={quantity} keyboardType="number-pad"
           onChangeText={value => { setQuantity(value); resetId(); }} />
         <Field label="Motivo da solicitação" value={reason} multiline
-          onChangeText={value => { setReason(value); resetId(); }}
+          onChangeText={value => { setReason(value.slice(0, 1000)); resetId(); }}
           placeholder="Descreva o defeito e por que precisa da peça." />
         {inputError && <Notice error text={inputError} />}
         {submit.isError && <Notice error text={submit.error instanceof Error
@@ -93,7 +93,7 @@ export default function RequestPartScreen(): React.JSX.Element {
         <Button title={submit.isPending ? 'Enviando…' : 'Enviar solicitação'}
           disabled={submit.isPending} onPress={() => {
             setInputError(null);
-            if (!selected || reason.trim().length < 5) {
+            if (!selected || reason.trim().length < 5 || reason.trim().length > 1000) {
               setInputError('Informe a peça e um motivo com pelo menos 5 caracteres.');
               return;
             }

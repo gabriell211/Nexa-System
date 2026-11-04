@@ -81,10 +81,10 @@ export default function SignatureScreen(): React.JSX.Element {
       <Notice text="Para assinar, a OS deve estar em atendimento. Retorne aos detalhes." />}
     {ticket.data?.status === 'in_progress' && <>
       <Field label="Serviço realizado e diagnóstico" value={summary}
-        onChangeText={setSummary} multiline
+        onChangeText={value => setSummary(value.slice(0, 4000))} multiline
         placeholder="Registre o reparo, os testes realizados e o resultado." />
       <Field label="Nome do responsável que assina" value={signer}
-        onChangeText={setSigner} placeholder="Nome completo" />
+        onChangeText={value => setSigner(value.slice(0, 180))} placeholder="Nome completo" />
       <Text style={ui.section}>Assinatura do responsável</Text>
       <Panel>
         <ViewShot ref={pad} options={{ format: 'png', result: 'base64', quality: 1 }}>

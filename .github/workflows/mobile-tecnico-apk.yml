@@ -2,8 +2,8 @@ name: Nexa Técnico Android APK (internal QA)
 on:
   workflow_dispatch:
   push:
-    tags:
-      - 'nexa-tecnico-v*'
+    paths:
+      - '.github/workflows/mobile-tecnico-apk.yml'
 permissions:
   contents: read
 

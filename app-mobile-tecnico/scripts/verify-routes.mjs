@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 const root = new URL('../', import.meta.url).pathname;
 const routes = [
-  'app/_layout.tsx', 'app/login.tsx', 'app/(secure)/_layout.tsx',
+  'app/_layout.tsx', 'app/login.tsx', 'app/+not-found.tsx', 'app/(secure)/_layout.tsx',
   'app/(secure)/index.tsx', 'app/(secure)/ticket/[id]/index.tsx',
   'app/(secure)/ticket/[id]/parts.tsx',
   'app/(secure)/ticket/[id]/signature.tsx',
@@ -24,4 +24,4 @@ for (const route of ['/mobile/auth/login', '/mobile/auth/me', '/mobile/auth/logo
   '/mobile/tickets', '/mobile/stock-items', '/part-requests', '/signature']) {
   if (!api.includes(route)) throw new Error('Contrato Laravel ausente: ' + route);
 }
-console.log('7 rotas Expo Router e contratos Laravel presentes.');
+console.log('Rotas Expo Router, fallback e contratos Laravel presentes.');
