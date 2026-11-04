@@ -9,6 +9,8 @@ use App\Services\CustomerPortfolio;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Contracts\Encryption\DecryptException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class TicketSignatureController extends Controller
@@ -26,6 +28,23 @@ final class TicketSignatureController extends Controller
         }
         $signature=ServiceTicketSignature::query()->where('tenant_id',$tenant->id)
             ->where('ticket_id',$ticket)->firstOrFail();
+        if (is_string($signature->png_ciphertext) && $signature->png_ciphertext !== '') {
+            try {
+                $decoded = base64_decode(Crypt::decryptString($signature->png_ciphertext), true);
+            } catch (DecryptException) {
+                abort(503, 'Evidência de assinatura indisponível.');
+            }
+            if (!is_string($decoded) || !hash_equals((string) $signature->sha256, hash('sha256', $decoded))) {
+                abort(503, 'Integridade da assinatura não confirmada.');
+            }
+            return response()->streamDownload(
+                static function () use ($decoded): void { echo $decoded; },
+                'assinatura-'.$ticket.'.png',
+                ['Content-Type'=>'image/png', 'X-Content-Type-Options'=>'nosniff',
+                 'Cache-Control'=>'no-store, private'],
+            );
+        }
+        // Compatibility for old on-premises signatures only.
         if (!Storage::disk('local')->exists($signature->storage_path)) abort(404);
         return Storage::disk('local')->download($signature->storage_path,'assinatura-'.$ticket.'.png',[
             'Content-Type'=>'image/png','X-Content-Type-Options'=>'nosniff',

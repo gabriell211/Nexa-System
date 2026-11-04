@@ -203,11 +203,15 @@ final class TechnicianMobileWorkflowTest extends TestCase
             ->assertJsonPath('data.signature.signer_name','Carlos da Silva');
         $record=ServiceTicketSignature::query()->firstOrFail();
         $this->assertSame(hash('sha256',base64_decode($payload['signature_png_base64'])), $record->sha256);
-        Storage::disk('local')->assertExists($record->storage_path);
+        $this->assertNotEmpty($record->png_ciphertext);
+        $this->assertStringStartsWith('database://', $record->storage_path);
+        Storage::disk('local')->assertMissing($record->storage_path);
         $this->withToken($token)->postJson('/api/v1/mobile/tickets/'.$ticket->id.'/signature',$payload)
             ->assertUnprocessable();
         $this->assertDatabaseCount('service_ticket_signatures',1);
         Auth::forgetGuards();
+        // Simulate a different Vercel instance with no local signature files.
+        Storage::fake('local');
         $this->withToken($adminToken)->get('/api/v1/tickets/'.$ticket->id.'/signature/image')
             ->assertOk()->assertHeader('Content-Type','image/png');
         $this->assertDatabaseHas('audit_entries',['action'=>'ticket.customer.signed']);

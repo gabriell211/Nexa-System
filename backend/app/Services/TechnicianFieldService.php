@@ -9,7 +9,7 @@ use App\Models\ServiceTicketSignature;
 use App\Models\StockItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -98,9 +98,9 @@ final class TechnicianFieldService
             || $dimensions[1] < 80 || $dimensions[0] > 1600 || $dimensions[1] > 1000) {
             throw ValidationException::withMessages(['signature_png_base64'=>'Dimensões de assinatura inválidas.']);
         }
-        $path = null;
-        try {
-            return DB::transaction(function () use ($request,$id,$data,$png,&$path): ServiceTicket {
+        // Persist encrypted evidence inside Neon/PostgreSQL. Vercel
+        // containers do not provide durable local file storage.
+        return DB::transaction(function () use ($request,$id,$data,$png): ServiceTicket {
                 $ticket = $this->assigned($request,$id,true);
                 if ($ticket->status !== 'in_progress') {
                     throw ValidationException::withMessages(['status'=>'Inicie o atendimento antes de coletar assinatura.']);
@@ -109,15 +109,14 @@ final class TechnicianFieldService
                     ->where('ticket_id',$ticket->id)->exists()) {
                     abort(409,'Este chamado já possui assinatura.');
                 }
-                $path = 'ticket-signatures/'.$ticket->tenant_id.'/'.$ticket->id.'/'.Str::uuid().'.png';
-                if (!Storage::disk('local')->put($path,$png)) {
-                    throw new \RuntimeException('Falha ao armazenar a assinatura.');
-                }
+                $path = 'database://ticket-signatures/'.$ticket->tenant_id.'/'.$ticket->id.'/'.Str::uuid().'.png';
                 $signature = ServiceTicketSignature::query()->create([
                     'tenant_id'=>$ticket->tenant_id,'ticket_id'=>$ticket->id,
                     'technician_user_id'=>$request->user()->id,
                     'signer_name'=>$data['signer_name'],'service_summary'=>$data['service_summary'],
-                    'storage_path'=>$path,'sha256'=>hash('sha256',$png),
+                    'storage_path'=>$path,
+                    'png_ciphertext'=>Crypt::encryptString(base64_encode($png)),
+                    'sha256'=>hash('sha256',$png),
                     'signed_at'=>now(),'ip_address'=>$request->ip(),
                     'user_agent'=>mb_substr($request->userAgent() ?? '',0,255),
                 ]);
@@ -130,10 +129,6 @@ final class TechnicianFieldService
                         'signer_name'=>$signature->signer_name,'status'=>$ticket->status,
                     ]);
                 return $this->detail($ticket);
-            },3);
-        } catch (\Throwable $e) {
-            if ($path !== null) Storage::disk('local')->delete($path);
-            throw $e;
-        }
+        },3);
     }
 }
