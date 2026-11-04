@@ -1811,6 +1811,68 @@ fn collector_http_client(cfg: &CollectorConfig) -> Result<reqwest::blocking::Cli
     Ok(builder.build()?)
 }
 
+#[derive(Deserialize)]
+struct PrinterInventoryAck {
+    collector_id: Uuid,
+    acknowledged: Vec<u64>,
+}
+
+/// Report printer identity separately from the metering outbox. The backend
+/// keeps these unverified observations isolated from contracted asset data.
+pub fn send_printer_inventory(
+    cfg: &CollectorConfig,
+    token: &str,
+    printers: &[fleet::FleetPrinter],
+) -> Result<usize, CollectorError> {
+    if printers.is_empty() { return Ok(0); }
+    cfg.validate()?;
+    fleet::validate(cfg, printers)?;
+    if token.len() != 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(CollectorError::Configuration("collector token must be 64 hex characters".into()));
+    }
+    let client = collector_http_client(cfg)?;
+    let mut acknowledged = 0_usize;
+    for chunk in printers.chunks(100) {
+        let observations: Vec<serde_json::Value> = chunk.iter().map(|entry| serde_json::json!({
+            "printer_id": entry.config.printer_id,
+            "ip_address": entry.config.ip.to_string(),
+            "manufacturer": entry.manufacturer.as_deref(),
+            "model": entry.model.as_deref(),
+            "serial_number": entry.serial.as_deref(),
+            "mac_address": entry.mac.as_deref(),
+            "monitored": entry.monitored,
+        })).collect();
+        let response = client
+            .post(format!("{}/api/v1/collector/printers/inventory", cfg.api_url.trim_end_matches('/')))
+            .bearer_auth(token)
+            .json(&serde_json::json!({
+                "collector_id": cfg.collector_id,
+                "printers": observations,
+            }))
+            .send()?;
+        if !response.status().is_success() {
+            return Err(CollectorError::HttpStatus {
+                status: response.status().as_u16(),
+                retry_after_seconds: retry_after_delta(
+                    response.headers().get(reqwest::header::RETRY_AFTER)
+                ),
+            });
+        }
+        let mut buffer = Vec::new();
+        response.take(8193).read_to_end(&mut buffer)?;
+        if buffer.len() > 8192 { return Err(CollectorError::InvalidAcknowledgement); }
+        let ack: PrinterInventoryAck = serde_json::from_slice(&buffer)?;
+        if ack.collector_id != cfg.collector_id
+            || ack.acknowledged.len() != chunk.len()
+            || !ack.acknowledged.iter().copied()
+                .eq(chunk.iter().map(|entry| entry.config.printer_id)) {
+            return Err(CollectorError::InvalidAcknowledgement);
+        }
+        acknowledged += chunk.len();
+    }
+    Ok(acknowledged)
+}
+
 /// Deterministic up-to-10% jitter spreads restarts across collectors without
 /// causing frequent retries during connectivity failures.
 pub fn heartbeat_sleep_seconds(seconds: u64, collector_id: Uuid) -> u64 {

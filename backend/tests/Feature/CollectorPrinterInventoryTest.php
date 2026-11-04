@@ -100,7 +100,7 @@ final class CollectorPrinterInventoryTest extends TestCase
             'printers' => [],
         ])->assertUnauthorized();
 
-        $this->postJson('/api/v1/collector/printers/inventory', [
+        $this->withToken('invalid-test-token')->postJson('/api/v1/collector/printers/inventory', [
             'collector_id' => (string) Str::uuid(),
             'printers' => [[
                 'printer_id' => 1,

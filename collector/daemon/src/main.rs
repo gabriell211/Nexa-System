@@ -1,5 +1,5 @@
 use nexa_collector_core::{
-    collect_snmp_v2c, heartbeat_sleep_seconds, read_config, send_heartbeat, send_heartbeat_with_watchdog, upload_pending,
+    collect_snmp_v2c, heartbeat_sleep_seconds, read_config, send_heartbeat, send_heartbeat_with_watchdog, send_printer_inventory, upload_pending,
     upload_error_kind, CollectorConfig, CollectorError, DiscoveryReport, DiscoverySchedule, Outbox, ProxyAuth, UploadRetryPolicy, WatchdogHeartbeat,
     CommunicationMode,
 };
@@ -373,6 +373,8 @@ fn run_application(
     let retry_seconds = stored_retry.seconds_until_retry(Utc::now())?;
     upload_retry.restore(Instant::now(), retry_seconds, stored_retry.consecutive_failures);
     let mut next_poll = Instant::now();
+    // Inventory reports refresh independently from meter uploads.
+    let mut next_inventory = Instant::now() + Duration::from_secs(15);
     // Detect privileged roster changes without restarting the service.
     // The first live poll is already scheduled immediately.
     let mut last_fleet_snapshot = serde_json::to_vec(&outbox.printer_fleet(&cfg)?)?;
@@ -523,6 +525,7 @@ fn run_application(
                     if serialized != last_fleet_snapshot {
                         last_fleet_snapshot = serialized;
                         next_poll = Instant::now();
+                        next_inventory = Instant::now();
                     }
                 }
             }
@@ -617,6 +620,23 @@ fn run_application(
             next_poll = Instant::now() + Duration::from_secs(cfg.interval_seconds);
             if let Some(ref watcher) = progress {
                 watcher.progressed();
+            }
+        }
+
+        if cfg.communication_mode == CommunicationMode::WebServices
+            && Instant::now() >= next_inventory {
+            next_inventory = Instant::now() + Duration::from_secs(3600);
+            if let Some(ref secret) = token {
+                match outbox.printer_fleet(&cfg) {
+                    Ok(fleet) if !fleet.is_empty() => {
+                        if let Err(error) = send_printer_inventory(&cfg, secret, &fleet) {
+                            eprintln!("Printer identity upload deferred ({}); meter outbox preserved", upload_error_kind(&error));
+                            next_inventory = Instant::now() + Duration::from_secs(300);
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(_) => eprintln!("Printer inventory roster unavailable; identity upload skipped"),
+                }
             }
         }
 

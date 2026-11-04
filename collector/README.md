@@ -1,3 +1,9 @@
+## Atualização e transmissão de identidades (novembro/2026)
+
+O daemon Rust usa `POST /api/v1/collector/printers/inventory` para enviar manufacturer/model/serial/MAC/IP/status monitorado das impressoras vinculadas. Inicialmente verifica após 15 segundos, renova por hora e antecipa quando a carteira muda; falhas geram nova tentativa após cinco minutos sem apagar a outbox de contadores. O Laravel mantém estas observações separadas dos dados administrativos aprovados.
+
+Os contadores continuam no `POST /api/v1/collector/ingest` com ACK e retries próprios. A API `GET /api/v1/collector/updates/{target}/{arch}/{currentVersion}` está preparada para servir releases assinadas, mas a atualização automática de aplicativos e serviços ainda aguarda assinatura e homologação real dos instaladores. Sem manifest assinado, retorna 204. Veja [contrato](../docs/NEXA-COLLECTOR-UPDATE-CONTRACT.md).
+
 # Nexa Collector — cliente e limites de homologação
 
 
