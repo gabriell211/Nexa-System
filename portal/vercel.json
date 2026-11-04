@@ -6,7 +6,7 @@
       "destination": "https://nexa-system-5nkp.vercel.app/api/:path*"
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!api/|assets/|.*\\.[a-zA-Z0-9]+$).*)",
       "destination": "/index.html"
     }
   ]

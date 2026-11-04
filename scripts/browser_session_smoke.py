@@ -15,7 +15,7 @@ import uuid
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
-BASE = os.environ.get("NEXA_SMOKE_URL", "http://127.0.0.1:8080/api/v1/browser")
+BASE = os.environ.get("NEXA_SMOKE_URL", "http://127.0.0.1:6467/api/v1/browser")
 PASSWORD = os.environ["NEXA_BOOTSTRAP_PASSWORD"]
 EMAIL = os.environ["NEXA_BOOTSTRAP_EMAIL"]
 TENANT = os.environ.get("NEXA_BOOTSTRAP_TENANT", "nexa-demo")

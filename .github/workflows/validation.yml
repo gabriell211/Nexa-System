@@ -139,7 +139,7 @@ jobs:
           php artisan nexa:bootstrap
       - name: Start real HTTP server
         run: |
-          php artisan serve --host=127.0.0.1 --port=8080 > /tmp/nexa-http-smoke.log 2>&1 &
+          php artisan serve --host=127.0.0.1 --port=6467 > /tmp/nexa-http-smoke.log 2>&1 &
           echo $! > /tmp/nexa-http-smoke.pid
       - name: Verify CSRF and cookie sessions end to end
         run: python3 ../scripts/browser_session_smoke.py
@@ -197,8 +197,25 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Start backend and frontend servers
         run: |
-          (cd backend && php artisan serve --host=127.0.0.1 --port=8080 > /tmp/nexa-e2e-api.log 2>&1 &)
+          (cd backend && php artisan serve --host=127.0.0.1 --port=6467 > /tmp/nexa-e2e-api.log 2>&1 &)
           (cd portal && npm run dev > /tmp/nexa-e2e-vite.log 2>&1 &)
+      - name: Confirm real backend and Vite frontend respond
+        run: |
+          ready=false
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:6467/up > /dev/null 2>&1 &&
+               curl --fail --silent --show-error --max-time 2 http://127.0.0.1:5173/ > /dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then
+            echo 'Laravel API or Vite did not become ready'
+            cat /tmp/nexa-e2e-api.log || true
+            cat /tmp/nexa-e2e-vite.log || true
+            exit 1
+          fi
       - name: Run core desktop and mobile browser E2E
         if: matrix.suite == 'core'
         working-directory: portal
