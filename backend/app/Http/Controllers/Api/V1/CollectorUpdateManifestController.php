@@ -14,6 +14,8 @@ final class CollectorUpdateManifestController extends Controller
     private const SUPPORTED = [
         'windows' => ['x86_64'],
         'linux' => ['x86_64'],
+        'linux-deb' => ['x86_64'],
+        'linux-rpm' => ['x86_64'],
         'darwin' => ['x86_64', 'aarch64'],
     ];
 
@@ -60,7 +62,15 @@ final class CollectorUpdateManifestController extends Controller
         $signature = is_array($platform) ? ($platform['signature'] ?? null) : null;
         // The URL is never fetched by the API. Clients still MUST verify its
         // artifact signature against the public key embedded in their installer.
-        if (! is_string($url) || strlen($url) > 2048
+        $artifactPath = is_string($url) ? (parse_url($url, PHP_URL_PATH) ?: '') : '';
+        $validPackage = match ($target) {
+            'linux-deb' => str_ends_with($artifactPath, '.deb'),
+            'linux-rpm' => str_ends_with($artifactPath, '.rpm'),
+            'darwin' => str_ends_with($artifactPath, '.pkg'),
+            'windows' => str_ends_with($artifactPath, '.exe') || str_ends_with($artifactPath, '.nsis.zip'),
+            default => true,
+        };
+        if (! $validPackage || ! is_string($url) || strlen($url) > 2048
             || filter_var($url, FILTER_VALIDATE_URL) === false
             || parse_url($url, PHP_URL_SCHEME) !== 'https'
             || ! is_string($signature) || strlen($signature) < 80 || strlen($signature) > 4096
