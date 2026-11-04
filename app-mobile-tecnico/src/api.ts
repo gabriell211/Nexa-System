@@ -2,8 +2,10 @@ import * as SecureStore from 'expo-secure-store';
 import type { LoginResponse, Page, Person, StockItem, Ticket } from './types';
 
 const STORAGE_KEY = 'nexa.technician.mobile.token';
-const configured = process.env.EXPO_PUBLIC_NEXA_API_URL?.replace(/\/$/, '');
-const API_URL = configured ?? '';
+// Expo runs on Android/iOS; only the Laravel API is hosted on Vercel.
+export const DEFAULT_API_URL = 'https://nexa-system-5nkp.vercel.app/api/v1';
+const configured = process.env.EXPO_PUBLIC_NEXA_API_URL?.trim().replace(/\/+$/, '');
+const API_URL = configured || DEFAULT_API_URL;
 
 export class ApiError extends Error {
   constructor(public readonly status: number, message: string) {

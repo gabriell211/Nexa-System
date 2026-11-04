@@ -8,6 +8,7 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit",
+    "backend:smoke": "node scripts/verify-production-api.mjs",
     "postinstall": "node scripts/prepare-brand-assets.mjs",
     "brand:generate": "node scripts/prepare-brand-assets.mjs",
     "brand:check": "node scripts/verify-brand-assets.mjs"

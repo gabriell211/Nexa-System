@@ -30,14 +30,17 @@ Requer Node LTS e Expo SDK 54.
 ```bash
 cd app-mobile-tecnico
 cp .env.example .env
-# configure EXPO_PUBLIC_NEXA_API_URL=https://SEU-SERVIDOR/api/v1
+# A URL oficial https://nexa-system-5nkp.vercel.app/api/v1 já é o padrão
+# Substitua EXPO_PUBLIC_NEXA_API_URL apenas para homologação ou desenvolvimento
 npm install
 npx expo install --fix
 npm run typecheck
 npm start
 ```
 
-Para um celular físico em desenvolvimento, a URL deve ser alcançável pelo aparelho. Em produção, **HTTPS é obrigatório**. É necessário migrar o backend com `php artisan migrate` antes de testar a integração.
+Para um celular físico em desenvolvimento, a URL deve ser alcançável pelo aparelho. Em produção, **HTTPS é obrigatório**. O app funciona no Android/iOS e se comunica com o backend Laravel hospedado na Vercel, usando `https://nexa-system-5nkp.vercel.app/api/v1` por padrão. É necessário migrar o backend antes de testar operações reais.
+
+O comando `npm run backend:smoke` consulta a API de produção sem credenciais e verifica os contratos de autenticação. O CI mobile também o executa. Isso não substitui um teste autenticado num dispositivo físico.
 
 ## Contratos disponíveis
 

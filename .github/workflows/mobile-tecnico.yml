@@ -5,10 +5,14 @@ on:
     paths:
       - 'app-mobile-tecnico/**'
       - '.github/workflows/mobile-tecnico.yml'
+      - 'backend/routes/api.php'
+      - 'backend/app/Http/Controllers/Api/V1/MobileTechnicianAuthController.php'
   pull_request:
     paths:
       - 'app-mobile-tecnico/**'
       - '.github/workflows/mobile-tecnico.yml'
+      - 'backend/routes/api.php'
+      - 'backend/app/Http/Controllers/Api/V1/MobileTechnicianAuthController.php'
 
 permissions:
   contents: read
@@ -33,3 +37,5 @@ jobs:
         run: npm run brand:check
       - name: Verify TypeScript
         run: npm run typecheck
+      - name: Verify public Vercel Laravel API and mobile auth contract
+        run: npm run backend:smoke
