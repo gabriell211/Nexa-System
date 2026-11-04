@@ -41,7 +41,7 @@ assert "systemctl disable --now" in linux_pre
 assert "rm -rf" not in linux_pre + linux_post
 mac_pre = (root / "collector/macos/pkg/preinstall").read_text()
 mac_post = (root / "collector/macos/pkg/postinstall").read_text()
-assert "launchctl print system/com.nexa.collector" in mac_pre
+assert '/bin/launchctl print "$service"' in mac_pre
 assert 'recover-update' in mac_pre
 assert 'launchctl bootout' in mac_pre
 assert 'previous' in mac_pre and 'updates' in mac_pre
