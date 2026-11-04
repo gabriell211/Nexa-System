@@ -23,7 +23,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
+      - name: Verify preinstalled Android SDK
+        run: |
+          test -n "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          test -d "${ANDROID_HOME:-${ANDROID_SDK_ROOT}}/platforms"
+          java -version
+          echo "Android SDK is available on GitHub Ubuntu runner"
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Check router and type safety
