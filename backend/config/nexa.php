@@ -2,6 +2,11 @@
 declare(strict_types=1);
 
 return [
+    'collector_updates' => [
+        // Trusted release metadata only: never embed the private signing key.
+        // Missing manifest disables updates (HTTP 204).
+        'manifest_json' => (string) env('NEXA_COLLECTOR_UPDATE_MANIFEST_JSON', ''),
+    ],
     'collector_mail_inbox' => [
         'enabled' => (bool) env('NEXA_COLLECTOR_MAIL_INBOX_ENABLED', false),
         'address' => (string) env('NEXA_COLLECTOR_MAIL_INBOX_ADDRESS', ''),

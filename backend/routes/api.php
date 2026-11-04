@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\V1\AuditEntryController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BrowserAuthController;
 use App\Http\Controllers\Api\V1\CollectorIngestController;
+use App\Http\Controllers\Api\V1\CollectorUpdateManifestController;
 use App\Http\Controllers\Api\V1\CollectorHeartbeatController;
 use App\Http\Controllers\Api\V1\CollectorIdentityController;
 use App\Http\Controllers\Api\V1\CollectorAgentController;
@@ -191,6 +192,10 @@ $registerBackoffice = static function (): void {
 
 Route::prefix('v1')->group(function () use ($registerBackoffice): void {
     Route::post('/webhooks/resend', ResendWebhookController::class)->middleware('throttle:60,1');
+    // Public metadata only. The installer must verify the signed bundle
+    // with a pinned Tauri public key; this route never serves private credentials.
+    Route::get('/collector/updates/{target}/{arch}/{currentVersion}', CollectorUpdateManifestController::class)
+        ->middleware('throttle:60,1');
     Route::post('/collector/ingest', CollectorIngestController::class)->middleware(['nexa.bearer','throttle:120,1']);
     Route::post('/collector/heartbeat', CollectorHeartbeatController::class)->middleware(['nexa.bearer','throttle:120,1']);
     Route::post('/collector/identity', CollectorIdentityController::class)->middleware(['nexa.bearer','throttle:10,1']);
