@@ -61,3 +61,11 @@ A autenticação mobile usa **`login_name` + senha** (não e-mail), tokens Sanct
 - Testes reais em Android/iOS, assinatura com caneta e exigências jurídicas específicas do cliente.
 
 **Assinatura eletrônica simples:** comprova o aceite registrado no sistema e preserva evidência, mas não constitui automaticamente assinatura qualificada ICP-Brasil. A identidade e a autorização do signatário devem ser conferidas pelo técnico.
+
+## Navegação e build Android v0.2.0
+
+Expo Router 6: login público e páginas protegidas de chamados, detalhe da OS, solicitação de peças e assinatura. O Stack nativo controla o botão Voltar e os links diretos. A API Laravel continua sendo a autoridade de acesso por token e OS atribuída.
+
+npm install; npm run typecheck; npm run routes:check; npm run bundle:android.
+
+O perfil EAS 'preview' gera APK instalável para testes e 'production' gera AAB. Uma publicação assinada precisa de credenciais Android gerenciadas; APK de teste não deve ser distribuído como release final.

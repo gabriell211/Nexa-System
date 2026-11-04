@@ -3,10 +3,11 @@
     "name": "Nexa Técnico",
     "slug": "nexa-tecnico",
     "scheme": "nexa-tecnico",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "plugins": [
+      "expo-router",
       "expo-secure-store",
       [
         "expo-splash-screen",
@@ -20,7 +21,8 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.nexasystem.tecnico"
+      "bundleIdentifier": "com.nexasystem.tecnico",
+      "buildNumber": "2"
     },
     "android": {
       "package": "com.nexasystem.tecnico",
@@ -28,7 +30,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#071B40"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "versionCode": 2
     },
     "icon": "./assets/app-icon.png",
     "backgroundColor": "#F3F7FD",
