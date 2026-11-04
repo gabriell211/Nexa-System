@@ -11,6 +11,8 @@ use nexa_collector_core::{
 };
 use serde::Serialize;
 use std::sync::Mutex;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use std::io::Write;
 use tauri_plugin_updater::{Update, UpdaterExt};
 use std::env;
 
@@ -527,8 +529,31 @@ struct SignedUpdateInfo {
     version: String,
 }
 
-/// This is enabled only in a build carrying the release signing public key.
-/// The unsigned development installer cannot fetch or execute remote binaries.
+#[cfg(target_os = "linux")]
+fn installed_linux_package_type() -> Result<&'static str, String> {
+    for name in ["nexa-collector-console", "nexa-collector"] {
+        let result = std::process::Command::new("/usr/bin/dpkg-query")
+            .arg("-W")
+            .arg("-f=${Status}")
+            .arg(name)
+            .output();
+        if result.is_ok_and(|output| output.status.success()
+            && String::from_utf8_lossy(&output.stdout).contains("install ok installed")) {
+            return Ok("linux-deb");
+        }
+    }
+    for name in ["nexa-collector-console", "nexa-collector"] {
+        let result = std::process::Command::new("/usr/bin/rpm")
+            .arg("-q").arg(name).output();
+        if result.is_ok_and(|output| output.status.success()) {
+            return Ok("linux-rpm");
+        }
+    }
+    Err("Não foi encontrada uma instalação nativa Nexa DEB/RPM homologada.".into())
+}
+
+/// A release build must carry the real public key and an explicit gate.
+/// Unsigned test builds cannot install an untrusted remote executable.
 #[tauri::command]
 async fn check_signed_update(
     app: tauri::AppHandle,
@@ -537,25 +562,28 @@ async fn check_signed_update(
     if option_env!("NEXA_SIGNED_UPDATER_ENABLED") != Some("1") {
         return Err("Este instalador não contém a chave pública da distribuição assinada.".into());
     }
-    let available = app.updater().map_err(|_| "Atualizador assinado indisponível.".to_owned())?
-        .check().await.map_err(|_| "Falha ao consultar atualizações assinadas.".to_owned())?;
-    let info = available.as_ref().map(|v| SignedUpdateInfo { version: v.version.clone() });
+    #[cfg(target_os = "linux")]
+    let updater = app.updater_builder()
+        .target(installed_linux_package_type()?)
+        .build().map_err(|_| "Atualizador nativo Linux indisponível.".to_owned())?;
+    #[cfg(not(target_os = "linux"))]
+    let updater = app.updater().map_err(|_| "Atualizador assinado indisponível.".to_owned())?;
+
+    let available = updater.check().await
+        .map_err(|_| "Falha ao consultar atualizações assinadas.".to_owned())?;
+    let info = available.as_ref().map(|update| SignedUpdateInfo { version: update.version.clone() });
     let mut guard = state.0.lock().map_err(|_| "Atualizador ocupado.".to_owned())?;
     *guard = available;
     Ok(info)
 }
 
-/// Only the NSIS updater can install the complete GUI and service together
-/// with the current packaging. Unix native package updates use the signed
-/// DEB/RPM and PKG channels instead: a Tauri app archive does NOT update
-/// a privileged systemd/launchd service.
+/// Verified package bytes are never provided by JavaScript. Download uses
+/// the official plugin's signature and version binding checks before the OS
+/// package manager receives an immutable private temporary file.
 #[tauri::command]
 async fn install_signed_update(
     state: tauri::State<'_, SignedUpdateState>,
 ) -> Result<(), String> {
-    if !cfg!(windows) {
-        return Err("O serviço Unix deve ser atualizado por pacote nativo assinado (DEB/RPM ou PKG).".into());
-    }
     if option_env!("NEXA_SIGNED_UPDATER_ENABLED") != Some("1") {
         return Err("Atualizador remoto desabilitado nesta edição.".into());
     }
@@ -563,8 +591,76 @@ async fn install_signed_update(
         let mut guard = state.0.lock().map_err(|_| "Atualizador ocupado.".to_owned())?;
         guard.take().ok_or_else(|| "Verifique se existe uma atualização antes de instalar.".to_owned())?
     };
-    update.download_and_install(|_, _| {}, || {})
-        .await.map_err(|_| "Falha ao verificar ou instalar o pacote assinado; nenhuma leitura foi apagada.".to_owned())
+
+    #[cfg(windows)]
+    {
+        update.download_and_install(|_, _| {}, || {}).await
+            .map_err(|_| "Assinatura inválida ou instalação NSIS não concluída.".to_owned())
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        const MAX_PACKAGE: usize = 400 * 1024 * 1024;
+        let bytes = update.download(|_, _| {}, || {}).await
+            .map_err(|_| "Download ou assinatura de atualização inválida.".to_owned())?;
+        if bytes.is_empty() || bytes.len() > MAX_PACKAGE {
+            return Err("Pacote de atualização está vazio ou excede 400 MiB.".into());
+        }
+
+        #[cfg(target_os = "linux")]
+        let suffix = if installed_linux_package_type()? == "linux-deb" { ".deb" } else { ".rpm" };
+        #[cfg(target_os = "macos")]
+        let suffix = ".pkg";
+
+        let mut file = tempfile::Builder::new()
+            .prefix("nexa-signed-update-")
+            .suffix(suffix)
+            .tempfile()
+            .map_err(|_| "Armazenamento temporário seguro indisponível.".to_owned())?;
+        file.write_all(&bytes).and_then(|_| file.flush())
+            .map_err(|_| "Falha ao gravar pacote verificado.".to_owned())?;
+        drop(bytes);
+
+        #[cfg(target_os = "linux")]
+        let result = {
+            let binary = installed_linux_package_type()?;
+            let mut process = std::process::Command::new("/usr/bin/pkexec");
+            if binary == "linux-deb" {
+                process.arg("/usr/bin/dpkg").arg("-i");
+            } else {
+                process.arg("/usr/bin/rpm").arg("-Uvh").arg("--");
+            }
+            process.arg(file.path()).status()
+        };
+
+        #[cfg(target_os = "macos")]
+        let result = {
+            // For PKG we require both a Tauri signature and Gatekeeper's
+            // Developer ID Installer signature; unsigned PKGs are rejected.
+            let apple_signature = std::process::Command::new("/usr/sbin/spctl")
+                .args(["--assess", "--type", "install"])
+                .arg(file.path())
+                .status()
+                .map_err(|_| "Gatekeeper indisponível.".to_owned())?;
+            if !apple_signature.success() {
+                return Err("A assinatura Apple Installer não é confiável.".into());
+            }
+            let installer = r#"on run argv
+set packagePath to item 1 of argv
+do shell script "/usr/sbin/installer -pkg " & quoted form of packagePath & " -target /" with administrator privileges
+end run"#;
+            std::process::Command::new("/usr/bin/osascript")
+                .args(["-e", installer, "--"])
+                .arg(file.path())
+                .status()
+        };
+
+        let status = result.map_err(|_| "Instalador ou autorização administrativa indisponível.".to_owned())?;
+        if !status.success() {
+            return Err("A instalação nativa falhou; consulte o checkpoint protegido de rollback.".into());
+        }
+        Ok(())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

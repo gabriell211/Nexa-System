@@ -1121,7 +1121,7 @@ export default function App() {
                   </button>
                 )}
                 {updateMessage && <div role="status" className="notice">{updateMessage}</div>}
-                <p>Em Linux e macOS, a atualização do serviço deve usar um pacote nativo assinado, não somente a atualização do aplicativo gráfico.</p>
+                <p>Windows usa NSIS assinado. Linux exige DEB/RPM assinado. macOS exige PKG assinado pelo Tauri e pelo Apple Developer ID. Os serviços são coordenados pelos instaladores e os dados locais permanecem separados.</p>
               </div>
               <div className="notice">Tokens de acesso e comunidades SNMP nunca são carregados ou exibidos nesta interface.</div>
             </section>
