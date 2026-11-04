@@ -3,6 +3,7 @@
 
 Var NexaId
 Var NexaToken
+Var NexaUpgrade
 Var NexaExistingBinding
 Var NexaApi
 Var NexaMode
@@ -349,18 +350,47 @@ FunctionEnd
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
-  ; Refuse to install over a service that is running, marked for deletion,
-  ; or cannot be inspected. Never overwrite a customer's existing binding.
+  ; A privileged package upgrade snapshots only executable code. The
+  ; customer's config, keys and encrypted SQLite/WAL are never copied.
+  StrCpy $NexaUpgrade "0"
   nsExec::ExecToStack '"$SYSDIR\sc.exe" query NexaCollector'
   Pop $0
   Pop $1
   ${If} $0 == "0"
-    MessageBox MB_ICONSTOP|MB_OK "O servico NexaCollector ja existe. Desinstale a versao anterior primeiro. Os dados do cliente serao preservados." /SD IDOK
-    SetErrorLevel 10
-    !insertmacro NEXA_DIAGNOSTIC 10
-    IfSilent 0 +2
-      Quit
-    Abort "Existing NexaCollector Windows service"
+    StrCpy $NexaUpgrade "1"
+    IfFileExists "$INSTDIR\nexa-collector-daemon.exe" 0 nexa_no_previous_daemon
+    CreateDirectory "$COMMONPROGRAMDATA\NexaCollector\updates"
+    ExecWait '"$SYSDIR\icacls.exe" "$COMMONPROGRAMDATA\NexaCollector\updates" /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F"' $0
+    ${If} $0 != "0"
+      MessageBox MB_ICONSTOP|MB_OK "Falha ao proteger o backup da versao anterior." /SD IDOK
+      SetErrorLevel 31
+      !insertmacro NEXA_DIAGNOSTIC 31
+      IfSilent 0 +2
+        Quit
+      Abort "Protected rollback storage unavailable"
+    ${EndIf}
+    CopyFiles /SILENT "$INSTDIR\nexa-collector-daemon.exe" "$COMMONPROGRAMDATA\NexaCollector\updates"
+    IfFileExists "$COMMONPROGRAMDATA\NexaCollector\updates\nexa-collector-daemon.exe" 0 nexa_no_previous_daemon
+    ExecWait '"$SYSDIR\sc.exe" stop NexaCollector' $0
+    ${If} $0 != "0"
+    ${AndIf} $0 != "1062"
+      MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel parar o servico anterior para atualizacao." /SD IDOK
+      SetErrorLevel 32
+      !insertmacro NEXA_DIAGNOSTIC 32
+      IfSilent 0 +2
+        Quit
+      Abort "Cannot stop existing service safely"
+    ${EndIf}
+    Sleep 3000
+    Goto nexa_upgrade_prepared
+    nexa_no_previous_daemon:
+      MessageBox MB_ICONSTOP|MB_OK "Nao ha executavel anterior para rollback. Atualizacao bloqueada." /SD IDOK
+      SetErrorLevel 33
+      !insertmacro NEXA_DIAGNOSTIC 33
+      IfSilent 0 +2
+        Quit
+      Abort "Previous daemon missing; rollback unavailable"
+    nexa_upgrade_prepared:
   ${ElseIf} $0 != "1060"
     MessageBox MB_ICONSTOP|MB_OK "Nao foi possivel verificar o servico NexaCollector (codigo $0).$\r$\n$1" /SD IDOK
     SetErrorLevel 11
@@ -506,6 +536,9 @@ FunctionEnd
       Quit
     Abort "Nexa Collector protected request failure"
   nexa_provisioned:
+  ${If} $NexaUpgrade == "1"
+    Goto nexa_installed
+  ${EndIf}
 
   ; Fail closed when SCM rejects the request. Collect the operating system
   ; error code and sc.exe output so support can distinguish access denied,
@@ -583,7 +616,14 @@ FunctionEnd
   Pop $0
   Pop $1
   ${If} $0 != "0"
-    ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $2
+    ${If} $NexaUpgrade == "1"
+      CopyFiles /SILENT "$COMMONPROGRAMDATA\NexaCollector\updates\nexa-collector-daemon.exe" "$INSTDIR"
+      nsExec::ExecToStack '"$SYSDIR\sc.exe" start NexaCollector'
+      Pop $2
+      Pop $3
+    ${Else}
+      ExecWait '"$SYSDIR\sc.exe" delete NexaCollector' $2
+    ${EndIf}
     MessageBox MB_ICONSTOP|MB_OK "O Collector foi configurado, mas o servico nao iniciou (codigo $0).$\r$\n$1" /SD IDOK
     SetErrorLevel 25
     !insertmacro NEXA_DIAGNOSTIC 25
