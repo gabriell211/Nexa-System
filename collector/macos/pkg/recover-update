@@ -1,0 +1,41 @@
+#!/bin/bash
+# Root-only rescue for failed/interrupted signed PKG upgrades.
+# Previous versions are restored, never the encrypted SQLite/WAL or keys.
+set -euo pipefail
+umask 077
+base='/Library/Application Support/NexaCollector'
+transaction="$base/updates"
+prior="$transaction/previous"
+app='/Applications/Nexa Collector.app'
+daemon='/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon'
+staged="$base/launchd/com.nexa.collector.plist"
+loaded='/Library/LaunchDaemons/com.nexa.collector.plist'
+service='system/com.nexa.collector'
+[[ "$(id -u)" -eq 0 ]] || exit 1
+[[ -f "$transaction/pending" && -f "$prior/nexa-collector-daemon" ]] ||
+    { echo 'No complete previous-version recovery checkpoint found' >&2; exit 1; }
+[[ ! -L "$transaction" && ! -L "$prior" && ! -L "$app" &&
+   ! -L "$daemon" && ! -L "$loaded" ]] || exit 1
+[[ "$(/usr/bin/stat -f '%Su' "$prior")" == root ]] || exit 1
+
+/bin/launchctl bootout "$service" >/dev/null 2>&1 || true
+if [[ -d "$prior/Nexa Collector.app" ]]; then
+    if [[ -d "$app" ]]; then /bin/rm -R "$app"; fi
+    /usr/bin/ditto "$prior/Nexa Collector.app" "$app"
+fi
+/usr/bin/ditto "$prior/nexa-collector-daemon" "$daemon"
+/bin/chmod 0755 "$daemon"
+if [[ -f "$prior/staged.plist" ]]; then
+    /usr/bin/ditto "$prior/staged.plist" "$staged"
+fi
+if [[ -f "$prior/active.plist" ]]; then
+    /usr/bin/install -o root -g wheel -m 0644 "$prior/active.plist" "$loaded"
+fi
+if [[ "$(<"$prior/service-state")" == active ]]; then
+    [[ -f "$loaded" ]] || { echo 'Active prior launchd configuration is missing' >&2; exit 1; }
+    /bin/launchctl bootstrap system "$loaded"
+    /bin/sleep 3
+    /bin/launchctl print "$service" >/dev/null
+fi
+/bin/rm -f "$transaction/pending"
+echo 'Previous Nexa Collector version restored; customer data retained.'

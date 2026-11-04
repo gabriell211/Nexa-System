@@ -42,12 +42,19 @@ assert "rm -rf" not in linux_pre + linux_post
 mac_pre = (root / "collector/macos/pkg/preinstall").read_text()
 mac_post = (root / "collector/macos/pkg/postinstall").read_text()
 assert "launchctl print system/com.nexa.collector" in mac_pre
-assert "Refusing unattended overwrite" in mac_pre
+assert 'recover-update' in mac_pre
+assert 'launchctl bootout' in mac_pre
+assert 'previous' in mac_pre and 'updates' in mac_pre
+assert 'rollback' in mac_post
 assert "dscl . -create /Users/_nexacollector" in mac_post
 assert "dscl . -create /Groups/_nexacollector" in mac_post
 assert 'if [[ ! -e "$base/config.json" ]]' in mac_post
 assert "launchctl bootstrap" not in mac_post
 assert "rm -rf" not in mac_post + mac_pre
+mac_recover = (root / "collector/macos/pkg/recover-update").read_text()
+assert 'launchctl bootstrap' in mac_recover
+assert 'nexa-collector-daemon' in mac_recover
+assert 'queue.sqlite' not in mac_recover + mac_post + mac_pre
 assert "chmod 0644" in mac_post
 assert "chmod 0755" in mac_post
 plist = plistlib.loads((root / "collector/macos/com.nexa.collector.plist").read_bytes())
@@ -66,6 +73,6 @@ assert "com.nexa.collector.plist" in build_script
 assert "config.example.json" in build_script
 for f in ("collector/linux/package/preinstall.sh", "collector/linux/package/postinstall.sh", "collector/linux/package/preremove.sh"):
     subprocess.run(["sh", "-n", str(root / f)], check=True)
-for f in ("collector/macos/pkg/preinstall", "collector/macos/pkg/postinstall", "collector/macos/build-pkg.sh"):
+for f in ("collector/macos/pkg/preinstall", "collector/macos/pkg/postinstall", "collector/macos/pkg/recover-update", "collector/macos/build-pkg.sh"):
     subprocess.run(["bash", "-n", str(root / f)], check=True)
 print("Linux DEB/RPM and macOS PKG native installer static safety checks passed.")

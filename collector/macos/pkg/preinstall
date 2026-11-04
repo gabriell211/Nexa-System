@@ -1,12 +1,57 @@
 #!/bin/bash
-# Refuse accidental replacement of a live service and its encrypted state.
+# Transactional package upgrade. Never back up, move or rewrite customer data.
 set -euo pipefail
+umask 077
+
 base='/Library/Application Support/NexaCollector'
-daemon='/Library/PrivilegedHelperTools/NexaCollector'
-plist='/Library/LaunchDaemons/com.nexa.collector.plist'
-if /bin/launchctl print system/com.nexa.collector >/dev/null 2>&1 ||
-   [[ -e "$base" || -L "$base" || -e "$daemon" || -L "$daemon" || -e "$plist" || -L "$plist" ]]; then
-  echo "Nexa Collector already has a service or customer state. Refusing unattended overwrite; preserve and migrate before upgrading." >&2
-  exit 1
+transaction="$base/updates"
+prior="$transaction/previous"
+app='/Applications/Nexa Collector.app'
+daemon='/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon'
+staged_plist="$base/launchd/com.nexa.collector.plist"
+active_plist='/Library/LaunchDaemons/com.nexa.collector.plist'
+service='system/com.nexa.collector'
+
+[[ "$(id -u)" -eq 0 ]] || { echo 'Installer must run as root' >&2; exit 1; }
+[[ ! -L "$base" && ! -L "$transaction" && ! -L "$app" &&
+   ! -L "$daemon" && ! -L "$staged_plist" && ! -L "$active_plist" ]] ||
+    { echo 'Refusing unsafe symbolic link in collector installation' >&2; exit 1; }
+
+[[ ! -e "$transaction/pending" ]] || {
+    echo 'Previous update is incomplete. Run the protected recovery utility before reinstalling.' >&2
+    exit 1
+}
+
+# For a first install, preserve any legacy customer state and let postinstall
+# provision the service user. Do not auto-start an unconfigured daemon.
+[[ -f "$daemon" && -x "$daemon" ]] || exit 0
+
+/bin/mkdir -p "$prior"
+/usr/sbin/chown root:wheel "$transaction" "$prior"
+/bin/chmod 0700 "$transaction" "$prior"
+[[ "$(/usr/bin/stat -f '%Su' "$prior")" = root ]] || exit 1
+
+/usr/bin/ditto "$daemon" "$prior/nexa-collector-daemon"
+if [[ -d "$app" ]]; then
+    /usr/bin/ditto "$app" "$prior/Nexa Collector.app"
 fi
-exit 0
+if [[ -f "$staged_plist" ]]; then
+    /usr/bin/ditto "$staged_plist" "$prior/staged.plist"
+fi
+if [[ -f "$active_plist" ]]; then
+    /usr/bin/ditto "$active_plist" "$prior/active.plist"
+fi
+/usr/bin/install -m 0700 "$(dirname "$0")/recover-update" "$transaction/recover-update"
+if /bin/launchctl print "$service" >/dev/null 2>&1; then
+    echo active > "$prior/service-state"
+else
+    echo inactive > "$prior/service-state"
+fi
+echo pending > "$transaction/pending"
+if [[ "$(<"$prior/service-state")" == active ]]; then
+    if ! /bin/launchctl bootout "$service"; then
+        "$transaction/recover-update" || true
+        echo 'Could not stop previous collector; upgrade cancelled' >&2
+        exit 1
+    fi
+fi

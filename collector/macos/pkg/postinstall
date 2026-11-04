@@ -51,6 +51,33 @@ dscl . -read /Groups/_nexacollector >/dev/null
 if [[ ! -e "$base/config.json" ]]; then
   /usr/bin/install -o root -g _nexacollector -m 0640 "$base/package/config.example.json" "$base/config.json"
 fi
-# The service is NOT registered or started here. Activation follows provision.
-echo 'Nexa Collector Console installed. Provision the client credentials and activate with the documented launchd procedure.'
+# A staged upgrade must restore the previous launchd state. A brand-new
+# installation remains unstarted until its customer has provisioned secrets.
+transaction="$base/updates"
+if [[ -f "$transaction/pending" ]]; then
+  previous_state="$(cat "$transaction/previous/service-state" 2>/dev/null || true)"
+  rollback() {
+    local status=$?
+    trap - ERR
+    if [[ "$status" -ne 0 ]]; then
+      echo "Collector upgrade health check failed; restoring previous version" >&2
+      "$transaction/recover-update" || echo 'Recovery failed; protected checkpoint retained' >&2
+    fi
+    exit "$status"
+  }
+  trap rollback ERR
+  if [[ "$previous_state" == active ]]; then
+    /usr/bin/install -o root -g wheel -m 0644 "$plist" '/Library/LaunchDaemons/com.nexa.collector.plist'
+    /bin/launchctl bootstrap system '/Library/LaunchDaemons/com.nexa.collector.plist'
+    /bin/sleep 3
+    /bin/launchctl print system/com.nexa.collector >/dev/null
+  fi
+  /bin/rm -f "$transaction/pending" "$transaction/previous/service-state"
+  # Keep the last known-good binaries available for manual recovery;
+  # remove only after a future explicitly verified maintenance cycle.
+  trap - ERR
+  echo 'Collector updated; previous customer data and launchd state preserved.'
+else
+  echo 'Nexa Collector installed. Provision credentials before activating launchd.'
+fi
 exit 0

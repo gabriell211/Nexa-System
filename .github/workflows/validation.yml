@@ -514,6 +514,11 @@ jobs:
           sudo test -x "/Library/PrivilegedHelperTools/NexaCollector/nexa-collector-daemon"
           sudo test -f "/Library/Application Support/NexaCollector/config.json"
           sudo test -f "/Library/Application Support/NexaCollector/package/activate.sh"
+          sudo test -f "/Library/Application Support/NexaCollector/package/recover-update"
+          # Reinstall the same package: service remains unprovisioned, data retained.
+          sudo sh -c 'echo preserved > "/Library/Application Support/NexaCollector/data/upgrade-sentinel"'
+          sudo installer -pkg "$pkg" -target /
+          test "$(sudo cat "/Library/Application Support/NexaCollector/data/upgrade-sentinel")" = preserved
           test "$(sudo stat -f '%Sp %Su:%Sg' '/Library/Application Support/NexaCollector/config.json')" = '-rw-r----- root:_nexacollector'
           if test -r "/Library/Application Support/NexaCollector/config.json"; then
             echo 'Collector configuration must not be readable by unprivileged users' >&2
