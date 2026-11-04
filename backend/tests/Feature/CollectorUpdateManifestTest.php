@@ -19,7 +19,7 @@ final class CollectorUpdateManifestTest extends TestCase
         config()->set('nexa.collector_updates.manifest_json', '');
         $this->getJson(self::URL.'windows/x86_64/0.1.6')
             ->assertNoContent()
-            ->assertHeader('Cache-Control', 'no-store');
+            ->assertHeader('Cache-Control', 'no-store, private');
     }
 
     public function test_valid_release_is_returned_only_to_compatible_older_installations(): void
