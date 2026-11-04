@@ -135,6 +135,7 @@ type CollectorSnapshot = {
 };
 type Tab = "overview" | "printers" | "tools" | "quarantine" | "watchdog" | "settings";
 type ToolMode = "network" | "usb" | null;
+type SignedUpdateInfo = { version: string };
 
 function formatDate(value: string | null): string {
   if (!value) return "Nenhuma execução registrada";
@@ -171,6 +172,10 @@ function usbCatalogStatus(candidate: UsbDeviceCandidate): string {
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("overview");
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateInstalling, setUpdateInstalling] = useState(false);
+  const [signedUpdate, setSignedUpdate] = useState<SignedUpdateInfo | null>(null);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const [toolMode, setToolMode] = useState<ToolMode>(null);
   const [snapshot, setSnapshot] = useState<CollectorSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
@@ -210,6 +215,38 @@ export default function App() {
   const [broadcastBusy, setBroadcastBusy] = useState(false);
   const [broadcastError, setBroadcastError] = useState<string | null>(null);
   const [broadcastNotice, setBroadcastNotice] = useState<string | null>(null);
+  const checkSignedUpdate = useCallback(async () => {
+    setUpdateChecking(true);
+    setUpdateMessage(null);
+    setSignedUpdate(null);
+    try {
+      const candidate = await invoke<SignedUpdateInfo | null>("check_signed_update");
+      setSignedUpdate(candidate);
+      setUpdateMessage(candidate
+        ? `Nova versão assinada disponível: ${candidate.version}`
+        : "Nenhuma atualização assinada disponível.");
+    } catch (error) {
+      setUpdateMessage(String(error));
+    } finally {
+      setUpdateChecking(false);
+    }
+  }, []);
+
+  const installSignedUpdate = useCallback(async () => {
+    if (!signedUpdate || updateInstalling) return;
+    if (!window.confirm(`Instalar o Nexa Collector ${signedUpdate.version}? A coleta será reiniciada com segurança.`)) return;
+    setUpdateInstalling(true);
+    setUpdateMessage("Verificando assinatura e instalando a atualização...");
+    try {
+      await invoke("install_signed_update");
+      setUpdateMessage("Instalação concluída. Reinicie o Console se necessário.");
+    } catch (error) {
+      setUpdateMessage(String(error));
+    } finally {
+      setUpdateInstalling(false);
+    }
+  }, [signedUpdate, updateInstalling]);
+
   const discover = useCallback(async () => {
     setDiscovering(true);
     setDiscoveryError(null);
@@ -1067,6 +1104,24 @@ export default function App() {
                 {scheduleError && <div role="alert" className="notice error">{scheduleError}</div>}
                 {scheduleNotice && <div role="status" className="notice">{scheduleNotice}</div>}
                 <p>Permissões locais do serviço são obrigatórias. No Windows, a edição da agenda permanece desabilitada nesta etapa. Desativar a agenda impede novas varreduras, mas uma busca já iniciada pode concluir suas conexões.</p>
+              </div>
+              <div className="discovery-settings">
+                <h3>Atualizações assinadas</h3>
+                <p>Somente instaladores com assinatura verificada podem ser aplicados. Na versão Windows, o atualizador usa o instalador NSIS com proteção do serviço e da fila SQLite.</p>
+                <button type="button" className="primary-button" onClick={() => void checkSignedUpdate()}
+                  disabled={updateChecking || updateInstalling} aria-label="Verificar novas versões assinadas do Nexa Collector">
+                  <RefreshCcw size={16} aria-hidden="true" />
+                  {updateChecking ? "Verificando assinatura..." : "Verificar atualizações"}
+                </button>
+                {signedUpdate && (
+                  <button type="button" onClick={() => void installSignedUpdate()}
+                    disabled={updateInstalling || updateChecking} className="primary-button">
+                    <ShieldCheck size={16} aria-hidden="true" />
+                    {updateInstalling ? "Instalando..." : `Instalar ${signedUpdate.version}`}
+                  </button>
+                )}
+                {updateMessage && <div role="status" className="notice">{updateMessage}</div>}
+                <p>Em Linux e macOS, a atualização do serviço deve usar um pacote nativo assinado, não somente a atualização do aplicativo gráfico.</p>
               </div>
               <div className="notice">Tokens de acesso e comunidades SNMP nunca são carregados ou exibidos nesta interface.</div>
             </section>

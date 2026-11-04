@@ -15,3 +15,4 @@ chrono = "0.4"
 nexa-collector-core = { path = "../../core" }
 serde = { version = "1", features = ["derive"] }
 tauri = "2.12.0"
+tauri-plugin-updater = "=2.12.0"

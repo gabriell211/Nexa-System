@@ -1,0 +1,37 @@
+name: Resolve signed updater locks
+on:
+  push:
+    branches: [main]
+    paths:
+      - collector/console/src-tauri/Cargo.toml
+      - collector/console/package.json
+permissions:
+  contents: read
+jobs:
+  resolve-locks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Resolve Rust updater dependency without upgrading unrelated crates
+        run: cargo metadata --manifest-path collector/Cargo.toml --format-version 1 > /dev/null
+      - name: Resolve npm dependencies
+        working-directory: collector/console
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Emit public lockfiles for deterministic repository sync
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for marker, path in (
+              ('CARGO', Path('collector/Cargo.lock')),
+              ('NPM', Path('collector/console/package-lock.json')),
+          ):
+              print(f'NEXA_LOCK_{marker}_BEGIN', flush=True)
+              for line in path.read_text().splitlines():
+                  print(f'NEXA_LOCK_{marker}_LINE:{line}', flush=True)
+              print(f'NEXA_LOCK_{marker}_END', flush=True)
+          PY

@@ -10,6 +10,8 @@ use nexa_collector_core::{
     read_config, CommunicationMode, DeliveryDiagnostics, DiscoveryReport, DiscoverySchedule, Outbox, QuarantinedReading, SqliteFootprint,
 };
 use serde::Serialize;
+use std::sync::Mutex;
+use tauri_plugin_updater::{Update, UpdaterExt};
 use std::env;
 
 #[cfg(windows)]
@@ -517,10 +519,65 @@ async fn printer_action(command: FleetCommand) -> Result<(), String> {
     }
 }
 
+#[derive(Default)]
+struct SignedUpdateState(Mutex<Option<Update>>);
+
+#[derive(Serialize)]
+struct SignedUpdateInfo {
+    version: String,
+}
+
+/// This is enabled only in a build carrying the release signing public key.
+/// The unsigned development installer cannot fetch or execute remote binaries.
+#[tauri::command]
+async fn check_signed_update(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SignedUpdateState>,
+) -> Result<Option<SignedUpdateInfo>, String> {
+    if option_env!("NEXA_SIGNED_UPDATER_ENABLED") != Some("1") {
+        return Err("Este instalador não contém a chave pública da distribuição assinada.".into());
+    }
+    let available = app.updater().map_err(|_| "Atualizador assinado indisponível.".to_owned())?
+        .check().await.map_err(|_| "Falha ao consultar atualizações assinadas.".to_owned())?;
+    let info = available.as_ref().map(|v| SignedUpdateInfo { version: v.version.clone() });
+    let mut guard = state.0.lock().map_err(|_| "Atualizador ocupado.".to_owned())?;
+    *guard = available;
+    Ok(info)
+}
+
+/// Only the NSIS updater can install the complete GUI and service together
+/// with the current packaging. Unix native package updates use the signed
+/// DEB/RPM and PKG channels instead: a Tauri app archive does NOT update
+/// a privileged systemd/launchd service.
+#[tauri::command]
+async fn install_signed_update(
+    state: tauri::State<'_, SignedUpdateState>,
+) -> Result<(), String> {
+    if !cfg!(windows) {
+        return Err("O serviço Unix deve ser atualizado por pacote nativo assinado (DEB/RPM ou PKG).".into());
+    }
+    if option_env!("NEXA_SIGNED_UPDATER_ENABLED") != Some("1") {
+        return Err("Atualizador remoto desabilitado nesta edição.".into());
+    }
+    let update = {
+        let mut guard = state.0.lock().map_err(|_| "Atualizador ocupado.".to_owned())?;
+        guard.take().ok_or_else(|| "Verifique se existe uma atualização antes de instalar.".to_owned())?
+    };
+    update.download_and_install(|_, _| {}, || {})
+        .await.map_err(|_| "Falha ao verificar ou instalar o pacote assinado; nenhuma leitura foi apagada.".to_owned())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_snapshot, search_reference_models, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate, save_discovery_schedule, printer_action, discover_broadcast_printers])
+        .manage(SignedUpdateState::default())
+        .setup(|app| {
+            if option_env!("NEXA_SIGNED_UPDATER_ENABLED") == Some("1") {
+                app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+            }
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![get_snapshot, search_reference_models, discover_local_printers, discover_authorized_printers, discover_usb_printers, read_canon_drc225_meter, review_local_candidate, save_discovery_schedule, printer_action, discover_broadcast_printers, check_signed_update, install_signed_update])
         .run(tauri::generate_context!())
         .expect("failed to start Nexa Collector Console");
 }
