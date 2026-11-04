@@ -18,9 +18,10 @@ WORKDIR /app
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-interaction --prefer-dist --no-scripts --no-progress --optimize-autoloader
 COPY . .
-RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
+RUN sh -n start.sh \
+    && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
     && composer dump-autoload --no-dev --optimize && chmod +x artisan \
     && chown -R www-data:www-data storage bootstrap/cache
 EXPOSE 6467
 USER www-data
-CMD ["sh","-c","php artisan nexa:migrate-on-start && exec php artisan serve --host=0.0.0.0 --port=\"${PORT:-6467}\""]
+CMD ["sh", "./start.sh"]
