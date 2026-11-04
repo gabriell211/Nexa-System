@@ -1,6 +1,6 @@
 {
   "collector_id": "00000000-0000-4000-8000-000000000000",
-  "api_url": "https://nexa.example.com",
+  "api_url": "https://nexa-system-5nkp.vercel.app",
   "interval_seconds": 1800,
   "heartbeat_interval_seconds": 60,
   "max_pending_samples": 50000,
