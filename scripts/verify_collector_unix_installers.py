@@ -13,6 +13,7 @@ assert set(bundle["linux"]) == {"deb", "rpm"}
 for flavor in ("deb", "rpm"):
     cfg = bundle["linux"][flavor]
     assert cfg["files"]["/usr/lib/nexa-collector/nexa-collector-daemon"] == "binaries/nexa-collector-daemon-x86_64-unknown-linux-gnu"
+    assert cfg["preInstallScript"] == "../../linux/package/preinstall.sh"
     assert cfg["postInstallScript"] == "../../linux/package/postinstall.sh"
     assert cfg["preRemoveScript"] == "../../linux/package/preremove.sh"
     assert "nexa-collector.service" in str(cfg["files"])
@@ -25,12 +26,16 @@ assert "StateDirectory=nexa-collector" in package_unit
 assert "ProtectSystem=strict" in package_unit
 for secret in ("NEXA_COLLECTOR_TOKEN", "NEXA_COLLECTOR_DB_KEY_HEX", "NEXA_SNMP_COMMUNITY"):
     assert "LoadCredential=" + secret + ":" in package_unit
+linux_preinstall = (root / "collector/linux/package/preinstall.sh").read_text()
 linux_post = (root / "collector/linux/package/postinstall.sh").read_text()
 linux_pre = (root / "collector/linux/package/preremove.sh").read_text()
 assert "if [ ! -e /etc/nexa-collector/config.json ]" in linux_post
 assert "useradd --system" in linux_post
 assert "systemctl daemon-reload" in linux_post
-assert "systemctl try-restart" in linux_post
+assert "systemctl start" in linux_post
+assert 'systemctl stop "$service"' in linux_preinstall
+assert "daemon.previous" in linux_preinstall and "daemon.previous" in linux_post
+assert "collector/queue.sqlite" not in linux_preinstall + linux_post
 assert "systemctl enable --now" not in linux_post.split('echo "')[0]
 assert "systemctl disable --now" in linux_pre
 assert "rm -rf" not in linux_pre + linux_post
@@ -59,7 +64,7 @@ assert "Nexa Collector.app" in build_script
 assert "nexa-collector-daemon" in build_script
 assert "com.nexa.collector.plist" in build_script
 assert "config.example.json" in build_script
-for f in ("collector/linux/package/postinstall.sh", "collector/linux/package/preremove.sh"):
+for f in ("collector/linux/package/preinstall.sh", "collector/linux/package/postinstall.sh", "collector/linux/package/preremove.sh"):
     subprocess.run(["sh", "-n", str(root / f)], check=True)
 for f in ("collector/macos/pkg/preinstall", "collector/macos/pkg/postinstall", "collector/macos/build-pkg.sh"):
     subprocess.run(["bash", "-n", str(root / f)], check=True)

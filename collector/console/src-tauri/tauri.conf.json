@@ -69,7 +69,8 @@
           "/usr/share/nexa-collector/config.example.json": "../../config.example.json"
         },
         "postInstallScript": "../../linux/package/postinstall.sh",
-        "preRemoveScript": "../../linux/package/preremove.sh"
+        "preRemoveScript": "../../linux/package/preremove.sh",
+        "preInstallScript": "../../linux/package/preinstall.sh"
       },
       "rpm": {
         "files": {
@@ -78,7 +79,8 @@
           "/usr/share/nexa-collector/config.example.json": "../../config.example.json"
         },
         "postInstallScript": "../../linux/package/postinstall.sh",
-        "preRemoveScript": "../../linux/package/preremove.sh"
+        "preRemoveScript": "../../linux/package/preremove.sh",
+        "preInstallScript": "../../linux/package/preinstall.sh"
       }
     },
     "macOS": {
