@@ -113,6 +113,11 @@ Function NexaCommunicationPage
     Abort
   IfFileExists "$COMMONPROGRAMDATA\NexaCollector\credentials\NEXA_COLLECTOR_TOKEN" 0 +2
     Abort
+  ; A prefilled public HTTPS endpoint is not an account credential.
+  ; The customer still must provide a valid collector ID and secret.
+  ${If} $NexaApi == ""
+    StrCpy $NexaApi "https://nexa-system-5nkp.vercel.app"
+  ${EndIf}
   nsDialogs::Create 1018
   Pop $0
   ${If} $0 == error
