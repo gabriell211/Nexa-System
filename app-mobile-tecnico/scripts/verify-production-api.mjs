@@ -9,7 +9,12 @@ if (!api.startsWith('https://')) {
 }
 
 async function check(path, { method = 'GET', body, expected, label }) {
-  const response = await fetch(api + path, {
+  // Production serverless containers can briefly report a startup 503 while
+  // the next instance warms up. Do not confuse one cold start with contract failure.
+  let response;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      response = await fetch(api + path, {
     method,
     headers: {
       Accept: 'application/json',
@@ -18,7 +23,15 @@ async function check(path, { method = 'GET', body, expected, label }) {
     ...(body ? { body: JSON.stringify(body) } : {}),
     signal: AbortSignal.timeout(30000),
     redirect: 'manual',
-  });
+      });
+      if (![429, 502, 503, 504].includes(response.status)) break;
+    } catch (error) {
+      if (attempt === 4) throw error;
+    }
+    if (attempt === 4) break;
+    await new Promise(resolve => setTimeout(resolve, (attempt + 1) * 2000));
+  }
+  if (!response) throw new Error(label + ': no response from production');
   const type = response.headers.get('content-type') || '';
   if (response.status !== expected || !type.includes('application/json')) {
     throw new Error(label + ': expected ' + expected +

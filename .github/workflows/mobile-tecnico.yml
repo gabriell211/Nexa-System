@@ -37,5 +37,9 @@ jobs:
         run: npm run brand:check
       - name: Verify TypeScript
         run: npm run typecheck
+      - name: Verify native routes and protected pages
+        run: npm run routes:check
+      - name: Compile Expo Router Android bundle
+        run: npm run bundle:android
       - name: Verify public Vercel Laravel API and mobile auth contract
         run: npm run backend:smoke
