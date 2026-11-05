@@ -1,7 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { ClipboardCheck, MessageSquarePlus, Plus, RotateCcw } from 'lucide-react';
+import {
+  AlertCircle, ArrowUpRight, CheckCircle2, ChevronLeft, ChevronRight,
+  ClipboardList, Clock3, Inbox, MessageSquarePlus, Plus,
+  RefreshCcw, RotateCcw, SlidersHorizontal, UserRound, Wrench,
+} from 'lucide-react';
 import { api, queryString, readableError } from '../api';
 import type { Page, Printer, User } from '../types';
 import { PagedEntitySelect } from '../components/PagedEntitySelect';
@@ -64,7 +68,7 @@ function CreateTicket({onSuccess,currentUser}:{onSuccess:(ticket:Ticket)=>Promis
     },
   });
   function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();create.mutate();}
-  return <form onSubmit={submit} className="stock-form">
+  return <form onSubmit={submit} className="stock-form tickets-create-form">
     <h3>Abrir ordem de serviço</h3>
     <p className="portfolio-info">Responsável pela abertura: <strong>{currentUser.name}</strong> ({currentUser.email??'E-mail não informado'}).</p>
     <p>Informe o atendimento. Se escolher um técnico, a OS será enviada como pendente para o aplicativo dele.</p>
@@ -168,8 +172,8 @@ function Detail({id,canReopen,onClose,onChanged}:{
   }):[];
   function transition(e:FormEvent<HTMLFormElement>){e.preventDefault();mutation.mutate();}
   function sendComment(e:FormEvent<HTMLFormElement>){e.preventDefault();comment.mutate();}
-  return <div className="modal-overlay">
-    <section className="modal printer-assignment-modal" role="dialog" aria-modal="true"
+  return <div className="modal-overlay tickets-detail-overlay">
+    <section className="modal printer-assignment-modal tickets-detail-modal" role="dialog" aria-modal="true"
       aria-label={data ? ticketLabel(data) : `Atendimento #${id}`}>
       <div className="modal-header"><h2>{data ? ticketLabel(data) : `Atendimento #${id}`}</h2>
         <button type="button" className="button ghost" onClick={onClose}>Fechar detalhes</button></div>
@@ -317,48 +321,169 @@ export function TicketsPage({canReopen,canCreateOrder,currentUser}:{
   }
   const current=results.data?.meta?.current_page??results.data?.current_page??1;
   const last=results.data?.meta?.last_page??results.data?.last_page??1;
-  return <div>
-    <div className="page-heading"><div>
-      <span className="eyebrow">HELP DESK</span><h1>Chamados técnicos</h1>
-      <p>Triagem, atendimento, prioridades, mensagens e histórico persistido.</p>
-    </div><div className="page-actions">
-      {canCreateOrder&&<button type="button" className="button primary"
-        aria-expanded={creating} onClick={()=>toggleCreate(!creating)}>
-        <Plus size={17} aria-hidden="true"/> {creating?'Cancelar abertura':'Abrir OS'}
-      </button>}
-      <ClipboardCheck size={32} aria-hidden="true"/>
-    </div></div>
-    {notice&&<p role="status" className="notice success">{notice}</p>}
-    {canCreateOrder&&creating&&<section className="data-card" aria-label="Nova ordem de serviço">
+  const tickets = results.data?.data ?? [];
+  const total = results.data?.meta?.total ?? results.data?.total ?? null;
+  const inProgress = tickets.filter(item => item.status === 'in_progress').length;
+  const waiting = tickets.filter(item =>
+    ['triage','unassigned','pending'].includes(item.status)).length;
+  function changeFilter(next: Status|'open'|'all') {
+    setFilterParams(previous => {
+      const params = new URLSearchParams(previous);
+      if (next==='all') params.delete('status');
+      else params.set('status',next);
+      return params;
+    });
+    setPage(1);
+  }
+  const quickFilters: Array<{value:Status|'open'|'all';label:string}> = [
+    {value:'all',label:'Todos'},
+    {value:'open',label:'Em aberto'},
+    {value:'in_progress',label:'Em atendimento'},
+    {value:'resolved',label:'Resolvidos'},
+  ];
+  const metrics = [
+    {label:'Chamados encontrados',value:total,icon:ClipboardList,note:'Total no filtro',tone:'blue'},
+    {label:'Em atendimento',value:inProgress,icon:Wrench,note:'Nesta página',tone:'indigo'},
+    {label:'Aguardando ação',value:waiting,icon:Clock3,note:'Nesta página',tone:'amber'},
+  ] as const;
+
+  return <div className="tickets-workspace">
+    <header className="tickets-hero">
+      <div className="tickets-hero-title">
+        <span className="tickets-hero-icon" aria-hidden="true"><ClipboardList size={24}/></span>
+        <div>
+          <span className="eyebrow">CENTRAL DE ATENDIMENTO</span>
+          <h1>Chamados técnicos</h1>
+          <p>Organize as ordens de serviço, acompanhe a equipe e tenha controle de cada atendimento.</p>
+        </div>
+      </div>
+      <div className="tickets-hero-actions">
+        <button type="button" className="button tickets-refresh"
+          disabled={results.isFetching}
+          onClick={() => void qc.invalidateQueries({queryKey:['tickets']})}>
+          <RefreshCcw size={16} aria-hidden="true"/> Atualizar
+        </button>
+        {canCreateOrder && <button type="button" className="button primary tickets-new"
+          aria-expanded={creating} onClick={() => toggleCreate(!creating)}>
+          <Plus size={18} aria-hidden="true"/> {creating?'Cancelar abertura':'Abrir OS'}
+        </button>}
+      </div>
+    </header>
+
+    {notice && <div role="status" className="tickets-feedback">
+      <CheckCircle2 size={18} aria-hidden="true"/><span>{notice}</span>
+      <button type="button" aria-label="Dispensar mensagem" onClick={() => setNotice('')}>×</button>
+    </div>}
+
+    {canCreateOrder && creating && <section className="data-card tickets-create-section"
+      aria-label="Nova ordem de serviço">
       <CreateTicket currentUser={currentUser} onSuccess={created}/>
     </section>}
-    <section className="data-card"><div className="stock-field">
-      <label htmlFor="ticket-filter">Filtrar estado</label>
-      <select id="ticket-filter" value={status} onChange={e=>{
-        const value=e.target.value;
-        setFilterParams(value==='all'?{}:{status:value});setPage(1);
-      }}>
-        <option value="all">Todos</option><option value="open">Ativos (não encerrados)</option>{(Object.keys(statuses) as Status[]).map(x=>
-          <option key={x} value={x}>{statuses[x]}</option>)}
-      </select></div>
-      {results.isPending?<div role="status">Carregando chamados...</div>:results.error?
-        <p role="alert" className="notice error">{readableError(results.error)}</p>:
-        results.data.data.length===0?<p>Nenhum chamado encontrado.</p>:
-        <div className="table-wrap"><table><thead><tr>
-          <th>Número</th><th>Assunto</th><th>Cliente</th><th>Aberta por</th><th>Técnico</th><th>Prioridade</th><th>Estado</th><th>Ação</th>
-        </tr></thead><tbody>{results.data.data.map(t=><tr key={t.id}>
-          <td>{ticketLabel(t)}</td><td><strong>{t.subject}</strong></td><td>{t.customer?.name??'Interno'}</td>
-          <td title={t.opener?.email??undefined}>{t.opener?.name??'Não identificado'}</td>
-          <td>{t.assignee?.name??'Não designado'}</td><td>{priorities[t.priority]}</td><td>{statuses[t.status]}</td>
-          <td><button type="button" className="button ghost" onClick={()=>setSelected(t.id)}>Detalhes</button></td>
-        </tr>)}</tbody></table></div>}
-      {results.data&&<div className="pagination"><span>Página {current} de {last}</span>
-        <div className="inline">
-          <button className="button ghost" disabled={current<=1} onClick={()=>setPage(current-1)}>Anterior</button>
-          <button className="button ghost" disabled={current>=last} onClick={()=>setPage(current+1)}>Próxima</button>
-        </div></div>}
+
+    <div className="tickets-metrics" aria-label="Resumo de chamados">
+      {metrics.map(metric => <article className={'tickets-metric tickets-metric-'+metric.tone}
+        key={metric.label}>
+        <span className="tickets-metric-icon" aria-hidden="true"><metric.icon size={19}/></span>
+        <div className="tickets-metric-copy">
+          <span>{metric.label}</span>
+          <strong>{results.isPending?'—':metric.value??'—'}</strong>
+          <small>{metric.note}</small>
+        </div>
+      </article>)}
+    </div>
+
+    <section className="data-card tickets-list-card" aria-labelledby="tickets-list-title">
+      <div className="tickets-section-heading">
+        <div>
+          <span className="tickets-section-kicker">GESTÃO DE ATENDIMENTOS</span>
+          <h2 id="tickets-list-title">Ordens de serviço</h2>
+          <p>Consulte o andamento e acesse os detalhes de cada chamado.</p>
+        </div>
+        <span className="tickets-result-count">
+          {results.isPending?'Consultando…':total===null?
+            tickets.length+' nesta página':total+' registro'+(total===1?'':'s')}
+        </span>
+      </div>
+      <div className="tickets-toolbar">
+        <div className="tickets-quick-filters" role="group" aria-label="Filtros rápidos">
+          {quickFilters.map(item => <button key={item.value} type="button"
+            className={'tickets-filter-chip'+(status===item.value?' is-active':'')}
+            aria-pressed={status===item.value} onClick={() => changeFilter(item.value)}>
+            {item.label}
+          </button>)}
+        </div>
+        <div className="tickets-status-filter">
+          <SlidersHorizontal size={16} aria-hidden="true"/>
+          <label htmlFor="ticket-filter">Filtrar estado</label>
+          <select id="ticket-filter" value={status}
+            onChange={e => changeFilter(e.target.value as Status|'open'|'all')}>
+            <option value="all">Todos os estados</option>
+            <option value="open">Ativos (não encerrados)</option>
+            {(Object.keys(statuses) as Status[]).map(item =>
+              <option value={item} key={item}>{statuses[item]}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {results.isPending?<div className="tickets-empty" role="status">
+        <span className="tickets-empty-icon"><RefreshCcw size={26}/></span>
+        <h3>Carregando atendimentos</h3>
+        <p>Buscando as ordens de serviço registradas no Nexa.</p>
+      </div>:results.error?<div className="tickets-empty" role="alert">
+        <span className="tickets-empty-icon tickets-empty-error"><AlertCircle size={28}/></span>
+        <h3>Não foi possível carregar os chamados</h3>
+        <p>{readableError(results.error)}</p>
+        <button type="button" className="button tickets-refresh" onClick={() => void results.refetch()}>
+          <RefreshCcw size={16}/> Tentar novamente
+        </button>
+      </div>:tickets.length===0?<div className="tickets-empty">
+        <span className="tickets-empty-icon"><Inbox size={32}/></span>
+        <h3>{status==='all'?'Nenhum chamado por enquanto':'Nenhum chamado neste filtro'}</h3>
+        <p>{status==='all'?
+          'Quando uma ordem de serviço for aberta, ela aparecerá aqui para acompanhamento.':
+          'Não encontramos atendimentos nesse estado. Experimente outra seleção.'}</p>
+        <div className="tickets-empty-actions">
+          {status!=='all' && <button type="button" className="button tickets-refresh"
+            onClick={() => changeFilter('all')}>Limpar filtros</button>}
+          {status==='all' && canCreateOrder && <button type="button" className="button primary"
+            onClick={() => toggleCreate(true)}><Plus size={16}/> Abrir primeira OS</button>}
+        </div>
+      </div>:<div className="table-wrap tickets-table-wrap">
+        <table className="tickets-table">
+          <thead><tr><th>Ordem de serviço</th><th>Cliente</th><th>Técnico</th>
+            <th>Prioridade</th><th>Estado</th><th>Aberta em</th><th>Ação</th>
+          </tr></thead>
+          <tbody>{tickets.map(ticket => <tr key={ticket.id}>
+            <td><div className="tickets-subject">
+              <span className="tickets-ticket-id">{ticketLabel(ticket)}</span>
+              <strong title={ticket.subject}>{ticket.subject}</strong>
+              <small>{ticket.category||'Atendimento técnico'}</small>
+            </div></td>
+            <td><span className="tickets-client-name">{ticket.customer?.name??'Atendimento interno'}</span></td>
+            <td><span className="tickets-assignee"><UserRound size={14} aria-hidden="true"/>
+              {ticket.assignee?.name??'Não designado'}</span></td>
+            <td><span className={'tickets-priority is-'+ticket.priority}>
+              <span className="tickets-priority-dot" aria-hidden="true"/>
+              {priorities[ticket.priority]}</span></td>
+            <td><span className={'tickets-status is-'+ticket.status}>{statuses[ticket.status]}</span></td>
+            <td><time dateTime={ticket.created_at}>{new Date(ticket.created_at).toLocaleDateString('pt-BR')}</time></td>
+            <td><button type="button" className="tickets-view-action" onClick={() => setSelected(ticket.id)}
+              aria-label={'Ver detalhes de '+ticketLabel(ticket)}>Detalhes <ArrowUpRight size={15}/></button></td>
+          </tr>)}</tbody>
+        </table>
+      </div>}
+
+      {results.data && last>1 && <div className="tickets-pagination">
+        <span>Página <strong>{current}</strong> de <strong>{last}</strong></span>
+        <div>
+          <button type="button" disabled={current<=1} aria-label="Página anterior"
+            onClick={() => setPage(Math.max(1,current-1))}><ChevronLeft size={18}/> Anterior</button>
+          <button type="button" disabled={current>=last} aria-label="Próxima página"
+            onClick={() => setPage(Math.min(last,current+1))}>Próxima <ChevronRight size={18}/></button>
+        </div>
+      </div>}
     </section>
-    {canReopen&&<PartRequestsPanel/>}
+    {canReopen && <PartRequestsPanel/>}
     {selected!==null&&<Detail id={selected} canReopen={canReopen}
       onClose={()=>setSelected(null)} onChanged={refresh}/>}
   </div>;
